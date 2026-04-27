@@ -98,7 +98,7 @@ Do not default to neutral answers. Unless there is genuinely no edge, give a cle
 
 ## Portfolio reports
 
-Any automated portfolio report and HTML / Markdown deliverable must follow `/docs/portfolio_report_agent_guidelines.md`.
+Any automated portfolio report (HTML deliverable) must follow `/docs/portfolio_report_agent_guidelines.md`. The agent runs `scripts/fetch_prices.py` and `scripts/generate_report.py` rather than re-implementing the price retrieval or HTML scaffolding each session — those scripts are the canonical templates and embed the spec rules (§8 pacing, §10 section order, §13 popovers, §14 visual standard).
 
 ## Holdings updates via natural language
 

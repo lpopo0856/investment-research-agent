@@ -6,3 +6,4 @@ SETTINGS.md
 .DS_Store
 .omc/
 .claude/
+/scripts/__pycache__/

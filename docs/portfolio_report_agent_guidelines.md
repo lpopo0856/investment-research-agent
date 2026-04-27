@@ -40,6 +40,8 @@ Before running the report, read these files. They are normative; this guidelines
 - `HOLDINGS.md` — current positions (auto-read every run).
 - `SETTINGS.md` — output language, tone, optional API keys, optional position-sizing rails.
 - `reports/_sample_redesign.html` — **canonical visual reference**. New reports must align color, typography, layout, and component styling with this file. If missing, rebuild from the tokens in §14.
+- `scripts/fetch_prices.py` — **canonical price-retrieval template** implementing §8 (yfinance batching, pacing, auto-correction, fallback chain). Run this rather than re-implementing the pipeline ad-hoc each report. Output: `prices.json`.
+- `scripts/generate_report.py` — **canonical HTML rendering template** implementing §10/§13/§14. Reads `HOLDINGS.md`, `prices.json`, and an editorial context JSON; emits the self-contained HTML. Reads CSS from `reports/_sample_redesign.html` so visual edits land in one place.
 
 ---
 
@@ -100,13 +102,31 @@ Run these steps in order. Each step has a "see §X" pointer to the rules.
 Every lot follows:
 
 ```
-<TICKER>: <quantity> shares @ <cost basis> on <YYYY-MM-DD>
+<TICKER>: <quantity> shares @ <cost basis> on <YYYY-MM-DD> [<MARKET>]
 ```
 
 - `on YYYY-MM-DD` is the **acquisition date** for that lot. It powers per-lot tooltips and hold-period analytics.
-- Crypto / FX use `<SYMBOL> <quantity> @ <cost> on <YYYY-MM-DD>` (no "shares").
+- `[<MARKET>]` is the **market-type tag** — required for new lots. It tells the price agent which `yfinance` symbol convention to use and which fallback hierarchy applies. The tag is the *single source of truth* for routing; do **not** rely on the bare-ticker shape to guess the market.
+- Crypto / FX use `<SYMBOL> <quantity> @ <cost> on <YYYY-MM-DD> [<MARKET>]` (no "shares").
+- Cash uses `<CURRENCY>: <amount> [cash]` (no "shares", no `@ cost`, no date).
 - `?` is allowed in place of cost or date when truly unknown — render the affected metric as `n/a` in the report (see §9.6). **Never invent a value.**
 - A ticker may have multiple lots across the four buckets (`Long Term`, `Mid Term`, `Short Term`, `Cash Holdings`). Aggregate per ticker for the holdings table; keep the lot-level array embedded in the page so the per-lot popover can render without a re-fetch.
+
+#### Market-type tag values
+
+| Tag | Meaning | yfinance symbol convention |
+|---|---|---|
+| `[US]` | NYSE / NASDAQ / AMEX listed equity or ETF | bare ticker (`NVDA`); dotted classes use Yahoo dash form (`BRK.B` → `BRK-B`) |
+| `[TW]` | Taiwan listed equity (TWSE) | `<code>.TW` (`2330.TW`) |
+| `[TWO]` | Taiwan OTC equity (TPEx) | `<code>.TWO` |
+| `[JP]` | Tokyo Stock Exchange | `<code>.T` |
+| `[HK]` | Hong Kong Stock Exchange | `<code>.HK` |
+| `[LSE]` | London Stock Exchange (UCITS ETFs etc.) | `<code>.L` |
+| `[crypto]` | Crypto asset | `<SYM>-USD` (`BTC-USD`, `ETH-USD`) |
+| `[FX]` | Currency pair held as position | `<PAIR>=X` (`USDJPY=X`) |
+| `[cash]` | Cash / cash-equivalent (no price fetch) | — |
+
+If a legacy lot has no `[<MARKET>]` tag, the price agent falls back to a heuristic (suffix → market, known crypto / fiat lists). The heuristic is best-effort; always migrate the line to a tagged form when you next touch it. The holdings-update agent (§ `docs/holdings_update_agent_guidelines.md`) requires the tag for all new lots.
 
 ### 4.2 SETTINGS.md
 

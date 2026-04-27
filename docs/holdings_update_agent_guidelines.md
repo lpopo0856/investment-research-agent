@@ -39,16 +39,18 @@ For each trade in the user's message, extract:
 | Date | `YYYY-MM-DD`. If the user did not say, default to today's local date and **state the assumption** |
 | Bucket | `Long Term`, `Mid Term`, `Short Term`. Required for a BUY of a ticker not yet in the book; for an existing ticker, default to that ticker's current bucket and confirm; for a SELL, derive from existing lots |
 | Currency | Settlement currency. Derive from the price prefix and the ticker's market. If multiple cash lines could match, ask |
+| Market | Required market-type tag — `US`, `TW`, `TWO`, `JP`, `HK`, `LSE`, `crypto`, `FX`, or `cash`. For an existing ticker, default to that ticker's prior tag and confirm. For a new ticker, derive from the venue / suffix / asset class; if ambiguous (e.g. dual-listed), ask |
 
 If any required field is missing or ambiguous, stop and ask one specific question — do not guess.
 
 ## BUY procedure
 
-- Append a new lot line in the canonical format:
-  - Equities: `<TICKER>: <qty> shares @ <price> on <YYYY-MM-DD>`
-  - Crypto / FX: `<SYMBOL> <qty> @ <price> on <YYYY-MM-DD>` (no "shares")
+- Append a new lot line in the canonical format (the `[<MARKET>]` tag is **required** for new lots):
+  - Equities: `<TICKER>: <qty> shares @ <price> on <YYYY-MM-DD> [<MARKET>]`
+  - Crypto / FX: `<SYMBOL> <qty> @ <price> on <YYYY-MM-DD> [<MARKET>]` (no "shares")
 - Place the line at the end of the chosen bucket section. Do not reorder existing lines.
 - Cash impact: subtract `qty × price` from the corresponding cash line. If that line would go negative, stop and ask.
+- The market tag is the single source of truth for `scripts/fetch_prices.py`; the script will format `2330.TW`, `BTC-USD`, `7203.T`, `VWRA.L`, etc. based on this tag — do not duplicate the suffix into the ticker itself unless the user wrote it that way.
 
 ## SELL procedure
 
@@ -76,7 +78,7 @@ Before any write, reply with exactly these blocks:
    - `Adjust USD: 50000 → 44450`
 3. **Diff** — a fenced unified diff (` ```diff `) of `HOLDINGS.md` showing only the changed lines.
 4. **Resulting state** — short summary: lot count per bucket, cash totals after the trade.
-5. **Realized P&L** — only for SELL: per-lot realized P&L and the new cost-weighted IRR for the remaining lots.
+5. **Realized P&L** — only for SELL: per-lot realized P&L and the new cost-weighted average cost / hold period for the remaining lots. (IRR is intentionally not computed; see `docs/portfolio_report_agent_guidelines.md` §9.4.)
 6. **Question** — literal prompt: `Confirm and write? (yes / no / edit)`.
 
 Write only on `yes` / `confirm` / `go` / equivalent. On `edit`, re-prompt for what to change. On `no`, drop the plan and reply with a one-liner acknowledgement.

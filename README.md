@@ -1,13 +1,14 @@
 # Investments — Personal Research & Portfolio Reporting
 
-This repo is a personal workspace for an AI investment research agent. It does **not** contain code, a build system, or a server. It contains:
+This repo is a personal workspace for an AI investment research agent. It contains:
 
 1. Agent specs (how the agent should think and write).
 2. Personal data (your holdings, your settings) — git-ignored.
-3. Generated reports (HTML + Markdown) under `reports/` — also git-ignored.
+3. Generated HTML reports under `reports/` — also git-ignored.
 4. A reference HTML design sample for the portfolio report.
+5. Two Python templates under `scripts/` that the agent runs as-is — no need to author price-fetching or HTML-rendering code per session.
 
-The agent runs inside an LLM client (e.g. Cowork / Claude). When you ask it to "produce a portfolio health check", it reads the specs and the personal data, fetches public market information, and writes the report into `reports/`.
+The agent runs inside an LLM client (e.g. Cowork / Claude). When you ask it to "produce a portfolio health check", it reads the specs and the personal data, runs `scripts/fetch_prices.py` to get the latest prices via `yfinance` (with the spec-mandated pacing and fallback), and runs `scripts/generate_report.py` to assemble the self-contained HTML in `reports/`.
 
 ## Repo layout
 
@@ -15,17 +16,20 @@ The agent runs inside an LLM client (e.g. Cowork / Claude). When you ask it to "
 .
 ├── README.md                              ← you are here
 ├── AGENTS.md                              ← global agent spec (research style, output structure)
-├── /docs/portfolio_report_agent_guidelines.md   ← spec for portfolio report HTML / Markdown deliverables
+├── /docs/portfolio_report_agent_guidelines.md   ← spec for the portfolio report HTML deliverable
 ├── /docs/holdings_update_agent_guidelines.md    ← spec for natural-language holdings updates
 ├── SETTINGS.md                            ← your settings (git-ignored, copy from .example)
 ├── SETTINGS.example.md                    ← template for SETTINGS.md
 ├── HOLDINGS.md                            ← your holdings (git-ignored, copy from .example)
 ├── HOLDINGS.md.bak                        ← rolling backup written by the update agent (git-ignored)
 ├── HOLDINGS.example.md                    ← template for HOLDINGS.md
+├── /scripts/
+│   ├── fetch_prices.py                    ← canonical price-retrieval template (yfinance + fallback per spec §8)
+│   └── generate_report.py                 ← canonical HTML rendering template (per spec §10/§13/§14)
 ├── .gitignore
 └── reports/
     ├── _sample_redesign.html              ← canonical visual reference (de-identified demo data)
-    └── *_portfolio_report.{html,md}       ← generated reports (git-ignored)
+    └── *_portfolio_report.html            ← generated reports (git-ignored)
 ```
 
 ## First-time setup
@@ -45,8 +49,9 @@ The agent runs inside an LLM client (e.g. Cowork / Claude). When you ask it to "
 3. Edit `HOLDINGS.md`:
    - Replace every line with your actual positions.
    - Keep the four-bucket structure (`Long Term`, `Mid Term`, `Short Term`, `Cash Holdings`).
-   - One lot per line: `<TICKER>: <quantity> shares @ <cost basis> on <YYYY-MM-DD>` — the trailing `on YYYY-MM-DD` is the lot's acquisition date and powers hold-period and IRR analysis.
-   - Use `?` when cost basis or date is unknown — the agent renders the affected metric as `n/a` (vs. `—` for cells that never apply, e.g. cash IRR) rather than guessing.
+   - One lot per line: `<TICKER>: <quantity> shares @ <cost basis> on <YYYY-MM-DD> [<MARKET>]` — the trailing `on YYYY-MM-DD` is the lot's acquisition date (powers hold-period analytics), and `[<MARKET>]` is the market-type tag the price agent uses to format the `yfinance` symbol and pick the right fallback hierarchy.
+   - Common market tags: `[US]`, `[TW]`, `[TWO]`, `[JP]`, `[HK]`, `[LSE]`, `[crypto]`, `[FX]`, `[cash]`. The full table lives in `HOLDINGS.example.md` and `docs/portfolio_report_agent_guidelines.md` §4.1.
+   - Use `?` when cost basis or date is unknown — the agent renders the affected metric as `n/a` (vs. `—` for cells that never apply, e.g. cash P&L) rather than guessing.
 
 `HOLDINGS.md`, `HOLDINGS.md.bak`, and `SETTINGS.md` are listed in `.gitignore`. They never leave your machine via git.
 
@@ -67,7 +72,22 @@ The agent reads `SETTINGS.md` for tone and `HOLDINGS.md` for positions, then fol
 - "Produce today's portfolio health check."
 - "Run my pre-market battle report."
 
-The agent follows `/docs/portfolio_report_agent_guidelines.md` to produce a self-contained HTML report plus a Markdown summary in `reports/`. Sections include high-priority alerts, KPI dashboard, holdings table with P&L / IRR / hold period, holding-period & pacing flags, theme exposure, news, forward-30-day events, risk heatmap, and an action list.
+The agent follows `/docs/portfolio_report_agent_guidelines.md` to produce a self-contained HTML report in `reports/`. The 11 sections (in order): today's summary, portfolio dashboard (KPIs), holdings table with P&L and per-lot popovers, holding period & pacing, theme/sector exposure, latest material news, forward-30-day event calendar, high-risk and high-opportunity list, recommended adjustments, today's action list, and sources & data gaps. A high-priority alerts banner sits above the 11 when any trigger fires.
+
+Under the hood, the agent runs the two canonical Python templates rather than re-authoring the work each time:
+
+```sh
+# 1. Latest prices via yfinance (with §8.3 pacing, §8.4 auto-correction, §8.5 fallback)
+python scripts/fetch_prices.py --holdings HOLDINGS.md --settings SETTINGS.md --output prices.json
+
+# 2. HTML render (reads CSS from reports/_sample_redesign.html — the visual reference)
+python scripts/generate_report.py \
+    --holdings HOLDINGS.md --settings SETTINGS.md \
+    --prices prices.json --context report_context.json \
+    --output reports/2026-04-28_1330_portfolio_report.html
+```
+
+The `report_context.json` is the agent's editorial layer: today's verdict prose, news items it gathered via web search, recommended adjustments, and the action list. Numeric content (totals, weights, P&L, hold period, pacing distribution, sources audit) comes from the two scripts mechanically.
 
 ### 3. Update holdings via natural language
 
@@ -94,12 +114,11 @@ Portfolio reports are written to `reports/` with the naming pattern:
 
 ```
 reports/<YYYY-MM-DD>_<HHMM>_portfolio_report.html
-reports/<YYYY-MM-DD>_<HHMM>_portfolio_report.md
 ```
 
-The HTML is a single self-contained file — no external CSS, JS, fonts, or chart libraries — so you can open it directly in a browser, share it, or archive it. The Markdown is a brief executive summary suitable for quick review or copy-paste.
+The HTML is a single self-contained file — no external CSS, JS, fonts, or chart libraries — so you can open it directly in a browser, share it, or archive it. There is **no Markdown summary or companion file** any more; the HTML is the single deliverable.
 
-`reports/_sample_redesign.html` is the canonical visual reference. It uses fully fictional data and exists only to lock in the design language. Do not delete it; the portfolio agent compares against it.
+`reports/_sample_redesign.html` is the canonical visual reference. It uses fully fictional data and exists only to lock in the design language. Do not delete it; both the portfolio agent and `scripts/generate_report.py` read its CSS as the single source of styling.
 
 ## Editing the agent specs
 
@@ -111,8 +130,8 @@ The HTML is a single self-contained file — no external CSS, JS, fonts, or char
 
 ## Privacy
 
-- `HOLDINGS.md`, `HOLDINGS.md.bak`, `SETTINGS.md`, and any generated `*_portfolio_report.{html,md}` are git-ignored.
-- Only the agent specs, the example templates, the README, and the visual reference sample are tracked.
+- `HOLDINGS.md`, `HOLDINGS.md.bak`, `SETTINGS.md`, and any generated `*_portfolio_report.html` are git-ignored.
+- Only the agent specs, the example templates, the Python script templates under `/scripts/`, the README, and the visual reference sample are tracked.
 - If you fork or share this repo, only the templates and specs travel with it; your real positions, backups, and reports stay local.
 
 ## Disclaimer
