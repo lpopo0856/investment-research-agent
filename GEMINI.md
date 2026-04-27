@@ -1,3 +1,3 @@
 # Guide
 
-**CRITICAL** **MUST READ** READ AGENTS.md, README.md under root directory
+**CRITICAL** **MUST READ** READ AGENTS.md, README.md, /docs/* under root directory

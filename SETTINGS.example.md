@@ -35,3 +35,16 @@ Describe how you want the agent to talk to you about risk and conviction. Exampl
 - High-volatility bucket cap: 30% (warn above this).
 - Cash floor: 10% (warn below this).
 - Single-day move alert: ±8%.
+
+## Market Data API Keys (optional fallback)
+
+Latest prices are fetched first by the yfinance latest-price subagent. These keys are optional fallback sources when yfinance is missing, stale, unsupported, or invalid for a ticker.
+
+- TWELVE_DATA_API_KEY:
+- FINNHUB_API_KEY:
+- COINGECKO_DEMO_API_KEY:
+- ALPHA_VANTAGE_API_KEY:
+- FMP_API_KEY:
+- TIINGO_API_KEY:
+- POLYGON_API_KEY:
+- JQUANTS_REFRESH_TOKEN:

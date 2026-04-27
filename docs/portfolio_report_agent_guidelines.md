@@ -17,7 +17,7 @@ This spec is the single source of truth for any "portfolio health check" / "port
 - Every section title, table header, KPI label, badge, tag, callout text, action label, tooltip / popover content, and prose paragraph must be in the SETTINGS language.
 - The only allowed non-language tokens are: ticker symbols (`NVDA`, `2330.TW`, `BTC`), currency codes (`USD`, `TWD`), unit symbols (`%`, `$`, `NT$`), ISO dates (`2026-04-27`), URL hostnames in citations, and bracketed source names that are inherently English (`Reuters`, `StockAnalysis`).
 - Bilingual headers like `代號 Symbol` or `損益 P&L` are **not** acceptable. Pick one — the SETTINGS language.
-- State badges (the chips next to the latest price): translate them. For Traditional Chinese: `盤前` / `盤中` / `盤後` / `收盤` instead of `pre` / `open` / `after` / `close`.
+- Latest-price source / freshness labels must be translated when they are natural-language labels. Provider names such as `Twelve Data`, `Finnhub`, `CoinGecko`, and `TWSE` may remain in English because they are source names. Do **not** show session-state badges in any language.
 - Tag chips (`High vol`, `Long`, `Mid`, `Rich val`): translate every label. Default English class names stay (the CSS hooks); the visible text is translated.
 - The HTML `<title>` and the Markdown filename header line must also be in the SETTINGS language (filenames themselves stay ASCII per the file-output rule).
 - Self-check before delivery: search the rendered HTML and Markdown for stray English words; every hit that is not in the allow-list above must be translated or removed.
@@ -38,24 +38,23 @@ If `SETTINGS.md` is missing or unparseable, default to **English** and surface t
 - If you need a temporary script to wrangle data, keep it in `/tmp` or use it once. Do not check it in as a deliverable.
 - The final delivery should contain only the requested HTML, the Markdown summary, and any necessary updates to the spec docs.
 - The HTML must not depend on local relative paths, `file://` images, external fonts, external chart libraries, or any service that requires login or payment.
-- External URLs are allowed *only* as data-source citations and as runtime fetch endpoints for the **Live price refresh** mechanism (see below — strict whitelist). Never as runtime style, generic script source, or chart-library dependency.
+- External URLs are allowed *only* as data-source citations. Never as runtime style, generic script source, chart-library dependency, or market-data fetch endpoint.
+- The generated HTML must not fetch market data at runtime. All latest-price retrieval happens at report generation time, and the HTML shows a static snapshot.
 - If a value cannot be retrieved, render it as `n/a` and list it under the Sources & data gaps audit section — do not fill in by guesswork. A value you derived (e.g. P&L from your own cost basis) is fine; a guess at a market data point you could not source is `n/a`. See **Missing-value glyphs** for the two-glyph convention.
 
-### Inline JavaScript — two permitted use cases
+### Inline JavaScript — restricted use
 
-Inline `<script>` is allowed **only** for these two purposes. Anything else must use SVG / CSS.
+Inline `<script>` is allowed **only** for optional cell-popover ergonomics. Anything else must use SVG / CSS.
 
-1. **Live price refresh** — polls a whitelisted public price API every 60 seconds (with ±5s jitter and per-ticker stagger) and animates the price cell on change. Detail in **Live price column**.
-2. **Cell popovers** — opens a hover/tap popover with per-lot detail on the Symbol and Price cells. May use the native HTML `popover` attribute (no JS needed for that pattern) or a tiny inline script if the `popover` API is not viable in the target browser.
+- **Cell popovers** — opens a hover/tap popover with per-lot detail on the Symbol and Price cells. Prefer the CSS-driven descendant popover pattern below; use a tiny inline script only if CSS cannot cover the target browser behavior.
 
-Constraints that apply in both cases:
+Constraints:
 
 - All script must be **inline** (`<script>...</script>`); no `<script src=...>`.
 - No third-party libraries, no bundlers, no transpiled output. Hand-written ES2020 only.
-- The HTML must remain valid and visually complete when JavaScript is disabled or the network is offline. Snapshot prices written into the HTML at generation time stay visible; the live mechanism merely overlays.
-- No API keys, no auth tokens, no user-identifying headers. The whitelist endpoints below are all key-free.
-- All fetches must include a 5-second timeout and a graceful-failure path (keep the snapshot value, do not blank the cell).
-- Polling must pause when `document.hidden === true` and resume on `visibilitychange`.
+- The HTML must remain valid and visually complete when JavaScript is disabled or the network is offline.
+- No API keys, auth tokens, user-identifying headers, market-data endpoints, `fetch()`, `XMLHttpRequest`, polling timers, or runtime quote refresh logic in the generated HTML.
+- API calls may be made only by the agent during report generation, using optional keys read from `SETTINGS.md`.
 
 ## HTML self-containment check
 
@@ -64,8 +63,8 @@ After producing the report, verify the HTML:
 - No `<script src=...>`.
 - No `<link rel="stylesheet"...>`.
 - No `<script>` or `<link>` that pulls a chart library from a CDN.
-- Inline `<style>`, inline SVG, inline tables, inline data, and the two permitted inline-JS use cases are allowed.
-- For static-only reports (no live refresh requested), prefer SVG / CSS over JavaScript.
+- Inline `<style>`, inline SVG, inline tables, inline static data, and the optional popover-only inline JS use case are allowed.
+- Prefer SVG / CSS over JavaScript. If `<script>` appears, confirm it does not contain `fetch`, `XMLHttpRequest`, API keys, or market-data endpoints.
 
 Suggested check:
 
@@ -77,10 +76,91 @@ For each hit, confirm it is purely a citation link; if it is anything else, inli
 
 ## Data freshness
 
-- Always search the web for the latest market data at generation time. Never rely on stale model memory.
-- Each holding must be refreshed for: latest price, pre / after-market price, day and recent move, market cap, valuation multiples (PE, Forward PE, PS, EV/EBITDA where relevant), volume, next earnings date, and any imminent material event.
-- Source priority: company IR, SEC / exchange filings, official press releases, then StockAnalysis, Nasdaq, Yahoo Finance, Reuters, CNBC, MarketWatch; for crypto, CoinMarketCap and CoinGecko.
+- Always retrieve the latest market data at generation time. Never rely on stale model memory.
+- Each holding must be refreshed for: latest price snapshot, day / 24h and recent move, market cap, valuation multiples (PE, Forward PE, PS, EV/EBITDA where relevant), volume, next earnings date, and any imminent material event.
+- For company and event data, source priority remains company IR, SEC / exchange filings, official press releases, then StockAnalysis, Nasdaq, Yahoo Finance, Reuters, CNBC, MarketWatch.
+- For latest price, first delegate to a dedicated latest-price subagent that uses `yfinance` to fetch all holdings in one batch where possible. The subagent must return price, prior close / 24h reference, move %, timestamp / as-of, currency, exchange, and any failure reason per ticker. If `yfinance` fails or returns invalid data, read the failure reason and attempt automatic correction up to three times before using fallback sources. If `yfinance` cannot return a freshness-valid value after correction attempts, then follow **Market-data source priority** below as fallback. API keys are allowed only when the user has placed them in `SETTINGS.md`, and every key is optional.
+- Latest price has a strict freshness gate: once a market's regular session has opened for the current exchange trading date, do **not** accept a prior-session close or stale delayed value until the `yfinance` subagent result, up to three yfinance auto-correction attempts, and every configured API, web-search/page source, and no-token fallback has been exhausted. If the market has not opened yet, the minimum acceptable price is the previous opened trading day's official / credible close.
 - If a credible source cannot be found, render the field as `n/a` (per **Missing-value glyphs**). If a number is your own derivation, label it `estimate`. Never silently guess.
+
+### yfinance rate limiting & request pacing (HARD REQUIREMENT)
+
+`yfinance` proxies Yahoo Finance's unofficial endpoints, which throttle aggressively and return `YFRateLimitError` / HTTP 429 / empty payloads when hit too fast. The latest-price subagent **must** pace requests to avoid the rate limiter — a tripped limiter typically blocks the IP for 15–60 minutes and forces the entire run onto fallback sources.
+
+Pacing rules:
+
+- **Prefer one batched call over many per-ticker calls.** Use `yf.download(tickers="AAPL MSFT NVDA …", period="5d", interval="1d", group_by="ticker", threads=False, progress=False)` or iterate `yf.Tickers("AAPL MSFT …").tickers[t].fast_info` so a single HTTP round-trip covers the whole book.
+- **Disable `yfinance`'s internal thread pool** (`threads=False` on `download`). Concurrent requests are the fastest way to trip the limiter.
+- **Minimum gap between successive yfinance HTTP calls: 1.5–2.0 seconds.** When iterating per ticker (after a batch failure, or for `.info` / `.fast_info` / `.history` calls that cannot be batched), `time.sleep(random.uniform(1.5, 2.5))` between calls. Never go below 1.0s.
+- **Backoff on 429 / `YFRateLimitError` / empty `history()` result**: exponential backoff starting at 30s, doubling up to 300s, capped at 3 retries. After the third failure, mark the ticker `yfinance_rate_limited` and move it to fallback sources — do not keep hammering the endpoint.
+- **Cap per-run yfinance volume**: if the holdings list exceeds ~30 tickers, split into batches of ≤ 25 tickers with a 3s gap between batches.
+- **Reuse a single `requests.Session`** across calls (`yf.Ticker(t, session=session)`) so cookies / crumbs are not re-negotiated on every request — repeated crumb fetches count against the rate limiter.
+- **Set a sane HTTP timeout** (10–15s per request). A hung connection still consumes a rate-limit slot and stalls the whole report.
+- Record per-ticker `yfinance_request_started_at`, `yfinance_request_latency_ms`, and `yfinance_retry_count` in the source audit when retries fired, so future runs can tune the pacing.
+
+These pacing rules are part of the three-attempt yfinance auto-correction budget under **yfinance failure recovery** — a 429 retry counts as one correction attempt, not a free retry. If a run trips the rate limiter despite these rules, surface the incident in **Sources and data gaps** with the offending request count and inter-request gap, and in the final reply include a "建議更新 agent spec" note proposing a tighter pacing constant.
+
+### Optional fallback market-data keys
+
+Latest prices are fetched first by the `yfinance` latest-price subagent. All market-data keys in `SETTINGS.md` are optional fallback sources. Never block a report because a key is missing. If a key is present, use that keyed API for tickers where `yfinance` is missing, stale, unsupported, or invalid before web search; if the key is missing, quota-limited, or unusable for the ticker, skip that provider and continue to the next fallback. Do not put API keys, tokens, request URLs containing keys, or authenticated response payloads in the generated HTML / Markdown.
+
+Recognized optional keys:
+
+| Setting key | Primary use | Notes |
+|---|---|---|
+| `TWELVE_DATA_API_KEY` | US equities / ETFs, global equities where covered, FX | Free tier is suitable for snapshots but rate-limited. Prefer `/price` or quote endpoints when available. |
+| `FINNHUB_API_KEY` | US equities / ETFs, some global equities | Free key required. Use quote endpoint for current / previous close fields. |
+| `COINGECKO_DEMO_API_KEY` | Crypto latest price and 24h move | Demo key is optional; public shared access may work but is less reliable. |
+| `ALPHA_VANTAGE_API_KEY` | US equities fallback, FX, crypto fallback | Free tier is low-quota; use after higher-priority sources. |
+| `FMP_API_KEY` | US equities fallback, valuation / fundamentals where free tier allows | Free plan can be delayed / EOD; mark freshness accordingly. |
+| `TIINGO_API_KEY` | US equities fallback | Free token is optional and rate-limited. |
+| `POLYGON_API_KEY` | US equities fallback | Free plan may be delayed / EOD; mark freshness accordingly. |
+| `JQUANTS_REFRESH_TOKEN` | Japan official delayed market data | Optional for Japanese equities; useful as official delayed data, not necessarily the latest trade. If an implementation uses email / password to obtain the token, those fields are also optional and must never be written into outputs. |
+
+### Market-data source priority
+
+Use the highest-priority source that returns a credible value. The source hierarchy is **`yfinance` market-data subagent first**, then **configured keyed APIs**, then **agent web search / public quote pages**, then **free no-token APIs**. If a source is delayed, EOD-only, or stale relative to another credible source, use the fresher higher-quality value when available and record the fallback / freshness in the source audit.
+
+#### Source hierarchy
+
+1. **Latest-price subagent using `yfinance`** — before any other price-source work, delegate all holdings to a dedicated subagent that fetches latest data via `yfinance`, preferably in a single batched request. Accept only values that pass the **Freshness gate**. Record `price_source` as `yfinance`, plus as-of timestamp, currency, exchange / market basis when available, and any ticker-level failure reason. If the subagent fails, it must diagnose the failure and attempt automatic correction up to three times before the main agent moves the affected ticker to fallback sources.
+2. **Configured keyed APIs** — if the `yfinance` subagent still fails, lacks coverage, or returns a value that fails the freshness gate after up to three correction attempts, use any relevant key / token present in `SETTINGS.md` according to the market-specific order below. Missing keys are not errors.
+3. **Agent web search / public quote pages** — if no configured keyed API yields a credible current value, search the web directly and read public quote pages. Prefer official exchanges and widely used quote pages with visible price, timestamp, and prior-close / 24h reference. Record the page source and retrieval time.
+4. **Free no-token APIs** — if web search / quote pages fail, use free public endpoints that require no token. These can be unofficial, delayed, rate-limited, or CORS-sensitive, so they are the last fallback. Record them explicitly as no-token fallback sources.
+
+| Asset / market | Latest-price fallback order |
+|---|---|
+| US equities / ETFs | **First:** `yfinance` subagent batch quote / history. **Keyed APIs:** Twelve Data → Finnhub → FMP → Tiingo → Alpha Vantage → Polygon. **Web search/pages:** Yahoo Finance → Google Finance → Nasdaq → MarketWatch / CNBC / TradingView / StockAnalysis → other credible quote pages. **No-token APIs:** Yahoo public quote/chart endpoints → Stooq CSV / other credible no-token endpoints. |
+| Crypto | **First:** `yfinance` subagent using Yahoo-style symbols where available (`BTC-USD`, `ETH-USD`, etc.). **Keyed APIs:** CoinGecko Demo → Alpha Vantage / FMP if configured. **Web search/pages:** CoinGecko → CoinMarketCap → Binance → Coinbase → TradingView. **No-token APIs:** Binance public spot ticker → Coinbase Exchange ticker → CoinGecko public simple price. |
+| Taiwan listed / OTC equities | **First:** `yfinance` subagent using exchange suffixes where available (`2330.TW`, OTC forms where supported). **Keyed APIs:** Twelve Data / Finnhub / FMP when coverage exists. **Web search/pages:** TWSE / TPEx quote pages → Yahoo Finance Taiwan → TradingView → other credible quote pages. **No-token APIs:** TWSE MIS public quote → TWSE OpenAPI daily / after-market data → TPEx official no-token data. |
+| Japan equities | **First:** `yfinance` subagent using exchange suffixes where available. **Keyed APIs:** Twelve Data → Finnhub → J-Quants when token is present. **Web search/pages:** Yahoo Finance Japan / Yahoo Finance global → JPX / issuer pages where price is visible → Google Finance → TradingView. **No-token APIs:** Stooq CSV / other credible no-token endpoints. |
+| FX / cash conversion | **First:** `yfinance` subagent using Yahoo FX symbols where available. **Keyed APIs:** Twelve Data FX → Alpha Vantage currency exchange rate. **Web search/pages:** Google Finance → Yahoo Finance → official central-bank / ECB / Fed reference pages. **No-token APIs:** official daily reference-rate feeds where available → other credible no-token FX endpoints. |
+
+When `yfinance` and another credible latest-price value conflict, prefer the source with the freshest timestamp and clearest market coverage; document the rejected source and reason in **Sources and data gaps**.
+
+#### yfinance failure recovery
+
+If the `yfinance` subagent returns an exception, empty data, stale data, invalid currency / exchange metadata, a symbol-not-found result, a rate-limit / timeout, or a value that fails the **Freshness gate**, do not immediately fall back. First read the failure reason and attempt automatic correction.
+
+- Maximum attempts: **three correction attempts per failed ticker or batch failure class**. Attempt count starts after the first failed `yfinance` call. Do not loop indefinitely.
+- Correction attempts must be targeted to the observed failure reason. Examples: normalize Yahoo symbols (`BRK.B` → `BRK-B`, crypto → `BTC-USD`, Taiwan / Japan suffixes), retry as per-ticker calls after a failed batch, switch between quote metadata and short interval history, request a shorter / longer period, repair timezone / calendar interpretation, or back off briefly after timeout / rate-limit.
+- After each correction attempt, rerun the **Freshness gate**. If the corrected value passes, use it and record `price_source` as `yfinance`, plus `yfinance_auto_fix_applied`, attempt count, and the successful fix summary in the source audit.
+- If all three correction attempts fail, move that ticker to configured keyed APIs, then web search / public quote pages, then no-token APIs. Record the original `yfinance` failure reason and all attempted fixes in **Sources and data gaps**.
+- If a new correction pattern succeeds during a report run, do **not** silently treat it as permanent spec knowledge. In the final user reply, include a short "建議更新 agent spec" note with the failure pattern, the fix that worked, and concise wording that could be added to this spec.
+
+#### Freshness gate
+
+Before accepting any latest price, determine the ticker's market calendar, exchange timezone, current local market date, and whether the regular session has already opened. Apply this gate before the source is considered valid:
+
+| Market state at generation time | Acceptable price | Rejection rule |
+|---|---|---|
+| Regular session is open today | Same trading date, current / intraday latest price from a credible source. Timestamp or page context must indicate it is not just the prior close. | Reject prior-session close, EOD-only, or clearly delayed values and continue to the next source. |
+| Regular session already closed today | Same trading date latest / official close / closing auction value. If only intraday timestamp is available, it must be from today's session. | Reject previous trading day's close unless every source has been exhausted. |
+| Today's regular session has not opened yet | Previous opened trading day's official / credible close at minimum. | Reject prices older than the previous opened trading day. |
+| Weekend / holiday / exchange closed all day | Most recent opened trading day's official / credible close. | Reject older closes unless every source has been exhausted; if even that cannot be verified, render `n/a`. |
+| 24/7 assets such as major crypto | Fresh spot price from a credible source, with retrieval time or source timestamp. | Reject stale snapshots when another source can provide a fresher spot price. |
+
+If the market has already opened and all sources are exhausted without a same-date latest price, use the freshest credible value only as an explicit degraded fallback. Mark `price_freshness` as `stale_after_exhaustive_search`, list every attempted source category in **Sources and data gaps**, and make the stale-price condition visible in the report's data-gap / alert text. Do not silently treat that fallback as current.
 
 ## Reading inputs
 
@@ -110,13 +190,8 @@ Every lot in `HOLDINGS.md` follows:
 - Per-ticker weighted-average cost (used by the Price popover) — `Σ(lot_cost × lot_qty) ÷ Σ(lot_qty)` over lots with known cost.
 - For each holding, the freshness fields listed under **Data freshness**.
 - **Hold period (per ticker)** = duration since the *oldest* lot's acquisition date. Display in `Xy Ym` for ≥ 1 year, otherwise `Nm` or `Nd`. If any lot has a `?` date, render as `n/a`.
-- **Latest price (per ticker)** = the most current observable price. Apply this fallback chain in order, take the first that returns a value:
-  1. **Pre-market** quote, when the pre-market session is in progress for the ticker's market (badge `pre`).
-  2. **Intraday / regular-session** quote, when the regular market is open (badge `open`).
-  3. **After-hours / extended-session** quote, when the after-hours session is in progress (badge `after`).
-  4. **Prior session close** (badge `close`, the explicit fallback marker — outside trading hours, holidays, or when no live source returned a value).
-  Each cell records the value plus which step was used. If even close is missing, the cell shows `n/a` with a `close` badge so the empty fallback chain is obvious.
-- **Today's move %** is derived from the latest price — `(latest − prior_close) / prior_close`. Render as a small subline under the price.
+- **Latest price (per ticker)** = the newest credible free-source value available at generation time that passes the **Freshness gate**. Follow **Market-data source priority**, reject any source that fails the market-state freshness requirement, and record `price_source`, `price_as_of`, `price_freshness`, and the accepted market-state basis for the Price popover and source audit. Do not display session-state badges. If even the required current-session latest price or previous opened trading day's close cannot be sourced after all sources are exhausted, render the cell as `n/a`.
+- **Today's move % / 24h move %** is derived from the selected latest price and the best available prior close / 24h reference. Render as a small subline under the price when available; otherwise render `n/a` only for the move subline, not for the price.
 - **IRR is intentionally not computed.** A previous version of this spec annualized P&L; that produced misleading 4-digit % numbers for short-window high-volatility names. Hold period plus per-lot P&L (in the Price popover) carries the same context without the bad math. Do not reintroduce IRR.
 - **Book-wide pacing aggregates**:
   - Cost-weighted average hold period across all risk assets (ex-cash).
@@ -160,7 +235,7 @@ The holdings table in section 3 uses these columns, left to right. **Default to 
 
 1. **Symbol** — ticker only, weight 680, monospace-friendly. **No** company subline, **no** since-line, **no** lot count visible by default. All of that lives in the Symbol popover (see **Cell popovers**).
 2. **Category** — asset class plus a single tag chip (`High vol`, `Long`, `Mid`, `Short`, `Rich val`, `Overheated`, `High risk`, `Cash`, etc.). Translate to SETTINGS language.
-3. **Price** — latest price, large; a small move % subline below with the state badge (`pre` / `open` / `after` / `close` translated). The whole cell is the popover trigger (see **Cell popovers**) and the live-refresh target (see **Live price column**).
+3. **Price** — latest static snapshot price, large; a small day / 24h move % subline below when available. The whole cell is the popover trigger (see **Cell popovers**). No runtime refresh target and no session-state badge.
 4. **Weight** (num) — % of total assets.
 5. **Value** (num) — current market value (USD basis).
 6. **P&L** (num) — `±$X / ±Y%`. Cash → `—`. Cost missing → `n/a`. (Detail per lot lives in the Price popover; this column is the at-a-glance aggregate.)
@@ -168,98 +243,28 @@ The holdings table in section 3 uses these columns, left to right. **Default to 
 
 The `Held` and `Move` columns from earlier specs are removed. Hold period stays available in the Symbol popover and aggregated in **Holding period & pacing**.
 
-### Live price column
+### Static latest price snapshot
 
-The Price column refreshes itself every **60 seconds** and animates on change. Implementation must be inline-only, gracefully degrade, and behave like a polite browser tab — not a scraper.
+The Price column is a static snapshot produced by the agent at report generation time. It must not refresh itself after the HTML opens.
 
-**Refresh mechanism**
+**Generation-time retrieval**
 
-- One inline `<script>` block at the bottom of `<body>`. The block embeds a JSON payload with the holdings (ticker, market, lot list) and a per-ticker snapshot price written at generation time.
-- Base interval `REFRESH_MS = 60_000` (1 minute), with **per-cycle jitter** of ±5 s (`Math.random() * 10_000 - 5_000`) so two browser tabs of the same report do not synchronize their requests.
-- Within a cycle, **stagger** per-ticker requests by ~800 ms each (rather than firing N requests in the same tick). Batch endpoints (CoinGecko `simple/price?ids=a,b,c`) count as one request.
-- `document.addEventListener('visibilitychange', ...)` pauses polling when the tab is hidden. On return, fire an immediate refresh, then resume the cycle.
-- Each fetch uses `AbortController` with a 5-second timeout. On failure, retain the previous value and switch the `.live-ts` chip to `.stale` styling. Two consecutive failures → switch to `.offline`.
+- First delegate latest-price retrieval to the `yfinance` subagent for all tickers.
+- If the `yfinance` subagent returns missing, stale, unsupported, or invalid data, read the failure reason and attempt automatic correction up to three times before moving that ticker to fallback sources.
+- Use configured keyed APIs only for tickers where `yfinance` remains missing, stale, unsupported, or invalid after the allowed correction attempts.
+- Use agent web search and public quote pages before no-token API endpoints.
+- Use free no-token APIs only after `yfinance`, keyed APIs, and web search / quote pages fail or return stale / conflicting data.
+- Apply the **Freshness gate** to every candidate. If the market has opened today, keep searching until a same-date latest / close value is found or the entire hierarchy is exhausted. If the market has not opened today, keep searching until at least the previous opened trading day's close is found.
+- Prefer the freshest credible value with a clear timestamp. If only delayed / EOD data is available after the market has opened, use it only after every source has been exhausted and label the freshness as degraded in the source audit.
+- Store, per ticker, the selected `latest_price`, `prior_close` or 24h reference when available, `move_pct`, `price_source`, `price_as_of`, `price_freshness`, `market_state_basis`, `currency`, and `exchange` when available. If `yfinance` auto-correction was attempted, also store the failure reason, attempts, applied fix when successful, and final outcome.
+- The generated HTML embeds only those selected static fields. It does not embed provider credentials, provider request URLs with keys, or retry / polling code.
 
-**Whitelisted endpoints**
+**Display rules**
 
-| Asset class | Endpoint | CORS | Notes |
-|---|---|---|---|
-| Crypto | `https://api.coingecko.com/api/v3/simple/price?ids=<id>,<id>,…&vs_currencies=usd&include_24hr_change=true` | ✅ direct | Free, no key. **Always batch** — one call per cycle covering every crypto holding |
-| US equities & ETFs | `https://query1.finance.yahoo.com/v8/finance/chart/<TICKER>?interval=1m` | ❌ blocked | Yahoo public chart endpoint. Includes `regularMarketPrice`, `preMarketPrice`, `postMarketPrice`, `previousClose`. Must route through a CORS proxy (see below) |
-| Taiwan equities | Same Yahoo endpoint, use `2330.TW` form | ❌ blocked | Same proxy chain |
-
-If a ticker has no working endpoint, the snapshot price stays visible with a `close` badge and a small `(static)` indicator in the popover.
-
-**CORS proxy chain (for Yahoo only)**
-
-Browsers strip / forbid setting `User-Agent`, `Origin`, and `Referer` from `fetch()` — there is no way to make a Yahoo request from inside an HTML report look like it came from `finance.yahoo.com`. The realistic workaround is to relay through a public CORS proxy. Maintain a short, rotating list and try in random order:
-
-```js
-const CORS_PROXIES = [
-  (u) => 'https://corsproxy.io/?'                   + encodeURIComponent(u),
-  (u) => 'https://api.allorigins.win/raw?url='      + encodeURIComponent(u),
-  (u) => 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(u),
-];
-```
-
-For each Yahoo request, shuffle the list, try the first proxy, fall through on timeout / non-2xx. If every proxy fails, drop to snapshot for that ticker.
-
-**Disguise & anti-blocking — what actually works in a browser**
-
-Browsers strip these headers from `fetch()`, so do **not** waste effort:
-
-- `User-Agent` (browser sets its own; ignored if you try)
-- `Origin`, `Referer` (browser-managed)
-- `Cookie` (cross-origin restrictions)
-- `mode: 'no-cors'` (response becomes opaque, can't read JSON)
-
-What does work and is **mandatory**:
-
-1. **Polite headers** the browser allows you to set:
-   ```js
-   headers: {
-     'Accept': 'application/json, text/plain, */*',
-     'Accept-Language': 'en-US,en;q=0.9',
-   }
-   ```
-2. **In-memory cache with TTL ≥ 50 s** — keyed by ticker, so a popover open / page focus / manual refresh doesn't re-hit the API. Use `Map<ticker, {t, value}>`.
-3. **Per-cycle jitter** (above) — desynchronizes multiple tabs.
-4. **Per-ticker stagger** — spread N requests across the minute instead of bursting.
-5. **Batch where possible** — CoinGecko supports comma-separated `ids=`; Yahoo's `/v7/finance/quote?symbols=` works through proxies for batches up to ~10 symbols.
-6. **Exponential backoff on 429 / 503** — double the cycle interval on failure (cap at 5 minutes), reset on first success. Honor `Retry-After` header if present (use `Math.max(currentBackoff, parseInt(retryAfter) * 1000)`).
-7. **Concurrent request cap** — at most 3 in flight at once; queue the rest.
-8. **Quiet on idle** — `document.hidden` pauses everything (already required above).
-9. **Proxy rotation** — see chain above. Never hammer a single proxy on consecutive cycles.
-10. **No retry storms** — exactly one retry per ticker per cycle; if the cycle fails, wait for the next cycle (plus backoff).
-
-If a public proxy in the chain starts blocking, **remove it from the spec list** rather than chaining ten unstable proxies. The list is intentionally short.
-
-**Source-selection logic per refresh**
-
-```
-if response has preMarketPrice and current_time in pre-market window  → use preMarketPrice  + badge "pre"
-elif response has regularMarketPrice and market is open                → use regularMarketPrice + badge "open"
-elif response has postMarketPrice and current_time in after-hours      → use postMarketPrice + badge "after"
-else                                                                   → use previousClose    + badge "close"
-```
-
-Market windows must be derived from each ticker's exchange (US: 09:30–16:00 ET regular, 04:00–09:30 pre, 16:00–20:00 after; TW: 09:00–13:30 TPE regular). Embed the windows in the page.
-
-**Animation**
-
-- On every refresh, compare the new price to the value currently in the cell.
-- If new > old: add class `flash-up` to the cell.
-- If new < old: add class `flash-down`.
-- The class triggers a 1.2-second CSS transition that flashes the cell background with a low-alpha tint of `--pos` or `--neg`, then fades back to transparent. The price text simultaneously shifts color (full `--pos` / `--neg` for ~200ms, then back to `--ink`).
-- After 1.2 seconds the JS removes the class so the next change can re-trigger the animation.
-- A small `.pulse-dot` (8px circle) lives in the Price column header and pulses once per successful refresh as a heartbeat, so the user knows the live feed is alive even if no prices changed.
-- Animation must respect `@media (prefers-reduced-motion: reduce)` — drop to a 1-frame highlight, no fade.
-
-**Display extras**
-
-- Last-refresh timestamp (`HH:MM:SS`) lives in a small `.live-ts` chip in the Price column header. Updated on every successful refresh.
-- States: `.live-ts` (default, fresh) / `.stale` (one cycle missed, warn color) / `.offline` (two+ cycles missed or all proxies failing, neg color).
-- The heartbeat dot pulses on every successful cycle. Suppress the pulse when stale/offline.
+- Price cell: large latest price plus a small signed move subline such as `較前收 +1.40%` or `24h +2.10%`, translated per SETTINGS.
+- Price popover: include latest price, selected source, timestamp / freshness, market-state basis, currency / exchange when available, and per-lot P&L table.
+- Source audit: list the provider used for every holding and call out delayed / EOD / fallback sources. For stale degraded fallbacks or `n/a`, list each attempted source category and why no freshness-valid value was used. For `yfinance` failures, include the failure reason and up to three automatic correction attempts before fallback.
+- Do not show session-state chips, refresh-status UI, update animations, or stale / offline badges.
 
 ### Cell popovers (Symbol & Price)
 
@@ -282,13 +287,13 @@ The new pattern is a CSS-driven `:hover` / `:focus-within` popover, structured a
   </div>
 </td>
 
-<td class="num price-cell" data-ticker="NVDA" data-price="…" data-prev="…">
+<td class="num price-cell">
   <div class="price-trigger" tabindex="0" role="button">
     <span class="price-num">$211.62</span>
-    <span class="price-sub pos">+1.40%<span class="state pre">盤前</span></span>
+    <span class="price-sub pos">較前收 +1.40%</span>
     <div class="pop pop-px" role="tooltip">
       <h4>NVDA · 每批損益</h4>
-      <div class="pop-sub">最新價 $211.62 <span class="state pre">盤前</span></div>
+      <div class="pop-sub">最新價 $211.62 · 來源：Twelve Data · 2026-04-27 09:00</div>
       <table>… per-lot rows + summary tfoot …</table>
     </div>
   </div>
@@ -396,7 +401,7 @@ Internal styling uses the same tokens as the page body — `--ink` text on `--su
 #### Price popover content
 
 - A heading with the ticker + "每批損益" (translated per SETTINGS).
-- A subline with the latest price plus the same state badge as the cell.
+- A subline with the latest price, selected source, and timestamp / freshness.
 - A small table: one row per lot with columns `取得日 / 成本 / 數量 / 損益` (translated). Numeric columns right-aligned with tabular numerals.
 - A `<tfoot class="summary">` row showing **平均成本 / 總成本 / 總損益**. Top-bordered, semibold.
 - If cost is `?` for a lot, render that row's P&L as `n/a` and exclude it from the average-cost calculation.
@@ -480,7 +485,7 @@ Honor `@media (prefers-reduced-motion: reduce)` — drop the fade and slide to a
 8. Today's action list
 9. Data gaps
 
-The Markdown is static — no live refresh. Snapshot prices at generation time only.
+The Markdown is static — no runtime refresh. Snapshot prices at generation time only.
 
 ## Required charts (inline SVG / CSS only)
 
@@ -562,10 +567,6 @@ Color tokens:
   --info:         #1d4690;
   --accent:       #1f2937;
   --accent-warm:  #8a5a1c;     /* editorial warm accent */
-
-  /* Animation tints (low-alpha) */
-  --pos-flash:    rgba(21,112,61,.18);
-  --neg-flash:    rgba(180,35,24,.18);
 }
 ```
 
@@ -633,34 +634,31 @@ These floors override any media query. The phone breakpoint may *fix* a value at
 - **Shadow**: as a rule, no box-shadow on the page. Popovers are the single exception. Hover hints cap at `0 1px 0 rgba(0,0,0,.04)`. **Never** ship `0 10px 28px rgba(...)` floating shadows on regular content.
 - **Separation hierarchy**: prefer hairline (1px) + whitespace; then semantic color; only then a faint background tint.
 
-### Price-cell live styling
+### Price-cell static styling
 
 ```css
-.price-cell{transition:background .9s ease-out;}
-.price-cell.flash-up   {background:var(--pos-flash);animation:flash-up   1.2s ease-out;}
-.price-cell.flash-down {background:var(--neg-flash);animation:flash-down 1.2s ease-out;}
-@keyframes flash-up   {0%{background:rgba(21,112,61,.32);} 100%{background:transparent;}}
-@keyframes flash-down {0%{background:rgba(180,35,24,.32);} 100%{background:transparent;}}
-
-.price-cell .price-num{transition:color .25s ease;}
-.price-cell.flash-up   .price-num{color:var(--pos);}
-.price-cell.flash-down .price-num{color:var(--neg);}
-
-.pulse-dot{
-  width:8px;height:8px;border-radius:50%;display:inline-block;
-  background:var(--pos);opacity:.5;
+.price-cell{position:relative;}
+.price-trigger{
+  display:inline-flex;
+  flex-direction:column;
+  align-items:flex-end;
+  gap:2px;
+  cursor:help;
 }
-.pulse-dot.beat{animation:beat 1s ease-out;}
-@keyframes beat{0%{transform:scale(1);opacity:1;} 100%{transform:scale(1.6);opacity:0;}}
-
-.live-ts{font-size:11px;color:var(--muted);margin-left:8px;font-variant-numeric:tabular-nums;}
-.live-ts.stale{color:var(--warn);}
-.live-ts.offline{color:var(--neg);}
-
-@media (prefers-reduced-motion: reduce){
-  .price-cell.flash-up,.price-cell.flash-down{animation:none;}
-  .pulse-dot.beat{animation:none;opacity:.5;}
+.price-num{
+  color:var(--ink);
+  font-size:clamp(15px, 0.6vw + 13px, 17px);
+  font-weight:650;
+  line-height:1.12;
+  font-variant-numeric:tabular-nums lining-nums;
 }
+.price-sub{
+  color:var(--muted);
+  font-size:clamp(11px, 0.2vw + 10.4px, 12px);
+  font-variant-numeric:tabular-nums lining-nums;
+}
+.price-sub.pos{color:var(--pos);}
+.price-sub.neg{color:var(--neg);}
 ```
 
 ### Responsive / mobile (RWA)
@@ -701,7 +699,7 @@ Required wrappers and patterns:
 
 ### Reference implementation
 
-`reports/_sample_redesign.html` is the canonical reference. New reports must align color, typography, layout, and component styling with this file. If it is missing, rebuild from the tokens and rules above.
+`reports/_sample_redesign.html` **CRITICAL** **MUST READ** is the canonical reference. New reports must align color, typography, layout, and component styling with this file. If it is missing, rebuild from the tokens and rules above.
 
 ## Investment content standard
 
@@ -731,4 +729,4 @@ Today's action list (must produce, in this order — translate the labels):
 
 ## Reply format to user
 
-When replying, give absolute paths to both the HTML and the Markdown summary, plus a brief list of the most important alerts and data gaps. Do not ask the user to assemble, install, or run anything. Reply in the SETTINGS language.
+When replying, give absolute paths to both the HTML and the Markdown summary, plus a brief list of the most important alerts and data gaps. If a `yfinance` automatic correction succeeded during the run, include a concise **建議更新 agent spec** note that states the observed failure pattern, the successful fix, and the exact wording worth adding to this spec. Do not ask the user to assemble, install, or run anything. Reply in the SETTINGS language.

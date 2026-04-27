@@ -33,10 +33,6 @@
   --accent:       #1f2937;
   --accent-warm:  #8a5a1c;
 
-  /* Animation tints (low-alpha) */
-  --pos-flash:    rgba(21,112,61,.18);
-  --neg-flash:    rgba(180,35,24,.18);
-
   /* Layering */
   --table-header-z: 70;
   --popover-host-z: 40;
@@ -275,11 +271,8 @@ td.num,th.num{text-align:right}
   text-decoration:underline dotted;text-underline-offset:3px;outline:0;
 }
 
-/* Price cell — live, animated, hover-activated popover trigger */
-.price-cell{
-  position:relative;
-  transition:background .9s ease-out;
-}
+/* Price cell — static latest-price snapshot, hover-activated popover trigger */
+.price-cell{position:relative}
 .price-trigger{
   display:inline-flex;flex-direction:column;align-items:flex-end;gap:2px;
   cursor:help;text-align:right;
@@ -292,7 +285,6 @@ td.num,th.num{text-align:right}
   font-size: clamp(15px, 0.6vw + 13px, 17px);
   font-weight:600;color:var(--ink);
   font-variant-numeric:tabular-nums lining-nums;
-  transition:color .25s ease;
 }
 .price-sub{
   font-size:11.5px;color:var(--muted);
@@ -301,40 +293,6 @@ td.num,th.num{text-align:right}
 }
 .price-sub.pos{color:var(--pos);font-weight:600}
 .price-sub.neg{color:var(--neg);font-weight:600}
-
-.state{
-  display:inline-block;padding:0 5px;
-  font-size:9.5px;font-weight:700;letter-spacing:.06em;
-  background:var(--surface-2);border:1px solid var(--hairline);border-radius:2px;
-  color:var(--muted);
-}
-.state.pre  {color:var(--info);       border-color:#c7d3eb}
-.state.open {color:var(--pos);        border-color:#bce3c8;background:#f0faf3}
-.state.after{color:var(--accent-warm);border-color:#e5c39b}
-.state.close{color:var(--muted)}
-
-/* Price flash animations */
-.price-cell.flash-up   {background:var(--pos-flash);animation:flash-up   1.2s ease-out}
-.price-cell.flash-down {background:var(--neg-flash);animation:flash-down 1.2s ease-out}
-@keyframes flash-up   {0%{background:rgba(21,112,61,.32)} 100%{background:transparent}}
-@keyframes flash-down {0%{background:rgba(180,35,24,.32)} 100%{background:transparent}}
-.price-cell.flash-up   .price-num{color:var(--pos)}
-.price-cell.flash-down .price-num{color:var(--neg)}
-
-/* Live status / heartbeat */
-.live-meta{display:inline-flex;align-items:center;gap:8px;margin-left:10px;font-weight:500;letter-spacing:0;text-transform:none}
-.pulse-dot{
-  width:8px;height:8px;border-radius:50%;display:inline-block;
-  background:var(--pos);opacity:.5;position:relative;
-}
-.pulse-dot.beat::after{
-  content:"";position:absolute;inset:0;border-radius:50%;
-  background:var(--pos);animation:beat 1s ease-out;
-}
-@keyframes beat{0%{transform:scale(1);opacity:.7} 100%{transform:scale(1.8);opacity:0}}
-.live-ts{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
-.live-ts.stale  {color:var(--warn)}
-.live-ts.offline{color:var(--neg)}
 
 /* P&L colors */
 .pos-txt{color:var(--pos);font-weight:600}
@@ -569,11 +527,6 @@ tbody td:has(.price-trigger:is(:hover,:focus-within)){
   color:var(--muted);line-height:1.6;
 }
 
-/* ---------- Reduced motion ---------- */
-@media (prefers-reduced-motion: reduce){
-  .price-cell,.price-num,.pulse-dot.beat::after{animation:none!important;transition:none!important}
-}
-
 /* ---------- Tablet (≤ 880px) ---------- */
 @media (max-width:880px){
   .wrap{padding:32px 20px 56px}
@@ -648,7 +601,7 @@ tbody td:has(.price-trigger:is(:hover,:focus-within)){
       <li>主題 A／主題 B／主題 C 合計約 40.0%，超過 30% 集中度上限。</li>
       <li>高波動資產合計約 50.0%，超過 30% 上限。</li>
       <li>DELT 財報日在 7 天內，且權重 6.5% 超過單一標的 5% 上限。</li>
-      <li>50 日均線與盤前完整報價來自公開來源失敗 → 標記 <code>n/a</code>，已列入「資料來源與缺口」。</li>
+      <li>50 日均線與部分最新價來源來自公開資料失敗 → 標記 <code>n/a</code>，已列入「資料來源與缺口」。</li>
     </ul>
   </section>
 
@@ -753,11 +706,7 @@ tbody td:has(.price-trigger:is(:hover,:focus-within)){
     <div class="section-head">
       <h2>持股損益與權重</h2>
       <span class="sub">
-        前 8 大部位 · 滑鼠移到代號或價格可看細節
-        <span class="live-meta">
-          <span class="pulse-dot" id="heartbeat" aria-label="即時連線狀態"></span>
-          <span class="live-ts" id="liveTs">最後刷新 09:00:00</span>
-        </span>
+        前 8 大部位 · 價格為產出時靜態快照 · 滑鼠移到代號或價格可看細節
       </span>
     </div>
 
@@ -787,13 +736,13 @@ tbody td:has(.price-trigger:is(:hover,:focus-within)){
               </div></div>
             </td>
             <td>加密資產<span class="tag warn">高波動</span></td>
-            <td class="num price-cell" data-ticker="ALPH" data-price="50000.00" data-prev="49850.00">
+            <td class="num price-cell">
               <div class="price-trigger" tabindex="0" role="button">
                 <span class="price-num">$50,000</span>
-                <span class="price-sub pos">+0.30%<span class="state pre">盤前</span></span>
+                <span class="price-sub pos">較前收 +0.30%</span>
               <div class="pop pop-px" role="tooltip">
                 <h4>ALPH · 每批損益</h4>
-                <div class="pop-sub">最新價 $50,000.00 <span class="state pre">盤前</span></div>
+                <div class="pop-sub">最新價 $50,000.00 · 來源：yfinance 子代理（優先示範）· 已開盤最新 · 2099-01-01 09:00</div>
                 <table>
                   <thead><tr><th>取得日</th><th class="num">成本</th><th class="num">數量</th><th class="num">損益</th></tr></thead>
                   <tbody>
@@ -823,13 +772,13 @@ tbody td:has(.price-trigger:is(:hover,:focus-within)){
               </div></div>
             </td>
             <td>ETF<span class="tag pos">長線</span></td>
-            <td class="num price-cell" data-ticker="BETA" data-price="200.00" data-prev="198.40">
+            <td class="num price-cell">
               <div class="price-trigger" tabindex="0" role="button">
                 <span class="price-num">$200.00</span>
-                <span class="price-sub pos">+0.81%<span class="state pre">盤前</span></span>
+                <span class="price-sub pos">較前收 +0.81%</span>
               <div class="pop pop-px" role="tooltip">
                 <h4>BETA · 每批損益</h4>
-                <div class="pop-sub">最新價 $200.00 <span class="state pre">盤前</span></div>
+                <div class="pop-sub">最新價 $200.00 · 來源：yfinance 子代理（優先示範）· 已開盤最新 · 2099-01-01 09:00</div>
                 <table>
                   <thead><tr><th>取得日</th><th class="num">成本</th><th class="num">數量</th><th class="num">損益</th></tr></thead>
                   <tbody>
@@ -859,13 +808,13 @@ tbody td:has(.price-trigger:is(:hover,:focus-within)){
               </div></div>
             </td>
             <td>ETF<span class="tag pos">長線</span></td>
-            <td class="num price-cell" data-ticker="GAMA" data-price="700.00" data-prev="692.20">
+            <td class="num price-cell">
               <div class="price-trigger" tabindex="0" role="button">
                 <span class="price-num">$700.00</span>
-                <span class="price-sub pos">+1.13%<span class="state pre">盤前</span></span>
+                <span class="price-sub pos">較前收 +1.13%</span>
               <div class="pop pop-px" role="tooltip">
                 <h4>GAMA · 每批損益</h4>
-                <div class="pop-sub">最新價 $700.00 <span class="state pre">盤前</span></div>
+                <div class="pop-sub">最新價 $700.00 · 來源：yfinance 子代理（優先示範）· 已開盤最新 · 2099-01-01 09:00</div>
                 <table>
                   <thead><tr><th>取得日</th><th class="num">成本</th><th class="num">數量</th><th class="num">損益</th></tr></thead>
                   <tbody>
@@ -896,13 +845,13 @@ tbody td:has(.price-trigger:is(:hover,:focus-within)){
               </div></div>
             </td>
             <td>個股<span class="tag">主題 A</span></td>
-            <td class="num price-cell" data-ticker="DELT" data-price="400.00" data-prev="401.20">
+            <td class="num price-cell">
               <div class="price-trigger" tabindex="0" role="button">
                 <span class="price-num">$400.00</span>
-                <span class="price-sub neg">−0.30%<span class="state close">收盤</span></span>
+                <span class="price-sub neg">較前收 −0.30%</span>
               <div class="pop pop-px" role="tooltip">
                 <h4>DELT · 每批損益</h4>
-                <div class="pop-sub">最新價 $400.00 <span class="state close">收盤（盤前資料缺）</span></div>
+                <div class="pop-sub">最新價 $400.00 · 來源：yfinance 子代理失敗；Yahoo Finance 網頁備援（示範）· 已開盤最新 · 2099-01-01 09:00</div>
                 <table>
                   <thead><tr><th>取得日</th><th class="num">成本</th><th class="num">數量</th><th class="num">損益</th></tr></thead>
                   <tbody>
@@ -933,13 +882,13 @@ tbody td:has(.price-trigger:is(:hover,:focus-within)){
               </div></div>
             </td>
             <td>個股<span class="tag">主題 B</span></td>
-            <td class="num price-cell" data-ticker="ZETA" data-price="250.00" data-prev="250.00">
+            <td class="num price-cell">
               <div class="price-trigger" tabindex="0" role="button">
                 <span class="price-num">$250.00</span>
-                <span class="price-sub">+0.00%<span class="state open">盤中</span></span>
+                <span class="price-sub">較前收 +0.00%</span>
               <div class="pop pop-px" role="tooltip">
                 <h4>ZETA · 每批損益</h4>
-                <div class="pop-sub">最新價 $250.00 <span class="state open">盤中</span></div>
+                <div class="pop-sub">最新價 $250.00 · 來源：yfinance 子代理失敗；TWSE MIS 免 token API（示範）· 已開盤最新 · 2099-01-01 09:00</div>
                 <table>
                   <thead><tr><th>取得日</th><th class="num">成本</th><th class="num">數量</th><th class="num">損益</th></tr></thead>
                   <tbody>
@@ -969,13 +918,13 @@ tbody td:has(.price-trigger:is(:hover,:focus-within)){
               </div></div>
             </td>
             <td>個股<span class="tag warn">估值偏高</span></td>
-            <td class="num price-cell" data-ticker="THTA" data-price="350.00" data-prev="361.55">
+            <td class="num price-cell">
               <div class="price-trigger" tabindex="0" role="button">
                 <span class="price-num">$350.00</span>
-                <span class="price-sub neg">−3.20%<span class="state after">盤後</span></span>
+                <span class="price-sub neg">較前收 −3.20%</span>
               <div class="pop pop-px" role="tooltip">
                 <h4>THTA · 每批損益</h4>
-                <div class="pop-sub">最新價 $350.00 <span class="state after">盤後</span></div>
+                <div class="pop-sub">最新價 $350.00 · 來源：yfinance 子代理失敗；Google Finance 網頁備援（示範）· 未開盤：前一開盤日收盤 · 2099-01-01 09:00</div>
                 <table>
                   <thead><tr><th>取得日</th><th class="num">成本</th><th class="num">數量</th><th class="num">損益</th></tr></thead>
                   <tbody>
@@ -1005,13 +954,13 @@ tbody td:has(.price-trigger:is(:hover,:focus-within)){
               </div></div>
             </td>
             <td>個股<span class="tag warn">短線過熱</span></td>
-            <td class="num price-cell" data-ticker="KAPA" data-price="90.00" data-prev="73.45">
+            <td class="num price-cell">
               <div class="price-trigger" tabindex="0" role="button">
                 <span class="price-num">$90.00</span>
-                <span class="price-sub pos">+22.50%<span class="state open">盤中</span></span>
+                <span class="price-sub pos">較前收 +22.50%</span>
               <div class="pop pop-px" role="tooltip">
                 <h4>KAPA · 每批損益</h4>
-                <div class="pop-sub">最新價 $90.00 <span class="state open">盤中</span></div>
+                <div class="pop-sub">最新價 $90.00 · 來源：yfinance 子代理失敗；Binance 免 token API（示範）· 已開盤最新 · 2099-01-01 09:00</div>
                 <table>
                   <thead><tr><th>取得日</th><th class="num">成本</th><th class="num">數量</th><th class="num">損益</th></tr></thead>
                   <tbody>
@@ -1040,7 +989,7 @@ tbody td:has(.price-trigger:is(:hover,:focus-within)){
               </div></div>
             </td>
             <td>現金<span class="tag">現金</span></td>
-            <td class="num price-cell" data-ticker="USD" data-price="1.00" data-prev="1.00">
+            <td class="num price-cell">
               <span class="na">—</span>
             </td>
             <td class="num">8.0%</td>
@@ -1139,7 +1088,7 @@ tbody td:has(.price-trigger:is(:hover,:focus-within)){
       <li><span class="lbl may">可做</span><span>保留約 22% 現金；事件後折價再進場。</span></li>
       <li><span class="lbl may">可做</span><span>ALPH 回測 50–55k 且資金流向未轉弱可分批加碼。</span></li>
       <li><span class="lbl no">不建議</span><span>財報前追 THTA／LMBD／KAPA／SGMA — 估值與預期都偏滿。</span></li>
-      <li><span class="lbl fix">補資料</span><span>ALPH 成本、所有標的 50 日均線、即時盤前報價、ZETA 財報正式日期。</span></li>
+      <li><span class="lbl fix">補資料</span><span>ALPH 成本、所有標的 50 日均線、yfinance 子代理結果、可選 API key、網頁來源與免 token 備援、ZETA 財報正式日期。</span></li>
     </ul>
   </section>
 
@@ -1149,212 +1098,6 @@ tbody td:has(.price-trigger:is(:hover,:focus-within)){
   </footer>
 
 </div>
-
-<!-- ============ INLINE SCRIPT · live price refresh + animation ============ -->
-<!--
-  Production behavior (per portfolio_report_agent_guidelines.md → "Live price column"):
-
-    • 60-second base interval with ±5s per-cycle jitter (desync between tabs).
-    • Per-ticker stagger ~800ms within each cycle (no bursting).
-    • CoinGecko (crypto): direct call, batch all crypto IDs into one request.
-    • Yahoo Finance (US/TW equities): proxied through a rotating CORS proxy chain
-      because browsers cannot set User-Agent / Origin / Referer to make a
-      cross-origin Yahoo request look first-party.
-    • Polite headers (Accept, Accept-Language) — these are the only request headers
-      browsers actually let you set.
-    • In-memory cache (TTL 50s) so popovers / focus events don't re-hit the API.
-    • Exponential backoff on 429/503 (cap 5 min); honor Retry-After.
-    • Pause when document.hidden; resume + immediate refresh on visibility return.
-    • Failure path: keep snapshot, switch .live-ts to .stale (1 miss) / .offline (2+).
-
-  This sample uses fictional tickers (ALPH, BETA, …) so we run a random walker
-  instead of hitting real APIs. The shape of the production code is preserved
-  (cycle, jitter, stagger, cache, backoff hooks) so the agent has a working
-  template — flip DEMO_MODE to false and wire fetchYahoo / fetchCoinGeckoBatch
-  to use it on a real portfolio.
--->
-<script>
-(() => {
-  /* === Configuration === */
-  const REFRESH_MS     = 60_000;     // 1 min base interval
-  const JITTER_MS      = 5_000;      // ±5s per cycle
-  const STAGGER_MS     = 800;        // delay between consecutive ticker requests
-  const CACHE_TTL_MS   = 50_000;
-  const FETCH_TIMEOUT  = 5_000;
-  const MAX_BACKOFF_MS = 5 * 60_000;
-  const DEMO_MODE      = true;       // sample only — production reports flip this off
-
-  /* === CORS proxy chain (Yahoo only — CoinGecko is direct) === */
-  /* Maintained list; rotate randomly per cycle; remove an entry rather than chain unstable proxies. */
-  const CORS_PROXIES = [
-    (u) => 'https://corsproxy.io/?'                   + encodeURIComponent(u),
-    (u) => 'https://api.allorigins.win/raw?url='      + encodeURIComponent(u),
-    (u) => 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(u),
-  ];
-
-  /* === Helpers === */
-  const cells     = Array.from(document.querySelectorAll('.price-cell[data-ticker]'));
-  const heartbeat = document.getElementById('heartbeat');
-  const liveTs    = document.getElementById('liveTs');
-
-  const fmt = (n) => n >= 1000
-    ? '$' + n.toLocaleString('en-US', {maximumFractionDigits: 0})
-    : '$' + n.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
-  const sign = (x) => (x >= 0 ? '+' : '−');
-  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-  const shuffle = (arr) => arr.slice().sort(() => Math.random() - 0.5);
-
-  /* === Cache + backoff state === */
-  const cache = new Map();
-  const getCached = (k) => {
-    const e = cache.get(k);
-    return e && (Date.now() - e.t) < CACHE_TTL_MS ? e.v : null;
-  };
-  const setCached = (k, v) => cache.set(k, { t: Date.now(), v });
-
-  let backoffMs = 0;
-  let consecutiveMisses = 0;
-  const onRateLimit = (retryAfterMs = 0) => {
-    backoffMs = Math.min(Math.max(retryAfterMs, (backoffMs || REFRESH_MS) * 2), MAX_BACKOFF_MS);
-  };
-  const onSuccess = () => { backoffMs = 0; consecutiveMisses = 0; };
-  const onMiss    = () => { consecutiveMisses++; };
-
-  /* === Polite fetch === */
-  async function politeJson(url, opts = {}) {
-    const ctl = new AbortController();
-    const t = setTimeout(() => ctl.abort(), FETCH_TIMEOUT);
-    try {
-      const r = await fetch(url, {
-        ...opts,
-        signal: ctl.signal,
-        headers: {
-          'Accept': 'application/json, text/plain, */*',
-          'Accept-Language': 'en-US,en;q=0.9',
-          ...(opts.headers || {})
-        }
-      });
-      if (r.status === 429 || r.status === 503) {
-        const ra = parseInt(r.headers.get('Retry-After') || '0', 10) * 1000;
-        onRateLimit(ra);
-        return null;
-      }
-      if (!r.ok) return null;
-      return await r.json();
-    } catch { return null; }
-    finally { clearTimeout(t); }
-  }
-
-  /* === Yahoo via rotating proxy === */
-  async function fetchYahoo(symbol) {
-    const cached = getCached('y:' + symbol);
-    if (cached) return cached;
-    const target = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1m`;
-    for (const proxify of shuffle(CORS_PROXIES)) {
-      const data = await politeJson(proxify(target));
-      const meta = data?.chart?.result?.[0]?.meta;
-      if (meta) {
-        onSuccess();
-        setCached('y:' + symbol, meta);
-        return meta;
-      }
-    }
-    onMiss();
-    return null;
-  }
-
-  /* === CoinGecko batch (single call for all crypto holdings per cycle) === */
-  async function fetchCoinGeckoBatch(ids) {
-    if (!ids.length) return null;
-    const key = 'cg:' + ids.join(',');
-    const cached = getCached(key);
-    if (cached) return cached;
-    const url = `https://api.coingecko.com/api/v3/simple/price?ids=${ids.join(',')}&vs_currencies=usd&include_24hr_change=true`;
-    const data = await politeJson(url);
-    if (data) {
-      onSuccess();
-      setCached(key, data);
-      return data;
-    }
-    onMiss();
-    return null;
-  }
-
-  /* === Demo random walker === */
-  const fakeWalker = (snap) => snap * (1 + (Math.random() - 0.5) * 0.012);
-
-  /* === Render one cell === */
-  const updateCell = async (cell, idx) => {
-    const ticker = cell.dataset.ticker;
-    if (!cell.dataset.snapshot) cell.dataset.snapshot = cell.dataset.price;
-    if (ticker === 'USD' || ticker === 'CCY1') return; // cash row, skip
-
-    /* Stagger requests within a cycle */
-    if (idx > 0) await sleep(STAGGER_MS * idx);
-
-    const oldPrice = parseFloat(cell.dataset.price);
-    let newPrice;
-    if (DEMO_MODE) {
-      newPrice = fakeWalker(parseFloat(cell.dataset.snapshot));
-    } else {
-      // Production: route by market type. Hook fetchYahoo / fetchCoinGeckoBatch here.
-      newPrice = oldPrice; // placeholder — agent fills with real source-selection
-    }
-
-    const prev    = parseFloat(cell.dataset.prev);
-    const movePct = ((newPrice - prev) / prev) * 100;
-    const numEl   = cell.querySelector('.price-num');
-    const subEl   = cell.querySelector('.price-sub');
-    if (numEl) numEl.textContent = fmt(newPrice);
-    if (subEl) {
-      const stateBadge = subEl.querySelector('.state').outerHTML;
-      const cls = movePct > 0 ? 'pos' : movePct < 0 ? 'neg' : '';
-      subEl.className = 'price-sub ' + cls;
-      subEl.innerHTML = sign(movePct) + Math.abs(movePct).toFixed(2) + '%' + stateBadge;
-    }
-
-    cell.classList.remove('flash-up','flash-down');
-    void cell.offsetWidth;
-    if (newPrice > oldPrice)      cell.classList.add('flash-up');
-    else if (newPrice < oldPrice) cell.classList.add('flash-down');
-    setTimeout(() => cell.classList.remove('flash-up','flash-down'), 1300);
-    cell.dataset.price = newPrice.toFixed(4);
-  };
-
-  /* === Cycle === */
-  const cycle = () => {
-    cells.forEach((cell, i) => updateCell(cell, i));
-    if (heartbeat && consecutiveMisses === 0) {
-      heartbeat.classList.remove('beat');
-      void heartbeat.offsetWidth;
-      heartbeat.classList.add('beat');
-    }
-    if (liveTs) {
-      const t = new Date();
-      liveTs.textContent = '最後刷新 ' + t.toTimeString().slice(0,8);
-      liveTs.classList.remove('stale','offline');
-      if (consecutiveMisses === 1) liveTs.classList.add('stale');
-      if (consecutiveMisses >= 2)  liveTs.classList.add('offline');
-    }
-  };
-
-  /* Per-cycle jitter so two browser tabs don't synchronize */
-  const nextDelay = () => REFRESH_MS + (Math.random() * 2 - 1) * JITTER_MS + backoffMs;
-
-  let timer;
-  const schedule = () => { timer = setTimeout(() => { cycle(); schedule(); }, nextDelay()); };
-  schedule();
-
-  document.addEventListener('visibilitychange', () => {
-    if (document.hidden) {
-      clearTimeout(timer);
-    } else {
-      cycle();      // immediate refresh on return
-      schedule();   // resume jittered cycle
-    }
-  });
-})();
-</script>
 
 </body>
 </html>
