@@ -4,6 +4,8 @@ This spec governs every change the agent makes to `HOLDINGS.md`. The user descri
 
 `HOLDINGS.md` is the **open-position ledger**, not a trade log. After a sell, the lot quantity decreases or the line disappears; realized P&L is reported in the confirmation step but is not persisted into the file.
 
+**README languages** · [English](../README.md) · [繁體中文](l10n/README.zh-Hant.md) · [简体中文](l10n/README.zh-Hans.md) · [日本語](l10n/README.ja.md) · [Tiếng Việt](l10n/README.vi.md) · [한국어](l10n/README.ko.md) (canonical project overview: English; this spec is English-only.)
+
 ## When this spec applies
 
 Any user message that describes a position change. Typical phrasings:

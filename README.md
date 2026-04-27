@@ -1,5 +1,9 @@
 # Investments — Personal Research & Portfolio Reporting
 
+**README languages** · [English](README.md) · [繁體中文](docs/l10n/README.zh-Hant.md) · [简体中文](docs/l10n/README.zh-Hans.md) · [日本語](docs/l10n/README.ja.md) · [Tiếng Việt](docs/l10n/README.vi.md) · [한국어](docs/l10n/README.ko.md)
+
+The **English** [README](README.md) in this file is the canonical, up-to-date project overview. Other language pages are for convenience; when in doubt, follow the English text.
+
 This repo is a personal workspace for an AI investment research agent. It contains:
 
 1. Agent specs (how the agent should think and write).
@@ -14,7 +18,8 @@ The agent runs inside an LLM client (e.g. Cowork / Claude). When you ask it to "
 
 ```
 .
-├── README.md                              ← you are here
+├── README.md                              ← you are here (EN)
+├── docs/l10n/                             ← non-English READMEs (same project overview)
 ├── AGENTS.md                              ← global agent spec (research style, output structure)
 ├── /docs/portfolio_report_agent_guidelines.md   ← spec for the portfolio report HTML deliverable
 ├── /docs/holdings_update_agent_guidelines.md    ← spec for natural-language holdings updates

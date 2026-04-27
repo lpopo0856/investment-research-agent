@@ -5,6 +5,8 @@
 > This spec is the single source of truth for any "portfolio health check" / "portfolio report" run.
 > When invoked, follow it end-to-end, top-to-bottom.
 
+**README languages** · [English](../README.md) · [繁體中文](l10n/README.zh-Hant.md) · [简体中文](l10n/README.zh-Hans.md) · [日本語](l10n/README.ja.md) · [Tiếng Việt](l10n/README.vi.md) · [한국어](l10n/README.ko.md) (canonical overview: English; this spec is English-only.)
+
 ---
 
 ## Table of contents

@@ -1,0 +1,96 @@
+# Investments — 개인 리서치·포트폴리오 리포트
+
+**README 언어** · [English](../../README.md) · [繁體中文](README.zh-Hant.md) · [简体中文](README.zh-Hans.md) · [日本語](README.ja.md) · [Tiếng Việt](README.vi.md) · [한국어](README.ko.md)
+
+저장소 루트의 **영어** [README](../../README.md)이 최신·권위 있는 프로젝트 개요입니다. 다른 언어는 읽기 편의를 위한 것이며, 해석이 다르면 영어를 따르세요.
+
+이 저장소는 AI 투자 리서치 에이전트의 개인 작업 공간입니다. 포함 항목:
+
+1. 에이전트 사양(사고·문체).
+2. 개인 데이터(보유·설정) — git에 포함되지 않음.
+3. `reports/`에 생성된 HTML 보고서 — git 제외.
+4. 포트폴리오 리포트 HTML 디자인 참고 샘플.
+5. `scripts/`의 Python 템플릿 두 개 — 세션마다 직접 실행, 매번 가격·HTML 코드를 새로 쓸 필요 없음.
+
+에이전트는 LLM 클라이언트(예: Cowork / Claude)에서 동작합니다. "포트폴리오 헬스체크"를 요청하면 사양과 개인 데이터를 읽고, `scripts/fetch_prices.py`로 `yfinance`를 통해 최신가를 가져오며(사양의 페이싱·폴백), `scripts/generate_report.py`로 `reports/`에 자급자족 HTML을 씁니다.
+
+## 저장소 구조
+
+```
+.
+├── README.md
+├── docs/l10n/
+├── AGENTS.md
+├── /docs/portfolio_report_agent_guidelines.md
+├── /docs/holdings_update_agent_guidelines.md
+├── SETTINGS.md
+├── SETTINGS.example.md
+├── HOLDINGS.md
+├── HOLDINGS.md.bak
+├── HOLDINGS.example.md
+├── /scripts/
+│   ├── fetch_prices.py
+│   └── generate_report.py
+├── .gitignore
+└── reports/
+    ├── _sample_redesign.html
+    └── *_portfolio_report.html
+```
+
+## 최초 설정
+
+1. 예제를 복사한 뒤 실제 데이터를 채웁니다:
+
+   ```sh
+   cp SETTINGS.example.md SETTINGS.md
+   cp HOLDINGS.example.md HOLDINGS.md
+   ```
+
+2. `SETTINGS.md` 편집: 언어, 투자 성향(리스크에 맞게), (선택) 경고용 포지션 한도.
+
+3. `HOLDINGS.md` 편집: 네 구획(`Long Term`, `Mid Term`, `Short Term`, `Cash Holdings`) 유지. 한 로트 한 줄: `<TICKER>: 수량 @ 단가 on <YYYY-MM-DD> [<MARKET>]` — 날짜는 보유기간 분석에, `[<MARKET>]`는 `yfinance` 심볼·폴백에 사용. 일반 태그: `[US]`, `[TW]`, `[TWO]`, `[JP]`, `[HK]`, `[LSE]`, `[crypto]`, `[FX]`, `[cash]`. 전체 표는 `HOLDINGS.example.md`와 `docs/portfolio_report_agent_guidelines.md` §4.1. 모를 때 `?` — 영향 셀은 `n/a`(해당 없음은 `—`).
+
+`HOLDINGS*`, `SETTINGS.md`는 `.gitignore`이며 git으로 나가지 않습니다.
+
+## 에이전트 사용
+
+### 1. 리서치 질문
+
+`SETTINGS.md`·`HOLDINGS.md`를 읽고 `AGENTS.md` 프레임(결론, 펀더멘털, 밸류에이션, 기술, 리스크, 플레이북, 점수, 판단)을 따릅니다.
+
+### 2. 포트폴리오 헬스체크
+
+`/docs/portfolio_report_agent_guidelines.md`에 따라 `reports/`에 단일 HTML. 11절(요약, 대시보드, 보유·손익·로트 팝오버, 보유기간·페이싱, 테마/섹터, 뉴스, 30일 캘린더, 리스크/기회, 권고 조정, 액션, 출처·갭). 고우선 경고 시 상단 배너.
+
+에이전트는 두 Python 템플릿을 실행합니다:
+
+```sh
+python scripts/fetch_prices.py --holdings HOLDINGS.md --settings SETTINGS.md --output prices.json
+
+python scripts/generate_report.py \
+    --holdings HOLDINGS.md --settings SETTINGS.md \
+    --prices prices.json --context report_context.json \
+    --output reports/2026-04-28_1330_portfolio_report.html
+```
+
+`report_context.json`은 서술층(오늘의 견해, 뉴스, 권고, 액션). 수치는 스크립트가 기계적으로 생성합니다.
+
+### 3. 자연어로 보유 업데이트
+
+거래를 설명합니다. `/docs/holdings_update_agent_guidelines.md` — 조용한 덮어쓰기 없음, 명시적 `yes` 전까지 확정 없음, `HOLDINGS.md.bak` 백업.
+
+## 생성물
+
+`reports/<YYYY-MM-DD>_<HHMM>_portfolio_report.html` — 외부 CSS/JS/폰트/차트 없이 단일 파일. `reports/_sample_redesign.html`은 캐노니컬 시각 기준(삭제 금지). `generate_report.py`가 여기서 CSS를 읽습니다.
+
+## 사양 편집
+
+`AGENTS.md`와 `/docs`의 두 가이드가 실행을 규정합니다. 개인 데이터는 `SETTINGS`·`HOLDINGS`에. 대규모 변경 후 보고서 한 건 재생성으로 검증하세요.
+
+## 프라이버시
+
+보유·백업·설정·생성 HTML은 git-ignored. 추적되는 것은 템플릿·사양. fork·공유 시에도 실제 포지션은 로컬에만 둡니다.
+
+## 면책
+
+이 저장소와 보고서는 개인 연구용입니다. 투자 자문·매수·매도 권유가 아니며, 거래 전에 반드시 독립적으로 검증하십시오. 데이터 공백은 드러나도 오류는 남을 수 있습니다.
