@@ -22,9 +22,9 @@ This is an **example** holdings file. Copy it to `HOLDINGS.md` and replace every
 - BETA: 215 shares @ $139.52 on 2096-08-04
 - GAMA: 17 shares @ $609.65 on 2097-11-20
 - GAMA: 10 shares @ $487.81 on 2098-02-14
-- GAMA: 23 shares @ $475.39 on 2098-05-30
+- GAMA: 23 shares @ $475.39 on ?
 - ALPH 1 @ ? on 2095-03-12
-- COIN2 8.78 @ ? on 2096-09-01
+- COIN2 8.78 @ ? on ?
 
 ## Mid Term (1y+)
 
