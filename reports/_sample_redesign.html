@@ -36,6 +36,11 @@
   /* Animation tints (low-alpha) */
   --pos-flash:    rgba(21,112,61,.18);
   --neg-flash:    rgba(180,35,24,.18);
+
+  /* Layering */
+  --table-header-z: 70;
+  --popover-host-z: 40;
+  --popover-z:      50;
 }
 
 *{box-sizing:border-box}
@@ -239,11 +244,13 @@ table{
 }
 thead th{
   position:sticky;top:0;background:var(--paper);
+  z-index:var(--table-header-z);
   text-align:left;
   padding:10px 12px;
   font-size: clamp(10px, 0.15vw + 9.5px, 11.5px);
   letter-spacing:.12em;font-weight:700;color:var(--muted);
   border-bottom:1px solid var(--hairline-2);
+  box-shadow:0 1px 0 var(--hairline-2);
 }
 tbody td{
   padding:11px 12px;
@@ -353,7 +360,7 @@ td.num,th.num{text-align:right}
 
 .pop{
   position:absolute;
-  z-index:200;
+  z-index:var(--popover-z);
   /* Anchor: just below the trigger, slight indent so it does not crowd the cell edge */
   top:calc(100% + 8px);
   left:0;
@@ -370,12 +377,14 @@ td.num,th.num{text-align:right}
 
   /* Sizing */
   width:max-content;
-  max-width:min(320px, calc(100vw - 32px));
+  min-width:min(300px, calc(100vw - 64px));
+  max-width:min(560px, calc(100vw - 64px));
 
   /* Typography (matches body palette, not reversed) */
   font-size: clamp(12px, 0.25vw + 11.4px, 13px);
   line-height:1.55;
   text-align:left;
+  overflow-wrap:normal;
 
   /* Hidden by default with fade transition */
   opacity:0;
@@ -387,6 +396,13 @@ td.num,th.num{text-align:right}
 
 /* Edge handling: cells in the right half of the table anchor the popover to the right */
 .tbl-wrap td:nth-last-child(-n+3) .pop{left:auto;right:0}
+
+/* Raise the active table cell so descendant popovers are not trapped below sticky cells. */
+tbody td:has(.sym-trigger:is(:hover,:focus-within)),
+tbody td:has(.price-trigger:is(:hover,:focus-within)){
+  position:relative;
+  z-index:var(--popover-host-z);
+}
 
 /* Show on hover OR keyboard focus (descendant popover stays open while hovering its content) */
 .sym-trigger:hover > .pop,
@@ -405,9 +421,14 @@ td.num,th.num{text-align:right}
 /* Internal layout — light theme tokens throughout */
 .pop h4{margin:0 0 6px;font-size:13px;font-weight:680;color:var(--ink);letter-spacing:0}
 .pop .pop-sub{font-size:11.5px;color:var(--muted);margin-bottom:8px}
-.pop table{width:100%;font-size:11.5px;color:var(--ink-soft);min-width:0;border:0}
+.pop table{
+  width:100%;font-size:11.5px;color:var(--ink-soft);min-width:0;border:0;
+  table-layout:auto;
+}
+.pop table th,.pop table td{white-space:nowrap;overflow-wrap:normal}
 .pop thead th{
   position:static;background:transparent;color:var(--muted);
+  z-index:auto;box-shadow:none;
   font-size:10px;letter-spacing:.08em;
   padding:4px 6px;border-bottom:1px solid var(--hairline);text-transform:none;
 }
@@ -421,8 +442,15 @@ td.num,th.num{text-align:right}
 }
 .pop .pop-row{display:flex;justify-content:space-between;gap:14px;padding:4px 0;border-bottom:1px dotted var(--hairline)}
 .pop .pop-row:last-child{border-bottom:0}
-.pop .pop-row .k{color:var(--muted)}
-.pop .pop-row .v{color:var(--ink);font-weight:600}
+.pop .pop-row .k{color:var(--muted);flex:0 0 auto}
+.pop .pop-row .v{
+  color:var(--ink);
+  font-weight:600;
+  flex:1 1 auto;
+  min-width:0;
+  text-align:right;
+  overflow-wrap:break-word;
+}
 .pop .pop-pos{color:var(--pos);font-weight:600}
 .pop .pop-neg{color:var(--neg);font-weight:600}
 
@@ -433,11 +461,21 @@ td.num,th.num{text-align:right}
 @media (max-width:880px), (hover:none){
   .pop{
     position:fixed;
-    left:12px;right:12px;bottom:12px;top:auto;
+    left:max(12px, env(safe-area-inset-left));
+    right:max(12px, env(safe-area-inset-right));
+    bottom:max(12px, env(safe-area-inset-bottom));
+    top:auto;
     width:auto;max-width:none;
+    max-height:calc(100vh - 32px);
+    max-height:min(72vh, calc(100dvh - 32px));
+    overflow:auto;
+    overscroll-behavior:contain;
+    -webkit-overflow-scrolling:touch;
     transform:translateY(20px);
     box-shadow:0 10px 30px rgba(15,25,31,.18), 0 2px 6px rgba(0,0,0,.08);
   }
+  .pop table{table-layout:fixed}
+  .pop table th,.pop table td{white-space:normal;overflow-wrap:anywhere}
   .sym-trigger:hover > .pop,
   .sym-trigger:focus-within > .pop,
   .price-trigger:hover > .pop,
@@ -572,6 +610,7 @@ td.num,th.num{text-align:right}
     background:var(--surface);
     box-shadow:1px 0 0 var(--hairline);
   }
+  thead th:first-child{z-index:calc(var(--table-header-z) + 1);background:var(--paper)}
   tr:hover td:first-child{background:var(--surface-2)}
   .price-num{font-size:15px}                        /* floor */
   .period-strip{height:14px}

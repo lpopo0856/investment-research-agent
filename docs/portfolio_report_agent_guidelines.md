@@ -302,11 +302,25 @@ The trigger is a `<div tabindex="0" role="button">` (not `<button>`) because the
 The popover uses the same surface palette as the rest of the page. **Do not** use a dark background with light text — that breaks the editorial look and makes the popover feel like a different application surface.
 
 ```css
+:root{
+  --table-header-z:70;
+  --popover-host-z:40;
+  --popover-z:50;
+}
+
+thead th{
+  position:sticky;
+  top:0;
+  z-index:var(--table-header-z);
+  background:var(--paper);
+  box-shadow:0 1px 0 var(--hairline-2);
+}
+
 .pop{
   position:absolute;
   top:calc(100% + 8px);              /* anchored just below the trigger, near the cursor */
   left:0;
-  z-index:200;
+  z-index:var(--popover-z);
 
   background:var(--surface);          /* light paper surface */
   color:var(--ink);                   /* primary ink */
@@ -318,10 +332,12 @@ The popover uses the same surface palette as the rest of the page. **Do not** us
   box-shadow:0 6px 20px rgba(15,25,31,.10), 0 1px 2px rgba(0,0,0,.04);
 
   width:max-content;
-  max-width:min(320px, calc(100vw - 32px));
+  min-width:min(300px, calc(100vw - 64px));
+  max-width:min(560px, calc(100vw - 64px));
   font-size:clamp(12px, 0.25vw + 11.4px, 13px);
   line-height:1.55;
   text-align:left;
+  overflow-wrap:normal;
 
   /* Hidden by default; fade in via opacity + small lift */
   opacity:0;
@@ -334,6 +350,13 @@ The popover uses the same surface palette as the rest of the page. **Do not** us
 /* Cells in the right portion of the table anchor right so popovers don't overflow */
 .tbl-wrap td:nth-last-child(-n+3) .pop{left:auto;right:0}
 
+/* Raise the active table cell so descendant popovers are not trapped below sticky cells. */
+tbody td:has(.sym-trigger:is(:hover,:focus-within)),
+tbody td:has(.price-trigger:is(:hover,:focus-within)){
+  position:relative;
+  z-index:var(--popover-host-z);
+}
+
 /* Show on hover or focus — descendant popover keeps :hover state while pointed at */
 .sym-trigger:hover > .pop,
 .sym-trigger:focus-within > .pop,
@@ -343,9 +366,25 @@ The popover uses the same surface palette as the rest of the page. **Do not** us
   transition:opacity .18s ease, transform .18s ease, visibility 0s;
   pointer-events:auto;
 }
+
+.pop table{
+  width:100%;
+  min-width:0;
+  table-layout:auto;
+}
+.pop table th,.pop table td{
+  white-space:nowrap;
+  overflow-wrap:normal;
+}
+.pop thead th{
+  position:static;
+  z-index:auto;
+  background:transparent;
+  box-shadow:none;
+}
 ```
 
-Internal styling uses the same tokens as the page body — `--ink` text on `--surface`, `--muted` for sublines, `--hairline` for dividers, `--pos` / `--neg` for signed numbers. No custom dark-mode palette inside the popover.
+Internal styling uses the same tokens as the page body — `--ink` text on `--surface`, `--muted` for sublines, `--hairline` for dividers, `--pos` / `--neg` for signed numbers. No custom dark-mode palette inside the popover. On desktop, popovers must expand to fit their content up to the viewport-aware max width; do not force table cells or short labels to wrap early. Long flex value cells such as `.pop-row .v` should use `min-width:0; text-align:right; overflow-wrap:break-word;` so only genuinely long prose wraps.
 
 #### Symbol popover content
 
@@ -367,18 +406,29 @@ Internal styling uses the same tokens as the page body — `--ink` text on `--su
 A subtle but critical detail: `.tbl-wrap` activates `overflow-x:auto` on tablet (≤ 880px) and phone (≤ 600px) to allow horizontal scrolling of the wide table. Browsers coerce `overflow-y` to `auto` whenever `overflow-x` is non-visible, which would clip any popover that extends below its cell. The fix:
 
 - **Desktop ≥ 881px** — `.tbl-wrap` has *no* overflow constraint (the table fits within the page container at its `min-width:760px`). Popover is `position:absolute`, anchored to the trigger, fades in below the cell.
-- **Tablet 601–880px** and **Phone ≤ 600px** — `.tbl-wrap` enables `overflow-x:auto`. To escape the resulting overflow context, the popover switches to `position:fixed; left:12px; right:12px; bottom:12px;` — a slide-up bottom sheet that covers the full page width.
+- **Tablet 601–880px** and **Phone ≤ 600px** — `.tbl-wrap` enables `overflow-x:auto`. To escape the resulting overflow context, the popover switches to a fixed bottom sheet using safe-area insets: `position:fixed; left:max(12px, env(safe-area-inset-left)); right:max(12px, env(safe-area-inset-right)); bottom:max(12px, env(safe-area-inset-bottom));`. It must also set `max-height:min(72vh, calc(100dvh - 32px)); overflow:auto; overscroll-behavior:contain;` so long text or lot tables scroll inside the sheet instead of exceeding the viewport.
 - **Touch (`@media (hover:none)`)** — hover does not fire reliably; suppress the hover trigger and only respond to `:focus-within` (i.e. tap). Tap outside the trigger blurs the focus and dismisses the sheet automatically.
+- **Layering** — because this pattern intentionally does not use native HTML top-layer popovers, the CSS must explicitly separate layers: sticky table headers use `z-index:var(--table-header-z)` and an opaque `var(--paper)` background so scrolling rows never cover the header; `.pop` uses `z-index:var(--popover-z)` and the active table cell uses `z-index:var(--popover-host-z)` via `:has(...)`.
 
 ```css
 @media (max-width:880px), (hover:none){
   .pop{
     position:fixed;
-    left:12px;right:12px;bottom:12px;top:auto;
+    left:max(12px, env(safe-area-inset-left));
+    right:max(12px, env(safe-area-inset-right));
+    bottom:max(12px, env(safe-area-inset-bottom));
+    top:auto;
     width:auto;max-width:none;
+    max-height:calc(100vh - 32px);
+    max-height:min(72vh, calc(100dvh - 32px));
+    overflow:auto;
+    overscroll-behavior:contain;
+    -webkit-overflow-scrolling:touch;
     transform:translateY(20px);
     box-shadow:0 10px 30px rgba(15,25,31,.18), 0 2px 6px rgba(0,0,0,.08);
   }
+  .pop table{table-layout:fixed}
+  .pop table th,.pop table td{white-space:normal;overflow-wrap:anywhere}
   .sym-trigger:hover > .pop,
   .sym-trigger:focus-within > .pop,
   .price-trigger:hover > .pop,
@@ -410,6 +460,7 @@ Honor `@media (prefers-reduced-motion: reduce)` — drop the fade and slide to a
 - **Popovers anchored to the cell or the row** rather than to the trigger element — that pushes them away from the cursor and weakens the "next to mouse" feel.
 - **`<button>` as the trigger when content includes block elements** (e.g. tables) — invalid HTML; use `<div tabindex="0" role="button">`.
 - **`overflow:hidden` on `.tbl-wrap`** — silently clips popovers. Use `overflow-x:auto` only when needed (tablet + phone) and rely on the `position:fixed` bottom-sheet escape hatch.
+- **Mobile bottom sheets without viewport bounds** — any mobile / touch popover must have safe-area-aware left/right/bottom, a `100dvh`-based max height, internal scrolling, long-text wrapping, and active-cell z-index promotion.
 
 ### Holding period & pacing section — must contain
 
@@ -572,10 +623,10 @@ These floors override any media query. The phone breakpoint may *fix* a value at
 - **Charts**:
   - Donut: SVG `circle` with `stroke-dasharray`. Center shows total. Radius 42, stroke-width 20. Slice colors come from `--accent`, `--pos`, `--accent-warm`, `--info`, `--warn`. **No** neon-blue / cyan gradients.
   - Bar chart: track 6px tall, `#ebe7da` background, `border-radius:2px`. Bar uses solid color (default `--ink`; for signed values use `--pos` / `--neg` / `--warn` / `--info`). **No** 18px-thick bars with linear-gradient fills.
-- **Table**: 1px `--ink` top and bottom rule. Row dividers 1px `--hairline`. Header is small-caps `--muted` with no background. Hover row uses `--surface-2`. Numeric cells `text-align:right` + tabular-nums. Ticker weight 680. Category chip uses thin-bordered `tag`.
-- **Symbol cell button** (`button.sym-trigger`): inherits font from cell, no background, no border, padding 0, `cursor:help`, dotted underline on hover or focus. Looks like plain text until probed.
-- **Price cell button**: same chrome-free styling. The cell wraps `price + .sub move` inside the trigger so the whole price block is hoverable and the popover anchors correctly.
-- **Popover (`.pop`)**: `--ink` background, `--surface` text, padding 12–14px, border-radius 4px, `box-shadow:0 8px 20px rgba(0,0,0,.18)` (only place box-shadow > 1px is allowed in this spec; popovers live in the top layer so the shadow does not mix into the page). Max-width `min(360px, calc(100vw - 24px))`. Inner table uses 11.5px tabular numerics.
+- **Table**: 1px `--ink` top and bottom rule. Row dividers 1px `--hairline`. Header is sticky (`position:sticky; top:0`) with opaque `var(--paper)` background, `z-index:var(--table-header-z)`, small-caps `--muted`, and a 1px bottom shadow/rule so scrolling body rows cannot cover it. Hover row uses `--surface-2`. Numeric cells `text-align:right` + tabular-nums. Ticker weight 680. Category chip uses thin-bordered `tag`.
+- **Symbol cell trigger** (`div.sym-trigger[tabindex="0"][role="button"]`): inherits font from cell, no background, no border, padding 0, `cursor:help`, dotted underline on hover or focus. Looks like plain text until probed.
+- **Price cell trigger**: same chrome-free styling. The cell wraps `price + .sub move` inside the trigger so the whole price block is hoverable and the popover anchors correctly.
+- **Popover (`.pop`)**: `--surface` background, `--ink` text, padding 12–14px, border-radius 4px, `box-shadow:0 6px 20px rgba(15,25,31,.10), 0 1px 2px rgba(0,0,0,.04)` on desktop and a stronger bottom-sheet shadow on mobile. Desktop uses `width:max-content`, `min-width:min(300px, calc(100vw - 64px))`, and `max-width:min(560px, calc(100vw - 64px))`; do not use a narrow fixed width that causes avoidable wrapping. Tablet / phone uses fixed bottom-sheet placement, safe-area insets, high z-index, `max-height:min(72vh, calc(100dvh - 32px))`, internal scrolling, and long-text wrapping. Inner table uses 11.5px tabular numerics; desktop lot-table cells stay `white-space:nowrap`, while mobile/touch sheets restore normal wrapping.
 - **Risk heatmap**: 5-column grid. Cells separated by 1px hairline (not gap). Each cell carries a 3px left risk rule (low / mid / high = light blue / amber / red). Cell contents: ticker, `Risk N/10`, `weight · move`. **Do not** flood the cell with saturated background color.
 - **Action list**: 84px label column on the left (translated per SETTINGS), description on the right. Rows separated by dotted hairline.
 - **Border-radius**: keep page-wide radius in **2–4px**. Only chips / badges may go to 3–4px; bar tracks 2px. Popovers may go to 4px. **Never** use radius ≥ 8px. **Never** use `border-radius:999px` (pill) on cards, bars, or tracks.
@@ -620,7 +671,7 @@ The HTML must include a `<meta name="viewport" content="width=device-width, init
 |---|---|---|
 | Desktop | ≥ 881px | Default layout — all multi-column grids active, no horizontal scroll. Body 14.5–15.5px, table 13–13.5px |
 | Tablet | 601–880px | KPI strip → 2 cols. `cols-2` / `cols-3` → 1 col. Donut + bars stack. Risk heatmap → 2 cols. Body 14–14.5px, table 13px. Bar-row label width tightens |
-| Phone | ≤ 600px | KPI strip → 1 col. Risk heatmap → 1 col. Holdings table is wrapped in `.tbl-wrap` with horizontal scroll. **First column (Symbol) is `position:sticky; left:0; z-index:1` with a 1px shadow** so the user never loses row context while scrolling. **Body 14px floor, table 12.5px floor, sublines 11px floor — never lower.** Footer / legend density tightens. Action labels narrow to a 64px column |
+| Phone | ≤ 600px | KPI strip → 1 col. Risk heatmap → 1 col. Holdings table is wrapped in `.tbl-wrap` with horizontal scroll. **First column (Symbol) is `position:sticky; left:0; z-index:1` with a 1px shadow** so the user never loses row context while scrolling; **the header's first cell must override back to `z-index:calc(var(--table-header-z) + 1)` and `background:var(--paper)`** so it stays above row cells. **Body 14px floor, table 12.5px floor, sublines 11px floor — never lower.** Footer / legend density tightens. Action labels narrow to a 64px column |
 
 Required wrappers and patterns:
 
@@ -628,8 +679,8 @@ Required wrappers and patterns:
   ```html
   <div class="tbl-wrap"><table>…</table></div>
   ```
-  with `overflow-x:auto`, `-webkit-overflow-scrolling:touch`, a negative left/right margin equal to the page's side padding, and a `min-width` on the inner table (≥ 680px on phone, ≥ 760px on tablet) so the layout doesn't collapse into illegibility.
-- Sticky first column on phone: applies to both `th:first-child` and `td:first-child`, with `background:var(--surface)` so cells don't bleed through during scroll, and a 1px right shadow (`box-shadow:1px 0 0 var(--hairline)`) as the affordance edge.
+  Desktop `.tbl-wrap` must not set `overflow-x:auto`; otherwise browsers may clip descendant popovers. Enable `overflow-x:auto` and `-webkit-overflow-scrolling:touch` only at tablet / phone breakpoints, where popovers switch to fixed bottom sheets. Keep a negative left/right margin equal to the page's side padding and a `min-width` on the inner table (≥ 680px on phone, ≥ 760px on tablet) so the layout doesn't collapse into illegibility.
+- Sticky first column on phone: applies to both `th:first-child` and `td:first-child`, with `background:var(--surface)` so cells don't bleed through during scroll, and a 1px right shadow (`box-shadow:1px 0 0 var(--hairline)`) as the affordance edge. Add a later `thead th:first-child{z-index:calc(var(--table-header-z) + 1);background:var(--paper)}` override because the generic first-column rule otherwise lowers the sticky header's z-index.
 - KPI strip on phone: collapse to 1 column with row borders. Numeric value font respects the `clamp()` floor.
 - All cells that use `border-right` or `border-left` for column-style separation must have those properties **reset** under the phone breakpoint to avoid orphan rules.
 - Touch targets (popover triggers, links inside tables) must remain ≥ 30px tall on phone.
