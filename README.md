@@ -12,7 +12,7 @@ This repo is a personal workspace for an AI investment research agent. It contai
 4. A reference HTML design sample for the portfolio report.
 5. Two Python templates under `scripts/` that the agent runs as-is — no need to author price-fetching or HTML-rendering code per session.
 
-The agent runs inside an LLM client (e.g. Cowork / Claude). When you ask it to "produce a portfolio health check", it reads the specs and the personal data, runs `scripts/fetch_prices.py` to get the latest prices via `yfinance` (with the spec-mandated pacing and fallback), and runs `scripts/generate_report.py` to assemble the self-contained HTML in `reports/`.
+The agent runs inside an LLM client (e.g. Cowork / Claude). When you ask it to "produce a portfolio health check", it reads the specs and the personal data, runs `scripts/fetch_prices.py` to get the latest prices via market-aware sources (`yfinance` for listed securities / FX, Binance and CoinGecko first for crypto, with the spec-mandated pacing and fallback), and runs `scripts/generate_report.py` to assemble the self-contained HTML in `reports/`.
 
 ## Repo layout
 
@@ -29,8 +29,12 @@ The agent runs inside an LLM client (e.g. Cowork / Claude). When you ask it to "
 ├── HOLDINGS.md.bak                        ← rolling backup written by the update agent (git-ignored)
 ├── HOLDINGS.example.md                    ← template for HOLDINGS.md
 ├── /scripts/
-│   ├── fetch_prices.py                    ← canonical price-retrieval template (yfinance + fallback per spec §8)
-│   └── generate_report.py                 ← canonical HTML rendering template (per spec §10/§13/§14)
+│   ├── fetch_prices.py                    ← canonical price-retrieval template (market-aware sources per spec §8)
+│   ├── generate_report.py                 ← canonical HTML rendering template (per spec §5/§10/§13/§14)
+│   └── /i18n/
+│       ├── report_ui.en.json              ← stable UI dictionary (EN)
+│       ├── report_ui.zh-Hant.json         ← stable UI dictionary (繁中)
+│       └── report_ui.zh-Hans.json         ← stable UI dictionary (簡中)
 ├── .gitignore
 └── reports/
     ├── _sample_redesign.html              ← canonical visual reference (de-identified demo data)
@@ -54,7 +58,7 @@ The agent runs inside an LLM client (e.g. Cowork / Claude). When you ask it to "
 3. Edit `HOLDINGS.md`:
    - Replace every line with your actual positions.
    - Keep the four-bucket structure (`Long Term`, `Mid Term`, `Short Term`, `Cash Holdings`).
-   - One lot per line: `<TICKER>: <quantity> shares @ <cost basis> on <YYYY-MM-DD> [<MARKET>]` — the trailing `on YYYY-MM-DD` is the lot's acquisition date (powers hold-period analytics), and `[<MARKET>]` is the market-type tag the price agent uses to format the `yfinance` symbol and pick the right fallback hierarchy.
+   - One lot per line: `<TICKER>: <quantity> shares @ <cost basis> on <YYYY-MM-DD> [<MARKET>]` — the trailing `on YYYY-MM-DD` is the lot's acquisition date (powers hold-period analytics), and `[<MARKET>]` is the market-type tag the price agent uses to route the ticker to the correct primary quote source and fallback hierarchy.
    - Common market tags: `[US]`, `[TW]`, `[TWO]`, `[JP]`, `[HK]`, `[LSE]`, `[crypto]`, `[FX]`, `[cash]`. The full table lives in `HOLDINGS.example.md` and `docs/portfolio_report_agent_guidelines.md` §4.1.
    - Use `?` when cost basis or date is unknown — the agent renders the affected metric as `n/a` (vs. `—` for cells that never apply, e.g. cash P&L) rather than guessing.
 
@@ -82,15 +86,17 @@ The agent follows `/docs/portfolio_report_agent_guidelines.md` to produce a self
 Under the hood, the agent runs the two canonical Python templates rather than re-authoring the work each time:
 
 ```sh
-# 1. Latest prices via yfinance (with §8.3 pacing, §8.4 auto-correction, §8.5 fallback)
+# 1. Latest prices via yfinance for listed securities / FX and Binance-CoinGecko-first routing for crypto
 python scripts/fetch_prices.py --holdings HOLDINGS.md --settings SETTINGS.md --output prices.json
 
-# 2. HTML render (reads CSS from reports/_sample_redesign.html — the visual reference)
+# 2. HTML render (reads CSS from reports/_sample_redesign.html and stable JSON UI dictionaries)
 python scripts/generate_report.py \
     --holdings HOLDINGS.md --settings SETTINGS.md \
     --prices prices.json --context report_context.json \
     --output reports/2026-04-28_1330_portfolio_report.html
 ```
+
+If `SETTINGS.md` requests a non-built-in language, the **executing agent** should translate `scripts/i18n/report_ui.en.json` into a temporary JSON overlay and pass it with `--ui-dict /tmp/report_ui.<locale>.json`. The renderer itself does not call external translation services.
 
 The `report_context.json` is the agent's editorial layer: today's verdict prose, news items it gathered via web search, recommended adjustments, and the action list. Numeric content (totals, weights, P&L, hold period, pacing distribution, sources audit) comes from the two scripts mechanically.
 
@@ -122,6 +128,8 @@ reports/<YYYY-MM-DD>_<HHMM>_portfolio_report.html
 ```
 
 The HTML is a single self-contained file — no external CSS, JS, fonts, or chart libraries — so you can open it directly in a browser, share it, or archive it. There is **no Markdown summary or companion file** any more; the HTML is the single deliverable.
+
+`scripts/generate_report.py` loads stable built-in UI dictionaries from `scripts/i18n/report_ui.en.json`, `scripts/i18n/report_ui.zh-Hant.json`, and `scripts/i18n/report_ui.zh-Hans.json`. If `SETTINGS.md` requests another single language, the **executing agent** translates the English dictionary into a temporary JSON overlay and passes it to the renderer.
 
 `reports/_sample_redesign.html` is the canonical visual reference. It uses fully fictional data and exists only to lock in the design language. Do not delete it; both the portfolio agent and `scripts/generate_report.py` read its CSS as the single source of styling.
 

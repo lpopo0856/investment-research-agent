@@ -1,0 +1,232 @@
+{
+  "meta": {
+    "language_name": "繁體中文",
+    "html_lang": "zh-Hant"
+  },
+  "common": {
+    "na": "n/a",
+    "dash": "—",
+    "yes": "通過",
+    "risk_assets": "風險資產",
+    "cash_like": "現金與類現金",
+    "source": "來源",
+    "generated_at": "產生時間",
+    "benchmark_fx": "基準匯率",
+    "next_event": "下個事件"
+  },
+  "masthead": {
+    "eyebrow": "投資研究筆記",
+    "title": "投資組合健康檢查",
+    "subtitle": ""
+  },
+  "alerts": {
+    "badge": "高優先",
+    "title": "本日須立即關注"
+  },
+  "summary": {
+    "title": "今日總結",
+    "subtitle": "總體 × 持股 × 風險",
+    "placeholder": "（今日總結待補）"
+  },
+  "dashboard": {
+    "title": "投資組合儀表板",
+    "subtitle": "總體 KPI · USD 基準",
+    "total_assets": "總資產",
+    "invested": "投資部位",
+    "cash": "現金與類現金",
+    "known_pnl": "已知損益",
+    "total_assets_note": "含現金、加密、股票",
+    "invested_note": "{pct:.1f}% 風險資產",
+    "cash_note": "{pct:.1f}% 防守彈藥",
+    "pnl_note": "僅統計已知成本部位",
+    "cash_bar_label": "現金與風險資產比例",
+    "risk_legend": "風險資產 {pct:.1f}% · ${value:,.0f}",
+    "cash_legend": "現金與類現金 {pct:.1f}% · ${value:,.0f}"
+  },
+  "holdings": {
+    "title": "持股損益與權重",
+    "subtitle": "產出時靜態快照 · 滑鼠移到代號或價格可看細節",
+    "symbol": "代號",
+    "category": "類別",
+    "latest_price": "最新價",
+    "weight": "比重",
+    "value": "市值",
+    "pnl": "損益",
+    "action": "行動"
+  },
+  "category": {
+    "cash": "現金",
+    "stock_etf": "個股 / ETF",
+    "crypto": "加密資產",
+    "tw": "台股",
+    "jp": "日股",
+    "hk": "港股",
+    "lse": "英股",
+    "asset": "資產",
+    "chip_long": "長線",
+    "chip_mid": "中線",
+    "chip_short": "短線",
+    "chip_cash": "現金"
+  },
+  "bucket": {
+    "long": "長線（不賣）",
+    "mid": "中線（1 年以上）",
+    "short": "短線（12 個月）",
+    "cash": "現金部位"
+  },
+  "market": {
+    "US": "美股",
+    "TW": "台股",
+    "TWO": "櫃買",
+    "JP": "日股",
+    "HK": "港股",
+    "LSE": "英股",
+    "crypto": "加密資產",
+    "FX": "外匯",
+    "cash": "現金",
+    "unknown": "未知"
+  },
+  "freshness": {
+    "fresh": "新鮮",
+    "delayed": "延遲",
+    "stale_after_exhaustive_search": "窮盡搜尋後仍偏舊",
+    "n/a": "n/a"
+  },
+  "market_state": {
+    "regular_open": "正常交易時段",
+    "after_close": "收盤後",
+    "not_opened_yet": "尚未開盤",
+    "weekend_holiday": "週末 / 休市",
+    "crypto_24_7": "24 小時交易",
+    "unknown": "未知",
+    "n/a": "n/a"
+  },
+  "symbol_pop": {
+    "opened": "建倉時間",
+    "lots": "批次數",
+    "lots_suffix": "{count} 批"
+  },
+  "price_pop": {
+    "title_suffix": "每批損益",
+    "latest_price": "最新價",
+    "move_vs_prior": "較前收",
+    "move_24h": "24h",
+    "freshness": "新鮮度",
+    "market_basis": "市場基準",
+    "currency": "幣別",
+    "exchange": "交易所",
+    "acquired": "取得日",
+    "cost": "成本",
+    "quantity": "數量",
+    "pnl": "損益",
+    "avg_cost": "平均成本",
+    "total_cost": "總成本",
+    "total_pnl": "總損益",
+    "fx_na": "(FX n/a)"
+  },
+  "pnl_ranking": {
+    "title": "持股損益排序",
+    "subtitle": "已實現＋未實現損益（USD）"
+  },
+  "holding_period": {
+    "title": "持有期間與節奏",
+    "subtitle": "成本加權，不含現金",
+    "avg_hold": "平均持有",
+    "years_suffix": "年",
+    "avg_hold_note": "成本加權",
+    "oldest_lot": "最舊批次",
+    "newest_lot": "最新批次",
+    "held_over_1y": "持有 > 1 年",
+    "held_over_1y_note": "佔風險資產市值",
+    "period_strip_label": "持有期間分布",
+    "lt_1m": "< 1 月",
+    "m1_6": "1–6 月",
+    "m6_12": "6–12 月",
+    "y1_3": "1–3 年",
+    "y3_plus": "3 年以上"
+  },
+  "theme_sector": {
+    "title": "主題與行業暴險",
+    "subtitle": "USD 基準 · 含 ETF 穿透分配",
+    "placeholder": "（主題與行業暴險待補 — 由 agent 在執行時依 §4.3 自動分類後注入）"
+  },
+  "news": {
+    "title": "最新重大新聞",
+    "subtitle": "每核心部位 1–3 則",
+    "placeholder": "（最新重大新聞待補 — 由 agent 在執行時擷取 1–3 則／核心部位）",
+    "positive": "正面",
+    "neutral": "中性",
+    "negative": "負面",
+    "source_prefix": "來源："
+  },
+  "events": {
+    "title": "未來 30 天事件曆",
+    "subtitle": "財報、股東會、除息、產品、政策、央行、總體",
+    "date": "日期",
+    "topic": "標的 / 主題",
+    "event": "事件",
+    "impact": "影響",
+    "watch": "關注重點",
+    "empty": "（30 天內無已知事件）"
+  },
+  "risk": {
+    "title": "高風險與高機會",
+    "subtitle": "左：風險熱圖 ／ 右：機會清單",
+    "left_title": "高風險",
+    "right_title": "高機會",
+    "empty_risk": "（目前無可計分的高風險部位）",
+    "empty_opp": "（無高機會清單）",
+    "card_label": "風險 {score} / 10",
+    "standard": "固定規則 v1",
+    "factor_core": "核心部位 / 波動低",
+    "factor_crypto": "加密資產",
+    "factor_mid_bucket": "中線桶",
+    "factor_short_bucket": "短線桶",
+    "factor_concentration_watch": "權重 ≥ {threshold:.1f}%",
+    "factor_concentration_warn": "權重 ≥ {threshold:.1f}% 上限",
+    "factor_concentration_breach": "權重 ≥ {threshold:.1f}% 上限 × 1.5",
+    "factor_move_warn": "|單日/24h| ≥ {threshold:.1f}%",
+    "factor_move_breach": "|單日/24h| ≥ {threshold:.1f}% × 1.5",
+    "factor_delayed": "報價延遲",
+    "factor_stale": "報價偏舊",
+    "factor_missing": "缺少當前報價"
+  },
+  "adjustments": {
+    "title": "建議調整",
+    "subtitle": "具體標的 · 動作 · 觸發",
+    "placeholder": "（建議調整清單待 agent 補入）",
+    "ticker": "標的",
+    "current": "目前",
+    "recommendation": "建議",
+    "why": "理由",
+    "trigger": "觸發"
+  },
+  "actions": {
+    "title": "今日行動清單",
+    "subtitle": "優先順序",
+    "must_do": "必做",
+    "may_do": "可做",
+    "avoid": "不建議",
+    "need_data": "補資料",
+    "placeholder": "（行動清單待補）"
+  },
+  "sources": {
+    "title": "資料來源與缺口",
+    "subtitle": "每筆價格的取得方式與新鮮度 · 待補資料逐項列出",
+    "audit_heading": "最新價來源稽核",
+    "gaps_heading": "資料缺口",
+    "spec_note": "建議更新 agent spec：",
+    "no_gaps": "（無資料缺口）",
+    "ticker": "標的",
+    "price_source": "價格來源",
+    "market_state": "市場狀態",
+    "as_of": "取得時間",
+    "freshness": "新鮮度",
+    "notes": "備註",
+    "auto_fix": "自動修正",
+    "retry": "重試 {count} 次"
+  },
+  "footer": {
+    "text": "本報告依 docs/portfolio_report_agent_guidelines.md 規範產出，價格為產出時靜態快照，未持續刷新。"
+  }
+}

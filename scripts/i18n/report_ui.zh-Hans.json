@@ -1,0 +1,232 @@
+{
+  "meta": {
+    "language_name": "简体中文",
+    "html_lang": "zh-Hans"
+  },
+  "common": {
+    "na": "n/a",
+    "dash": "—",
+    "yes": "通过",
+    "risk_assets": "风险资产",
+    "cash_like": "现金与类现金",
+    "source": "来源",
+    "generated_at": "生成时间",
+    "benchmark_fx": "基准汇率",
+    "next_event": "下个事件"
+  },
+  "masthead": {
+    "eyebrow": "投资研究笔记",
+    "title": "投资组合健康检查",
+    "subtitle": ""
+  },
+  "alerts": {
+    "badge": "高优先",
+    "title": "今日需立即关注"
+  },
+  "summary": {
+    "title": "今日总结",
+    "subtitle": "整体 × 持股 × 风险",
+    "placeholder": "（今日总结待补）"
+  },
+  "dashboard": {
+    "title": "投资组合仪表板",
+    "subtitle": "总体 KPI · USD 基准",
+    "total_assets": "总资产",
+    "invested": "投资仓位",
+    "cash": "现金与类现金",
+    "known_pnl": "已知损益",
+    "total_assets_note": "含现金、加密、股票",
+    "invested_note": "{pct:.1f}% 风险资产",
+    "cash_note": "{pct:.1f}% 防守弹药",
+    "pnl_note": "仅统计已知成本仓位",
+    "cash_bar_label": "现金与风险资产比例",
+    "risk_legend": "风险资产 {pct:.1f}% · ${value:,.0f}",
+    "cash_legend": "现金与类现金 {pct:.1f}% · ${value:,.0f}"
+  },
+  "holdings": {
+    "title": "持仓损益与权重",
+    "subtitle": "生成时静态快照 · 鼠标移到代码或价格可看细节",
+    "symbol": "代码",
+    "category": "类别",
+    "latest_price": "最新价",
+    "weight": "比重",
+    "value": "市值",
+    "pnl": "损益",
+    "action": "行动"
+  },
+  "category": {
+    "cash": "现金",
+    "stock_etf": "个股 / ETF",
+    "crypto": "加密资产",
+    "tw": "台股",
+    "jp": "日股",
+    "hk": "港股",
+    "lse": "英股",
+    "asset": "资产",
+    "chip_long": "长线",
+    "chip_mid": "中线",
+    "chip_short": "短线",
+    "chip_cash": "现金"
+  },
+  "bucket": {
+    "long": "长线（不卖）",
+    "mid": "中线（1 年以上）",
+    "short": "短线（12 个月）",
+    "cash": "现金仓位"
+  },
+  "market": {
+    "US": "美股",
+    "TW": "台股",
+    "TWO": "柜买",
+    "JP": "日股",
+    "HK": "港股",
+    "LSE": "英股",
+    "crypto": "加密资产",
+    "FX": "外汇",
+    "cash": "现金",
+    "unknown": "未知"
+  },
+  "freshness": {
+    "fresh": "新鲜",
+    "delayed": "延迟",
+    "stale_after_exhaustive_search": "穷尽搜索后仍偏旧",
+    "n/a": "n/a"
+  },
+  "market_state": {
+    "regular_open": "正常交易时段",
+    "after_close": "收盘后",
+    "not_opened_yet": "尚未开盘",
+    "weekend_holiday": "周末 / 休市",
+    "crypto_24_7": "24 小时交易",
+    "unknown": "未知",
+    "n/a": "n/a"
+  },
+  "symbol_pop": {
+    "opened": "建仓时间",
+    "lots": "批次数",
+    "lots_suffix": "{count} 批"
+  },
+  "price_pop": {
+    "title_suffix": "每批损益",
+    "latest_price": "最新价",
+    "move_vs_prior": "较前收",
+    "move_24h": "24h",
+    "freshness": "新鲜度",
+    "market_basis": "市场基准",
+    "currency": "币别",
+    "exchange": "交易所",
+    "acquired": "取得日",
+    "cost": "成本",
+    "quantity": "数量",
+    "pnl": "损益",
+    "avg_cost": "平均成本",
+    "total_cost": "总成本",
+    "total_pnl": "总损益",
+    "fx_na": "(FX n/a)"
+  },
+  "pnl_ranking": {
+    "title": "持仓损益排序",
+    "subtitle": "已实现＋未实现损益（USD）"
+  },
+  "holding_period": {
+    "title": "持有期间与节奏",
+    "subtitle": "成本加权，不含现金",
+    "avg_hold": "平均持有",
+    "years_suffix": "年",
+    "avg_hold_note": "成本加权",
+    "oldest_lot": "最旧批次",
+    "newest_lot": "最新批次",
+    "held_over_1y": "持有 > 1 年",
+    "held_over_1y_note": "占风险资产市值",
+    "period_strip_label": "持有期间分布",
+    "lt_1m": "< 1 月",
+    "m1_6": "1–6 月",
+    "m6_12": "6–12 月",
+    "y1_3": "1–3 年",
+    "y3_plus": "3 年以上"
+  },
+  "theme_sector": {
+    "title": "主题与行业暴露",
+    "subtitle": "USD 基准 · 含 ETF 穿透分配",
+    "placeholder": "（主题与行业暴露待补 — 由 agent 在执行时依 §4.3 自动分类后注入）"
+  },
+  "news": {
+    "title": "最新重大新闻",
+    "subtitle": "每个核心仓位 1–3 条",
+    "placeholder": "（最新重大新闻待补 — 由 agent 在执行时抓取 1–3 条／核心仓位）",
+    "positive": "正面",
+    "neutral": "中性",
+    "negative": "负面",
+    "source_prefix": "来源："
+  },
+  "events": {
+    "title": "未来 30 天事件历",
+    "subtitle": "财报、股东会、除息、产品、政策、央行、宏观",
+    "date": "日期",
+    "topic": "标的 / 主题",
+    "event": "事件",
+    "impact": "影响",
+    "watch": "关注重点",
+    "empty": "（30 天内无已知事件）"
+  },
+  "risk": {
+    "title": "高风险与高机会",
+    "subtitle": "左：风险热图 ／ 右：机会清单",
+    "left_title": "高风险",
+    "right_title": "高机会",
+    "empty_risk": "（目前无可计分的高风险仓位）",
+    "empty_opp": "（无高机会清单）",
+    "card_label": "风险 {score} / 10",
+    "standard": "固定规则 v1",
+    "factor_core": "核心仓位 / 波动低",
+    "factor_crypto": "加密资产",
+    "factor_mid_bucket": "中线桶",
+    "factor_short_bucket": "短线桶",
+    "factor_concentration_watch": "权重 ≥ {threshold:.1f}%",
+    "factor_concentration_warn": "权重 ≥ {threshold:.1f}% 上限",
+    "factor_concentration_breach": "权重 ≥ {threshold:.1f}% 上限 × 1.5",
+    "factor_move_warn": "|单日/24h| ≥ {threshold:.1f}%",
+    "factor_move_breach": "|单日/24h| ≥ {threshold:.1f}% × 1.5",
+    "factor_delayed": "报价延迟",
+    "factor_stale": "报价偏旧",
+    "factor_missing": "缺少当前报价"
+  },
+  "adjustments": {
+    "title": "建议调整",
+    "subtitle": "具体标的 · 动作 · 触发",
+    "placeholder": "（建议调整清单待 agent 补入）",
+    "ticker": "标的",
+    "current": "目前",
+    "recommendation": "建议",
+    "why": "理由",
+    "trigger": "触发"
+  },
+  "actions": {
+    "title": "今日行动清单",
+    "subtitle": "优先顺序",
+    "must_do": "必做",
+    "may_do": "可做",
+    "avoid": "不建议",
+    "need_data": "补资料",
+    "placeholder": "（行动清单待补）"
+  },
+  "sources": {
+    "title": "资料来源与缺口",
+    "subtitle": "每笔价格的取得方式与新鲜度 · 待补资料逐项列出",
+    "audit_heading": "最新价来源稽核",
+    "gaps_heading": "资料缺口",
+    "spec_note": "建议更新 agent spec：",
+    "no_gaps": "（无资料缺口）",
+    "ticker": "标的",
+    "price_source": "价格来源",
+    "market_state": "市场状态",
+    "as_of": "取得时间",
+    "freshness": "新鲜度",
+    "notes": "备注",
+    "auto_fix": "自动修正",
+    "retry": "重试 {count} 次"
+  },
+  "footer": {
+    "text": "本报告依 docs/portfolio_report_agent_guidelines.md 规范产出，价格为生成时静态快照，未持续刷新。"
+  }
+}

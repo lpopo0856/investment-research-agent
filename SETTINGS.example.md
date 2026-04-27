@@ -10,7 +10,7 @@ The agent reads this file on every run to set tone, language, and risk handling.
 
 - english
 
-(Other supported values: `traditional chinese`, `simplified chinese`, `japanese`, `bilingual: english + traditional chinese`. Pick one.)
+(Stable built-in dictionaries: `english`, `traditional chinese`, `simplified chinese`. Other single-language values such as `japanese` are allowed, but the **executing agent** should translate `scripts/i18n/report_ui.en.json` and pass the translated overlay into `scripts/generate_report.py` via `--ui-dict` or `context["ui_dictionary"]`. Do not use bilingual values.)
 
 ## Investment Style
 
@@ -36,9 +36,23 @@ Describe how you want the agent to talk to you about risk and conviction. Exampl
 - Cash floor: 10% (warn below this).
 - Single-day move alert: ±8%.
 
+## FX Rates (USD basis — required for any non-USD position)
+
+Per spec §9.0, **every aggregate metric in the report is denominated in USD** — totals, weights, market values, P&L, KPI strip, P&L ranking, theme/sector exposure, holding-period pacing. Source-currency display is preserved only inside per-lot popovers and the source audit.
+
+For every non-USD currency in your book, supply a USD-quoted spot rate below. The format is `USD/<CCY>: <rate>` where the rate is "1 USD = N units of CCY":
+
+- USD/TWD:
+- USD/JPY:
+- USD/HKD:
+- USD/GBP:
+- USD/EUR:
+
+Leave a line blank only if you do **not** hold any position in that currency. If you hold a non-USD position and the corresponding rate is missing, the agent will fetch a live rate at generation time (yfinance `=X` symbols, ECB reference, or any §8.5 fallback) and record the source + as-of in the report's Sources audit. **Never assume parity** — that produces multi-thousand-percent weight errors in the dashboard.
+
 ## Market Data API Keys (optional fallback)
 
-Latest prices are fetched first by the yfinance latest-price subagent. These keys are optional fallback sources when yfinance is missing, stale, unsupported, or invalid for a ticker.
+Latest prices are fetched first by a market-aware latest-price subagent. Listed securities and FX use `yfinance` first; crypto should prefer Binance public spot and CoinGecko before any Yahoo-style fallback. These keys are optional fallback sources when the primary source is missing, stale, unsupported, or invalid for a ticker.
 
 - TWELVE_DATA_API_KEY:
 - FINNHUB_API_KEY:

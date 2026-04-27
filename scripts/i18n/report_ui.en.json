@@ -1,0 +1,232 @@
+{
+  "meta": {
+    "language_name": "English",
+    "html_lang": "en"
+  },
+  "common": {
+    "na": "n/a",
+    "dash": "—",
+    "yes": "Pass",
+    "risk_assets": "Risk Assets",
+    "cash_like": "Cash & Cash-Like",
+    "source": "Source",
+    "generated_at": "Generated At",
+    "benchmark_fx": "FX Baseline",
+    "next_event": "Next Event"
+  },
+  "masthead": {
+    "eyebrow": "Investment Research Note",
+    "title": "Portfolio Health Check",
+    "subtitle": ""
+  },
+  "alerts": {
+    "badge": "High Priority",
+    "title": "Immediate Attention"
+  },
+  "summary": {
+    "title": "Today's Summary",
+    "subtitle": "Portfolio · Holdings · Risk",
+    "placeholder": "(Summary pending)"
+  },
+  "dashboard": {
+    "title": "Portfolio Dashboard",
+    "subtitle": "Core KPIs · USD Basis",
+    "total_assets": "Total Assets",
+    "invested": "Invested Positions",
+    "cash": "Cash & Cash-Like",
+    "known_pnl": "Known P&L",
+    "total_assets_note": "Includes cash, crypto, and equities",
+    "invested_note": "{pct:.1f}% risk assets",
+    "cash_note": "{pct:.1f}% dry powder",
+    "pnl_note": "Known-cost positions only",
+    "cash_bar_label": "Cash vs risk assets",
+    "risk_legend": "Risk assets {pct:.1f}% · ${value:,.0f}",
+    "cash_legend": "Cash & cash-like {pct:.1f}% · ${value:,.0f}"
+  },
+  "holdings": {
+    "title": "Holdings P&L and Weights",
+    "subtitle": "Static snapshot at generation time · hover or tap Symbol / Price for detail",
+    "symbol": "Symbol",
+    "category": "Category",
+    "latest_price": "Price",
+    "weight": "Weight",
+    "value": "Value",
+    "pnl": "P&L",
+    "action": "Action"
+  },
+  "category": {
+    "cash": "Cash",
+    "stock_etf": "Stock / ETF",
+    "crypto": "Crypto",
+    "tw": "Taiwan Equity",
+    "jp": "Japan Equity",
+    "hk": "Hong Kong Equity",
+    "lse": "UK Equity",
+    "asset": "Asset",
+    "chip_long": "Long",
+    "chip_mid": "Mid",
+    "chip_short": "Short",
+    "chip_cash": "Cash"
+  },
+  "bucket": {
+    "long": "Long Term",
+    "mid": "Mid Term",
+    "short": "Short Term",
+    "cash": "Cash Holdings"
+  },
+  "market": {
+    "US": "US",
+    "TW": "Taiwan",
+    "TWO": "Taiwan OTC",
+    "JP": "Japan",
+    "HK": "Hong Kong",
+    "LSE": "UK",
+    "crypto": "Crypto",
+    "FX": "FX",
+    "cash": "Cash",
+    "unknown": "Unknown"
+  },
+  "freshness": {
+    "fresh": "Fresh",
+    "delayed": "Delayed",
+    "stale_after_exhaustive_search": "Stale after exhaustive search",
+    "n/a": "n/a"
+  },
+  "market_state": {
+    "regular_open": "Regular session",
+    "after_close": "After close",
+    "not_opened_yet": "Not opened yet",
+    "weekend_holiday": "Weekend / holiday",
+    "crypto_24_7": "24/7 market",
+    "unknown": "Unknown",
+    "n/a": "n/a"
+  },
+  "symbol_pop": {
+    "opened": "Opened",
+    "lots": "Lots",
+    "lots_suffix": "{count} lots"
+  },
+  "price_pop": {
+    "title_suffix": "Per-Lot P&L",
+    "latest_price": "Latest",
+    "move_vs_prior": "vs prior close",
+    "move_24h": "24h",
+    "freshness": "Freshness",
+    "market_basis": "Market Basis",
+    "currency": "Currency",
+    "exchange": "Exchange",
+    "acquired": "Acquired",
+    "cost": "Cost",
+    "quantity": "Quantity",
+    "pnl": "P&L",
+    "avg_cost": "Avg Cost",
+    "total_cost": "Total Cost",
+    "total_pnl": "Total P&L",
+    "fx_na": "(FX n/a)"
+  },
+  "pnl_ranking": {
+    "title": "P&L Ranking",
+    "subtitle": "Realized + unrealized P&L (USD)"
+  },
+  "holding_period": {
+    "title": "Holding Period and Pacing",
+    "subtitle": "Cost-weighted, ex-cash",
+    "avg_hold": "Average Hold",
+    "years_suffix": "y",
+    "avg_hold_note": "Cost-weighted",
+    "oldest_lot": "Oldest Lot",
+    "newest_lot": "Newest Lot",
+    "held_over_1y": "Held > 1 Year",
+    "held_over_1y_note": "Share of risk-asset value",
+    "period_strip_label": "Holding-period distribution",
+    "lt_1m": "< 1m",
+    "m1_6": "1–6m",
+    "m6_12": "6–12m",
+    "y1_3": "1–3y",
+    "y3_plus": "3y+"
+  },
+  "theme_sector": {
+    "title": "Theme and Sector Exposure",
+    "subtitle": "USD basis · ETF look-through where applicable",
+    "placeholder": "(Theme / sector exposure pending agent classification per spec §4.3)"
+  },
+  "news": {
+    "title": "Latest Material News",
+    "subtitle": "1–3 items per core position",
+    "placeholder": "(Material news pending agent collection)",
+    "positive": "Positive",
+    "neutral": "Neutral",
+    "negative": "Negative",
+    "source_prefix": "Source:"
+  },
+  "events": {
+    "title": "Forward 30-Day Event Calendar",
+    "subtitle": "Earnings, launches, policy, central banks, macro",
+    "date": "Date",
+    "topic": "Ticker / Theme",
+    "event": "Event",
+    "impact": "Impact",
+    "watch": "Watch Item",
+    "empty": "(No known events within 30 days)"
+  },
+  "risk": {
+    "title": "High Risk and High Opportunity",
+    "subtitle": "Left: risk heatmap · Right: opportunity list",
+    "left_title": "High Risk",
+    "right_title": "High Opportunity",
+    "empty_risk": "(No risk positions with a computable score)",
+    "empty_opp": "(No opportunity list)",
+    "card_label": "Risk {score} / 10",
+    "standard": "Stable rubric v1",
+    "factor_core": "Core-sized / low-shock",
+    "factor_crypto": "Crypto asset",
+    "factor_mid_bucket": "Mid-term bucket",
+    "factor_short_bucket": "Short-term bucket",
+    "factor_concentration_watch": "Weight ≥ {threshold:.1f}%",
+    "factor_concentration_warn": "Weight ≥ {threshold:.1f}% cap",
+    "factor_concentration_breach": "Weight ≥ {threshold:.1f}% cap × 1.5",
+    "factor_move_warn": "|1d/24h| ≥ {threshold:.1f}%",
+    "factor_move_breach": "|1d/24h| ≥ {threshold:.1f}% × 1.5",
+    "factor_delayed": "Delayed quote",
+    "factor_stale": "Stale quote",
+    "factor_missing": "Missing current quote"
+  },
+  "adjustments": {
+    "title": "Recommended Adjustments",
+    "subtitle": "Specific ticker · action · trigger",
+    "placeholder": "(Adjustment list pending agent input)",
+    "ticker": "Ticker",
+    "current": "Current",
+    "recommendation": "Recommendation",
+    "why": "Why",
+    "trigger": "Trigger"
+  },
+  "actions": {
+    "title": "Today's Action List",
+    "subtitle": "Priority ordered",
+    "must_do": "Must",
+    "may_do": "May",
+    "avoid": "Avoid",
+    "need_data": "Fix Data",
+    "placeholder": "(Action list pending)"
+  },
+  "sources": {
+    "title": "Sources and Data Gaps",
+    "subtitle": "Acquisition path and freshness for every quote · explicit gap list",
+    "audit_heading": "Latest-price source audit",
+    "gaps_heading": "Data gaps",
+    "spec_note": "Suggested agent spec update:",
+    "no_gaps": "(No data gaps)",
+    "ticker": "Ticker",
+    "price_source": "Price Source",
+    "market_state": "Market State",
+    "as_of": "Retrieved At",
+    "freshness": "Freshness",
+    "notes": "Notes",
+    "auto_fix": "Auto-fix",
+    "retry": "Retry {count}"
+  },
+  "footer": {
+    "text": "This report follows docs/portfolio_report_agent_guidelines.md and uses a static price snapshot captured at generation time."
+  }
+}

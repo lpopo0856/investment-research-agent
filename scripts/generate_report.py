@@ -67,6 +67,7 @@ DEPENDENCIES
 from __future__ import annotations
 
 import argparse
+import copy
 import datetime as _dt
 import html
 import json
@@ -102,6 +103,199 @@ DEFAULTS = {
 
 
 # ----------------------------------------------------------------------------- #
+# SETTINGS.md parsing + language resolution
+# ----------------------------------------------------------------------------- #
+
+LANGUAGE_ALIASES = {
+    "en": "en",
+    "eng": "en",
+    "english": "en",
+    "zh-hant": "zh-Hant",
+    "zh-tw": "zh-Hant",
+    "traditional chinese": "zh-Hant",
+    "traditional chinese (taiwan)": "zh-Hant",
+    "繁體中文": "zh-Hant",
+    "繁体中文": "zh-Hant",
+    "zh-hans": "zh-Hans",
+    "zh-cn": "zh-Hans",
+    "simplified chinese": "zh-Hans",
+    "簡體中文": "zh-Hans",
+    "简体中文": "zh-Hans",
+    "ja": "ja",
+    "jp": "ja",
+    "japanese": "ja",
+    "日本語": "ja",
+    "ko": "ko",
+    "korean": "ko",
+    "한국어": "ko",
+    "vi": "vi",
+    "vietnamese": "vi",
+    "tiếng việt": "vi",
+}
+
+DISPLAY_NAME_BY_LOCALE = {
+    "en": "English",
+    "zh-Hant": "繁體中文",
+    "zh-Hans": "简体中文",
+    "ja": "日本語",
+    "ko": "한국어",
+    "vi": "Tiếng Việt",
+}
+
+RAIL_PATTERNS = {
+    "single_name_weight_warn_pct": r"Single-name weight cap:\s*([0-9]*\.?[0-9]+)%",
+    "theme_concentration_warn_pct": r"Theme concentration cap:\s*([0-9]*\.?[0-9]+)%",
+    "high_vol_bucket_warn_pct": r"High-volatility bucket cap:\s*([0-9]*\.?[0-9]+)%",
+    "cash_floor_warn_pct": r"Cash floor:\s*([0-9]*\.?[0-9]+)%",
+    "single_day_move_alert_pct": r"Single-day move alert:\s*[±+-]?([0-9]*\.?[0-9]+)%",
+}
+
+
+@dataclass
+class SettingsProfile:
+    raw_language: str
+    locale: str
+    display_name: str
+    config_overrides: Dict[str, float]
+    missing: bool = False
+
+
+def _extract_settings_section_bullets(text: str, heading: str) -> List[str]:
+    bullets: List[str] = []
+    in_section = False
+    for raw_line in text.splitlines():
+        line = raw_line.rstrip()
+        if line.startswith("## "):
+            current = line[3:].strip().lower()
+            in_section = current == heading.lower()
+            continue
+        if not in_section:
+            continue
+        if line.startswith("### "):
+            break
+        if line.lstrip().startswith("-"):
+            bullets.append(line.split("-", 1)[1].strip())
+    return bullets
+
+
+def _normalize_language(raw_language: str) -> str:
+    normalized = raw_language.strip().strip(LANGUAGE_QUOTE_CHARS).strip().lower()
+    if normalized in LANGUAGE_ALIASES:
+        return LANGUAGE_ALIASES[normalized]
+    return normalized or "en"
+
+
+def parse_settings_profile(path: Path) -> SettingsProfile:
+    if not path.exists():
+        return SettingsProfile(
+            raw_language="english",
+            locale="en",
+            display_name=DISPLAY_NAME_BY_LOCALE["en"],
+            config_overrides={},
+            missing=True,
+        )
+
+    text = path.read_text(encoding="utf-8")
+    bullets = _extract_settings_section_bullets(text, "Language")
+    raw_language = bullets[0] if bullets else "english"
+    locale = _normalize_language(raw_language)
+    display_name = DISPLAY_NAME_BY_LOCALE.get(locale, raw_language.strip() or locale)
+
+    config_overrides: Dict[str, float] = {}
+    for key, pattern in RAIL_PATTERNS.items():
+        m = re.search(pattern, text, re.IGNORECASE)
+        if not m:
+            continue
+        try:
+            config_overrides[key] = float(m.group(1))
+        except ValueError:
+            continue
+
+    return SettingsProfile(
+        raw_language=raw_language,
+        locale=locale,
+        display_name=display_name,
+        config_overrides=config_overrides,
+        missing=False,
+    )
+
+
+# ----------------------------------------------------------------------------- #
+# Stable dictionaries (EN / zh-Hant / zh-Hans)
+# Canonical source lives in scripts/i18n/*.json. For any other locale, the
+# executing agent should translate report_ui.en.json and pass the overlay via
+# --ui-dict or context["ui_dictionary"].
+# ----------------------------------------------------------------------------- #
+
+BUILTIN_UI_LOCALES = ("en", "zh-Hant", "zh-Hans")
+I18N_DIR = Path(__file__).resolve().parent / "i18n"
+
+
+def _load_json_ui_dict(path: Path) -> Dict[str, Any]:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _load_builtin_ui_text() -> Dict[str, Dict[str, Any]]:
+    loaded: Dict[str, Dict[str, Any]] = {}
+    for locale in BUILTIN_UI_LOCALES:
+        path = I18N_DIR / f"report_ui.{locale}.json"
+        if not path.exists():
+            raise FileNotFoundError(
+                f"Missing built-in UI dictionary: {path}. Restore scripts/i18n/*.json "
+                "before generating reports."
+            )
+        loaded[locale] = _load_json_ui_dict(path)
+    return loaded
+
+
+STABLE_UI_TEXT = _load_builtin_ui_text()
+
+ACTIVE_UI: Dict[str, Any] = copy.deepcopy(STABLE_UI_TEXT["en"])
+LANGUAGE_QUOTE_CHARS = "\"'“”‘’「」『』〈〉《》"
+
+
+def _ui(path: str, **kwargs: Any) -> str:
+    node: Any = ACTIVE_UI
+    for part in path.split("."):
+        if not isinstance(node, dict) or part not in node:
+            return path
+        node = node[part]
+    if not isinstance(node, str):
+        return path
+    return node.format(**kwargs) if kwargs else node
+
+
+def _set_active_ui(bundle: Dict[str, Any]) -> None:
+    global ACTIVE_UI
+    ACTIVE_UI = bundle
+
+
+def _deep_merge_dict(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
+    merged = copy.deepcopy(base)
+    for key, value in override.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = _deep_merge_dict(merged[key], value)
+        else:
+            merged[key] = copy.deepcopy(value)
+    return merged
+
+
+def resolve_ui_bundle(
+    settings: SettingsProfile,
+    ui_dict_override: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    if settings.locale in STABLE_UI_TEXT:
+        bundle = copy.deepcopy(STABLE_UI_TEXT[settings.locale])
+    else:
+        bundle = copy.deepcopy(STABLE_UI_TEXT["en"])
+    if ui_dict_override:
+        bundle = _deep_merge_dict(bundle, ui_dict_override)
+    bundle["meta"]["language_name"] = settings.display_name
+    bundle["meta"]["html_lang"] = settings.locale
+    return bundle
+
+
+# ----------------------------------------------------------------------------- #
 # CSS extraction from the canonical sample (§14.9)
 # ----------------------------------------------------------------------------- #
 
@@ -128,23 +322,31 @@ def load_canonical_css(sample_path: Path) -> str:
 
 @dataclass
 class TickerAggregate:
-    """Per-ticker rollup used by the holdings table and the popovers."""
+    """Per-ticker rollup used by the holdings table and the popovers.
+
+    Per spec §9.0 every aggregate (`market_value`, `pnl_amount`, `weighted_avg_cost_usd`,
+    cash totals) is in **USD**. Native trade currency is preserved for popover display
+    via the `*_native` fields and `trade_currency`.
+    """
     ticker: str
     market: MarketType
     bucket: str                       # representative bucket (highest seniority)
     total_qty: float
-    weighted_avg_cost: Optional[float]      # None if all lots have ? cost
-    total_cost_known: float                 # sum of cost*qty over lots with known cost
+    weighted_avg_cost: Optional[float]      # native trade currency (None if all lots have ? cost)
+    total_cost_known: float                 # native: Σ(lot_cost × lot_qty) over known-cost lots
     earliest_date: Optional[str]            # for hold period
     lots: List[Lot] = field(default_factory=list)
 
-    # Filled in after price merge
-    latest_price: Optional[float] = None
+    # Filled in after price merge — all USD unless suffixed _native
+    latest_price: Optional[float] = None             # native trade currency (display in §10.3)
     move_pct: Optional[float] = None
-    market_value: Optional[float] = None
-    pnl_amount: Optional[float] = None
-    pnl_pct: Optional[float] = None
+    market_value: Optional[float] = None             # **USD** (post-FX)
+    pnl_amount: Optional[float] = None               # **USD**
+    pnl_pct: Optional[float] = None                  # ratio, currency-agnostic
+    weighted_avg_cost_usd: Optional[float] = None    # USD-converted avg cost (popover footer)
     is_cash: bool = False
+    trade_currency: str = "USD"                      # market → currency (US/crypto/FX → USD)
+    fx_rate_used: Optional[float] = None             # 1 unit native = N USD; None when USD or n/a
 
 
 @dataclass
@@ -203,20 +405,100 @@ def aggregate(lots: List[Lot]) -> Dict[str, TickerAggregate]:
     return buckets
 
 
-def merge_prices(aggs: Dict[str, TickerAggregate], prices: Dict[str, Any]) -> None:
+# §9.0 — every market type maps to a default trade currency. The agent can override
+# per-ticker via the editorial context if a security is dual-listed.
+MARKET_DEFAULT_CCY: Dict[MarketType, str] = {
+    MarketType.US: "USD",
+    MarketType.CRYPTO: "USD",
+    MarketType.FX: "USD",
+    MarketType.TW: "TWD",
+    MarketType.TWO: "TWD",
+    MarketType.JP: "JPY",
+    MarketType.HK: "HKD",
+    MarketType.LSE: "GBP",
+    MarketType.UNKNOWN: "USD",
+    MarketType.CASH: "USD",  # overridden per-line below
+}
+
+# Stablecoin tickers held as `[cash]` are valued at $1.00 USD per unit.
+CASH_STABLECOIN_USD: Dict[str, float] = {
+    "USDC": 1.0, "USDT": 1.0, "DAI": 1.0, "BUSD": 1.0, "TUSD": 1.0, "USDP": 1.0,
+}
+
+
+def _fx_to_usd(native_amount: Optional[float], currency: str, fx: Dict[str, float]) -> Tuple[Optional[float], Optional[float]]:
+    """Convert `native_amount` in `currency` to USD.
+
+    `fx` is keyed `"USD/<CCY>"` with the rate "1 USD = N units of CCY" (matches the
+    SETTINGS.example.md format). Returns (usd_amount, fx_rate_used).
+    `fx_rate_used` is "1 unit of native = X USD" (i.e. 1/(USD/CCY)) so the caller
+    can record what was applied.
+    """
+    if native_amount is None:
+        return None, None
+    if currency == "USD":
+        return native_amount, 1.0
+    rate_key = f"USD/{currency}"
+    pair_rate = fx.get(rate_key)
+    if pair_rate in (None, 0):
+        return None, None
+    fx_native_to_usd = 1.0 / pair_rate
+    return native_amount * fx_native_to_usd, fx_native_to_usd
+
+
+def merge_prices(
+    aggs: Dict[str, TickerAggregate],
+    prices: Dict[str, Any],
+    fx: Optional[Dict[str, float]] = None,
+) -> None:
+    """Merge prices and apply §9.0 USD canonicalization.
+
+    `fx` is the agent-supplied USD-quoted rates. If a non-USD currency is held but no
+    rate is configured, the affected aggregate is marked `n/a` (per §9.6) — the agent
+    must walk §9.0 fetch-rate flow before regenerating the report. We never assume
+    parity.
+    """
+    fx = fx or {}
     for ticker, agg in aggs.items():
         if agg.is_cash:
-            agg.market_value = agg.total_qty           # cash: qty in its own currency
+            ccy = ticker.upper()
+            agg.trade_currency = ccy
+            # Stablecoins valued at $1; fiat cash converted via fx dict.
+            if ccy in CASH_STABLECOIN_USD:
+                agg.market_value = agg.total_qty * CASH_STABLECOIN_USD[ccy]
+                agg.fx_rate_used = CASH_STABLECOIN_USD[ccy]
+            elif ccy == "USD":
+                agg.market_value = agg.total_qty
+                agg.fx_rate_used = 1.0
+            else:
+                usd, rate = _fx_to_usd(agg.total_qty, ccy, fx)
+                agg.market_value = usd                  # None when fx missing
+                agg.fx_rate_used = rate
             continue
+
         pr = prices.get(ticker, {}) or {}
-        agg.latest_price = pr.get("latest_price")
+        agg.latest_price = pr.get("latest_price")      # native trade currency, displayed as-is
         agg.move_pct = pr.get("move_pct")
+        # Source-currency override from prices.json wins over market-default mapping.
+        agg.trade_currency = (pr.get("currency") or MARKET_DEFAULT_CCY.get(agg.market, "USD")).upper()
+
         if agg.latest_price is not None:
-            agg.market_value = agg.latest_price * agg.total_qty
+            native_mv = agg.latest_price * agg.total_qty
+            usd_mv, rate = _fx_to_usd(native_mv, agg.trade_currency, fx)
+            agg.market_value = usd_mv                  # USD; None if fx missing for non-USD
+            agg.fx_rate_used = rate
             if agg.weighted_avg_cost not in (None, 0):
-                cost_basis = agg.weighted_avg_cost * agg.total_qty
-                agg.pnl_amount = agg.market_value - cost_basis
-                agg.pnl_pct = (agg.pnl_amount / cost_basis) * 100.0 if cost_basis else None
+                # weighted_avg_cost is in the lot's acquisition trade currency. We use the
+                # *current* fx rate as the simplest spec-compliant approximation; the agent
+                # may inject acquisition-date FX via a richer context payload in the future.
+                native_cost_basis = agg.weighted_avg_cost * agg.total_qty
+                usd_cost_basis, _ = _fx_to_usd(native_cost_basis, agg.trade_currency, fx)
+                if usd_cost_basis is not None and usd_mv is not None:
+                    agg.pnl_amount = usd_mv - usd_cost_basis
+                    agg.pnl_pct = (agg.pnl_amount / usd_cost_basis * 100.0) if usd_cost_basis else None
+                    agg.weighted_avg_cost_usd = (
+                        usd_cost_basis / agg.total_qty if agg.total_qty else None
+                    )
 
 
 def hold_period_label(earliest_date: Optional[str], today: _dt.date) -> str:
@@ -316,6 +598,47 @@ def _days_label(days: int) -> str:
     years = months // 12
     rem = months % 12
     return f"{years}y {rem}m" if rem else f"{years}y"
+
+def _bucket_key(bucket: str) -> str:
+    bucket_lc = bucket.lower()
+    if bucket_lc.startswith("long term"):
+        return "long"
+    if bucket_lc.startswith("mid term"):
+        return "mid"
+    if bucket_lc.startswith("short term"):
+        return "short"
+    if bucket_lc.startswith("cash holdings"):
+        return "cash"
+    return bucket_lc
+
+
+def _translate_bucket(bucket: str) -> str:
+    bucket_key = _bucket_key(bucket)
+    translated = _ui(f"bucket.{bucket_key}")
+    if translated != f"bucket.{bucket_key}":
+        return translated
+    return bucket
+
+
+def _translate_freshness(label: Optional[str]) -> str:
+    if label is None:
+        return _ui("common.na")
+    translated = _ui(f"freshness.{label}")
+    return translated if translated != f"freshness.{label}" else label
+
+
+def _translate_market_state(label: Optional[str]) -> str:
+    if label is None:
+        return _ui("common.na")
+    translated = _ui(f"market_state.{label}")
+    return translated if translated != f"market_state.{label}" else label
+
+
+def _translate_market(label: Optional[str]) -> str:
+    if label is None:
+        return _ui("common.na")
+    translated = _ui(f"market.{label}")
+    return translated if translated != f"market.{label}" else label
 
 
 # ----------------------------------------------------------------------------- #
@@ -426,24 +749,31 @@ def _esc(s: Any) -> str:
 
 def _fmt_money(value: Optional[float], currency_prefix: str = "$") -> str:
     if value is None:
-        return '<span class="na">n/a</span>'
+        return f'<span class="na">{_ui("common.na")}</span>'
     sign = "−" if value < 0 else ""
     return f"{sign}{currency_prefix}{abs(value):,.0f}"
 
 
 def _fmt_pct(value: Optional[float]) -> str:
     if value is None:
-        return '<span class="na">n/a</span>'
+        return f'<span class="na">{_ui("common.na")}</span>'
     return f"{value:+.1f}%"
 
 
 def _fmt_signed(value: Optional[float], pct: Optional[float]) -> str:
     if value is None:
-        return '<span class="na">n/a</span>'
+        return f'<span class="na">{_ui("common.na")}</span>'
     cls = "pos-txt" if value >= 0 else "neg-txt"
     sign = "+" if value >= 0 else "−"
     pct_str = f" / {sign}{abs(pct):.1f}%" if pct is not None else ""
     return f'<span class="{cls}">{sign}${abs(value):,.0f}{pct_str}</span>'
+
+
+def _format_years(value: float) -> str:
+    suffix = _ui("holding_period.years_suffix")
+    if suffix in {"年"}:
+        return f"{value} {suffix}"
+    return f"{value}{suffix}"
 
 
 # ----------------------------------------------------------------------------- #
@@ -455,21 +785,21 @@ def _fmt_signed(value: Optional[float], pct: Optional[float]) -> str:
 # ----------------------------------------------------------------------------- #
 
 def render_masthead(context: Dict[str, Any]) -> str:
-    lang = _esc(context.get("language", "繁體中文"))
-    title = _esc(context.get("title", "投資組合健康檢查"))
+    lang = _esc(context.get("language", _ui("meta.language_name")))
+    title = _esc(context.get("title", _ui("masthead.title")))
     subtitle = _esc(context.get("subtitle", ""))
-    fx_str = " · ".join(f"{k} {v}" for k, v in (context.get("fx") or {}).items()) or "n/a"
-    next_event = _esc(context.get("next_event", "n/a"))
+    fx_str = " · ".join(f"{k} {v}" for k, v in (context.get("fx") or {}).items()) or _ui("common.na")
+    next_event = _esc(context.get("next_event", _ui("common.na")))
     generated = context.get("generated_at") or _dt.datetime.now().strftime("%Y-%m-%d %H:%M")
     return f"""\
   <header class="masthead">
-    <div class="eyebrow">Portfolio Research Note · {lang}</div>
+    <div class="eyebrow">{_esc(_ui("masthead.eyebrow"))} · {lang}</div>
     <h1>{title}</h1>
     <p class="dek">{subtitle}</p>
     <div class="masthead-meta">
-      <span><b>產生時間</b>　{_esc(generated)}</span>
-      <span><b>基準匯率</b>　{_esc(fx_str)}</span>
-      <span><b>下個事件</b>　{next_event}</span>
+      <span><b>{_esc(_ui("common.generated_at"))}</b>　{_esc(generated)}</span>
+      <span><b>{_esc(_ui("common.benchmark_fx"))}</b>　{_esc(fx_str)}</span>
+      <span><b>{_esc(_ui("common.next_event"))}</b>　{next_event}</span>
     </div>
   </header>"""
 
@@ -481,7 +811,7 @@ def render_alerts(context: Dict[str, Any]) -> str:
     items = "\n      ".join(f"<li>{_esc(a)}</li>" for a in alerts)
     return f"""\
   <section class="callout">
-    <div class="ctitle"><span class="badge">高優先</span>本日須立即關注</div>
+    <div class="ctitle"><span class="badge">{_esc(_ui("alerts.badge"))}</span>{_esc(_ui("alerts.title"))}</div>
     <ul>
       {items}
     </ul>
@@ -489,15 +819,15 @@ def render_alerts(context: Dict[str, Any]) -> str:
 
 
 def render_today_summary(context: Dict[str, Any]) -> str:
-    paragraphs = context.get("today_summary") or ["（今日總結待補）"]
+    paragraphs = context.get("today_summary") or [_ui("summary.placeholder")]
     cols = ["<div>" + "".join(f"<p>{_esc(p)}</p>" for p in paragraphs[:1]) + "</div>"]
     if len(paragraphs) > 1:
         cols.append("<div>" + "".join(f"<p>{_esc(p)}</p>" for p in paragraphs[1:]) + "</div>")
     return f"""\
   <section class="section">
     <div class="section-head">
-      <h2>今日總結</h2>
-      <span class="sub">總體 × 持股 × 風險</span>
+      <h2>{_esc(_ui("summary.title"))}</h2>
+      <span class="sub">{_esc(_ui("summary.subtitle"))}</span>
     </div>
     <div class="prose cols-2">{''.join(cols)}</div>
   </section>"""
@@ -515,28 +845,28 @@ def render_dashboard(
     invested_pct = invested / total_assets * 100.0
     cash_pct = cash / total_assets * 100.0
     pnl_html = (f'<div class="delta {"pos" if pnl >= 0 else "neg"}">{"+" if pnl >= 0 else "−"}${abs(pnl):,.0f}</div>'
-                if pnl is not None else '<div class="delta">n/a</div>')
+                if pnl is not None else f'<div class="delta">{_ui("common.na")}</div>')
     return f"""\
   <section class="section">
     <div class="section-head">
-      <h2>投資組合儀表板</h2>
-      <span class="sub">總體 KPI · USD 基準</span>
+      <h2>{_esc(_ui("dashboard.title"))}</h2>
+      <span class="sub">{_esc(_ui("dashboard.subtitle"))}</span>
     </div>
     <div class="kpis">
-      <div class="kpi"><div class="k">總資產</div><div class="v">${total_assets:,.0f}</div><div class="delta">含現金、加密、股票</div></div>
-      <div class="kpi"><div class="k">投資部位</div><div class="v">${invested:,.0f}</div><div class="delta">{invested_pct:.1f}% 風險資產</div></div>
-      <div class="kpi"><div class="k">現金與類現金</div><div class="v">${cash:,.0f}</div><div class="delta">{cash_pct:.1f}% 防守彈藥</div></div>
-      <div class="kpi"><div class="k">已知損益</div><div class="v">{_fmt_money(pnl)}</div>{pnl_html}</div>
+      <div class="kpi"><div class="k">{_esc(_ui("dashboard.total_assets"))}</div><div class="v">${total_assets:,.0f}</div><div class="delta">{_esc(_ui("dashboard.total_assets_note"))}</div></div>
+      <div class="kpi"><div class="k">{_esc(_ui("dashboard.invested"))}</div><div class="v">${invested:,.0f}</div><div class="delta">{_esc(_ui("dashboard.invested_note", pct=invested_pct))}</div></div>
+      <div class="kpi"><div class="k">{_esc(_ui("dashboard.cash"))}</div><div class="v">${cash:,.0f}</div><div class="delta">{_esc(_ui("dashboard.cash_note", pct=cash_pct))}</div></div>
+      <div class="kpi"><div class="k">{_esc(_ui("dashboard.known_pnl"))}</div><div class="v">{_fmt_money(pnl)}</div><div class="delta">{_esc(_ui("dashboard.pnl_note"))}</div>{pnl_html}</div>
     </div>
 
     <div style="margin-top:22px">
-      <div class="cash-bar" aria-label="現金與風險資產比例">
+      <div class="cash-bar" aria-label="{_esc(_ui("dashboard.cash_bar_label"))}">
         <span class="seg risk" style="width:{invested_pct:.1f}%"></span>
         <span class="seg cash" style="width:{cash_pct:.1f}%"></span>
       </div>
       <div class="cash-legend">
-        <span><i style="background:var(--ink)"></i>風險資產 {invested_pct:.1f}% · ${invested:,.0f}</span>
-        <span><i style="background:var(--accent-warm)"></i>現金與類現金 {cash_pct:.1f}% · ${cash:,.0f}</span>
+        <span><i style="background:var(--ink)"></i>{_esc(_ui("dashboard.risk_legend", pct=invested_pct, value=invested))}</span>
+        <span><i style="background:var(--accent-warm)"></i>{_esc(_ui("dashboard.cash_legend", pct=cash_pct, value=cash))}</span>
       </div>
     </div>
   </section>"""
@@ -552,13 +882,13 @@ def render_holdings_table(
     sorted_aggs = sorted(aggs.values(), key=lambda a: -(a.market_value or 0))
     for agg in sorted_aggs:
         weight_pct = (agg.market_value / total_assets * 100.0) if (agg.market_value and total_assets) else None
-        weight_html = f"{weight_pct:.1f}%" if weight_pct is not None else '<span class="na">n/a</span>'
+        weight_html = f"{weight_pct:.1f}%" if weight_pct is not None else f'<span class="na">{_ui("common.na")}</span>'
         value_html = _fmt_money(agg.market_value)
-        pnl_html = "—" if agg.is_cash else _fmt_signed(agg.pnl_amount, agg.pnl_pct)
+        pnl_html = _ui("common.dash") if agg.is_cash else _fmt_signed(agg.pnl_amount, agg.pnl_pct)
         price_html, price_sub_html = _price_cell_pieces(agg, prices)
         sym_pop = _symbol_popover(agg, today)
         price_pop = _price_popover(agg, prices)
-        action = "—"  # editorial; agent-authored adjustments live in §9
+        action = _ui("common.dash")  # editorial; agent-authored adjustments live in §9
         rows.append(f"""\
           <tr>
             <td><div class="sym-trigger" tabindex="0" role="button">{_esc(agg.ticker)}{sym_pop}</div></td>
@@ -573,20 +903,20 @@ def render_holdings_table(
     return f"""\
   <section class="section">
     <div class="section-head">
-      <h2>持股損益與權重</h2>
-      <span class="sub">產出時靜態快照 · 滑鼠移到代號或價格可看細節</span>
+      <h2>{_esc(_ui("holdings.title"))}</h2>
+      <span class="sub">{_esc(_ui("holdings.subtitle"))}</span>
     </div>
     <div class="tbl-wrap">
       <table>
         <thead>
           <tr>
-            <th>代號</th>
-            <th>類別</th>
-            <th class="num">最新價</th>
-            <th class="num">比重</th>
-            <th class="num">市值</th>
-            <th class="num">損益</th>
-            <th>行動</th>
+            <th>{_esc(_ui("holdings.symbol"))}</th>
+            <th>{_esc(_ui("holdings.category"))}</th>
+            <th class="num">{_esc(_ui("holdings.latest_price"))}</th>
+            <th class="num">{_esc(_ui("holdings.weight"))}</th>
+            <th class="num">{_esc(_ui("holdings.value"))}</th>
+            <th class="num">{_esc(_ui("holdings.pnl"))}</th>
+            <th>{_esc(_ui("holdings.action"))}</th>
           </tr>
         </thead>
         <tbody>
@@ -599,87 +929,126 @@ def render_holdings_table(
 
 def _price_cell_pieces(agg: TickerAggregate, prices: Dict[str, Any]) -> Tuple[str, str]:
     if agg.is_cash:
-        return '<span class="na">—</span>', ""
+        return f'<span class="na">{_ui("common.dash")}</span>', ""
     if agg.latest_price is None:
-        return '<span class="na">n/a</span>', ""
-    price = f'<span class="price-num">${agg.latest_price:,.2f}</span>'
+        return f'<span class="na">{_ui("common.na")}</span>', ""
+    # §9.0 — the visible market price keeps the native trade currency prefix; the
+    # row's `市值` cell (rendered in render_holdings_table) is the USD aggregate.
+    pfx = CURRENCY_PREFIX.get(agg.trade_currency.upper(), f"{agg.trade_currency} ")
+    price = f'<span class="price-num">{pfx}{agg.latest_price:,.2f}</span>'
     if agg.move_pct is None:
         return price, ""
     cls = "pos" if agg.move_pct >= 0 else "neg"
     sign = "+" if agg.move_pct >= 0 else "−"
-    sub = f'<span class="price-sub {cls}">較前收 {sign}{abs(agg.move_pct):.2f}%</span>'
+    move_prefix = _ui("price_pop.move_24h") if agg.market == MarketType.CRYPTO else _ui("price_pop.move_vs_prior")
+    sub = f'<span class="price-sub {cls}">{_esc(move_prefix)} {sign}{abs(agg.move_pct):.2f}%</span>'
     return price, sub
 
 
 def _category_chip(agg: TickerAggregate) -> str:
     if agg.is_cash:
-        return '現金<span class="tag">現金</span>'
+        return f'{_esc(_ui("category.cash"))}<span class="tag">{_esc(_ui("category.chip_cash"))}</span>'
     chips = {
-        MarketType.US: ("個股 / ETF", ""),
-        MarketType.CRYPTO: ("加密資產", "warn"),
-        MarketType.TW: ("台股", ""),
-        MarketType.JP: ("日股", ""),
-        MarketType.HK: ("港股", ""),
-        MarketType.LSE: ("英股", ""),
-    }.get(agg.market, ("資產", ""))
+        MarketType.US: (_ui("category.stock_etf"), ""),
+        MarketType.CRYPTO: (_ui("category.crypto"), "warn"),
+        MarketType.TW: (_ui("category.tw"), ""),
+        MarketType.JP: (_ui("category.jp"), ""),
+        MarketType.HK: (_ui("category.hk"), ""),
+        MarketType.LSE: (_ui("category.lse"), ""),
+    }.get(agg.market, (_ui("category.asset"), ""))
     label, cls = chips
     bucket_chip = {
-        "long term": '<span class="tag pos">長線</span>',
-        "mid term":  '<span class="tag">中線</span>',
-        "short term": '<span class="tag warn">短線</span>',
-    }.get(agg.bucket.lower().split()[0] + " " + agg.bucket.lower().split()[1] if len(agg.bucket.split()) >= 2 else agg.bucket.lower(), "")
+        "long": f'<span class="tag pos">{_esc(_ui("category.chip_long"))}</span>',
+        "mid": f'<span class="tag">{_esc(_ui("category.chip_mid"))}</span>',
+        "short": f'<span class="tag warn">{_esc(_ui("category.chip_short"))}</span>',
+    }.get(_bucket_key(agg.bucket), "")
     return f"{label}{bucket_chip}"
 
 
 def _symbol_popover(agg: TickerAggregate, today: _dt.date) -> str:
     hold = hold_period_label(agg.earliest_date, today)
-    since = (agg.earliest_date or "").rsplit("-", 1)[0] if agg.earliest_date else "n/a"
+    since = (agg.earliest_date or "").rsplit("-", 1)[0] if agg.earliest_date else _ui("common.na")
     return f"""<div class="pop pop-sym" role="tooltip">
-                <h4>{_esc(agg.ticker)} · {_esc(agg.bucket)}</h4>
-                <div class="pop-sub">{_esc(agg.market.value)}</div>
-                <div class="pop-row"><span class="k">建倉時間</span><span class="v">{_esc(since)} · {hold}</span></div>
-                <div class="pop-row"><span class="k">批次數</span><span class="v">{len(agg.lots)} 批</span></div>
+                <h4>{_esc(agg.ticker)} · {_esc(_translate_bucket(agg.bucket))}</h4>
+                <div class="pop-sub">{_esc(_translate_market(agg.market.value))}</div>
+                <div class="pop-row"><span class="k">{_esc(_ui("symbol_pop.opened"))}</span><span class="v">{_esc(since)} · {hold}</span></div>
+                <div class="pop-row"><span class="k">{_esc(_ui("symbol_pop.lots"))}</span><span class="v">{_esc(_ui("symbol_pop.lots_suffix", count=len(agg.lots)))}</span></div>
               </div>"""
+
+
+CURRENCY_PREFIX: Dict[str, str] = {
+    "USD": "$", "TWD": "NT$", "JPY": "¥", "HKD": "HK$", "GBP": "£", "EUR": "€",
+    "KRW": "₩", "CNY": "RMB ", "SGD": "S$", "AUD": "A$", "CAD": "C$", "CHF": "CHF ",
+}
+
+
+def _native_money(value: Optional[float], ccy: str, decimals: int = 2) -> str:
+    """Format a native-currency value with the right prefix; `n/a` placeholder when missing."""
+    if value is None:
+        return f'<span class="pop-neg">{_ui("common.na")}</span>'
+    pfx = CURRENCY_PREFIX.get(ccy.upper(), f"{ccy} ")
+    return f"{pfx}{value:,.{decimals}f}"
 
 
 def _price_popover(agg: TickerAggregate, prices: Dict[str, Any]) -> str:
     if agg.is_cash:
         return ""
     pr = prices.get(agg.ticker, {}) or {}
-    src = _esc(pr.get("price_source", "n/a"))
-    as_of = _esc(pr.get("price_as_of", "n/a"))
-    fresh = _esc(pr.get("price_freshness", "n/a"))
-    price_str = f"${agg.latest_price:,.2f}" if agg.latest_price is not None else "n/a"
+    src = _esc(pr.get("price_source", _ui("common.na")))
+    as_of = _esc(pr.get("price_as_of") or _ui("common.na"))
+    fresh = _esc(_translate_freshness(pr.get("price_freshness", "n/a")))
+    state = _esc(_translate_market_state(pr.get("market_state_basis", "n/a")))
+    feed_ccy = _esc((pr.get("currency") or agg.trade_currency or _ui("common.na")).upper())
+    exchange = _esc(pr.get("exchange") or _ui("common.na"))
+    # §9.0 — latest price displays in native trade currency; footer aggregates in USD.
+    ccy = agg.trade_currency
+    price_str = _native_money(agg.latest_price, ccy)
     rows: List[str] = []
     for lot in sorted(agg.lots, key=lambda l: l.date or ""):
         date = _esc(lot.date or "?")
         if lot.cost is None:
-            cost = '<span class="pop-neg">n/a</span>'
-            pnl = '<span class="pop-neg">n/a</span>'
+            cost = f'<span class="pop-neg">{_ui("common.na")}</span>'
+            pnl_native = f'<span class="pop-neg">{_ui("common.na")}</span>'
         else:
-            cost = f"${lot.cost:,.2f}"
+            cost = _native_money(lot.cost, ccy)
             if agg.latest_price is not None:
-                p = (agg.latest_price - lot.cost) * lot.quantity
-                p_cls = "pop-pos" if p >= 0 else "pop-neg"
-                p_sign = "+" if p >= 0 else "−"
-                pnl = f'<span class="{p_cls}">{p_sign}${abs(p):,.0f}</span>'
+                # Native-currency P&L per lot for the popover row (matches the user's
+                # original trade currency mental model). USD aggregates live in the footer.
+                p_native = (agg.latest_price - lot.cost) * lot.quantity
+                p_cls = "pop-pos" if p_native >= 0 else "pop-neg"
+                p_sign = "+" if p_native >= 0 else "−"
+                pfx = CURRENCY_PREFIX.get(ccy.upper(), f"{ccy} ")
+                pnl_native = f'<span class="{p_cls}">{p_sign}{pfx}{abs(p_native):,.0f}</span>'
             else:
-                pnl = '<span class="pop-neg">n/a</span>'
+                pnl_native = f'<span class="pop-neg">{_ui("common.na")}</span>'
         qty = f"{lot.quantity:g}"
-        rows.append(f'<tr><td>{date}</td><td class="num">{cost}</td><td class="num">{qty}</td><td class="num">{pnl}</td></tr>')
-    foot_avg = f"${agg.weighted_avg_cost:,.2f}" if agg.weighted_avg_cost is not None else "n/a"
-    foot_total_cost = f"${agg.total_cost_known:,.0f}" if agg.total_cost_known else "n/a"
-    foot_pnl = '<span class="pop-neg">n/a</span>' if agg.pnl_amount is None else (
+        rows.append(f'<tr><td>{date}</td><td class="num">{cost}</td><td class="num">{qty}</td><td class="num">{pnl_native}</td></tr>')
+
+    # Footer — USD aggregates per §9.0.
+    if agg.weighted_avg_cost_usd is not None:
+        foot_avg = f"${agg.weighted_avg_cost_usd:,.2f} (USD)"
+    elif agg.weighted_avg_cost is not None:
+        # Couldn't FX-convert; show native and flag.
+        foot_avg = _native_money(agg.weighted_avg_cost, ccy) + f' <span class="pop-neg">{_esc(_ui("price_pop.fx_na"))}</span>'
+    else:
+        foot_avg = _ui("common.na")
+    if agg.weighted_avg_cost_usd is not None:
+        foot_total_cost = f"${agg.weighted_avg_cost_usd * agg.total_qty:,.0f}"
+    elif agg.total_cost_known:
+        foot_total_cost = _native_money(agg.total_cost_known, ccy, decimals=0)
+    else:
+        foot_total_cost = _ui("common.na")
+    foot_pnl = f'<span class="pop-neg">{_ui("common.na")}</span>' if agg.pnl_amount is None else (
         f'<span class="pop-{"pos" if agg.pnl_amount>=0 else "neg"}">'
         f'{"+" if agg.pnl_amount>=0 else "−"}${abs(agg.pnl_amount):,.0f}</span>'
     )
     return f"""<div class="pop pop-px" role="tooltip">
-                <h4>{_esc(agg.ticker)} · 每批損益</h4>
-                <div class="pop-sub">最新價 {price_str} · 來源：{src} · {fresh} · {as_of}</div>
+                <h4>{_esc(agg.ticker)} · {_esc(_ui("price_pop.title_suffix"))}</h4>
+                <div class="pop-sub">{_esc(_ui("price_pop.latest_price"))} {price_str} · {_esc(_ui("common.source"))}：{src} · {_esc(_ui("price_pop.freshness"))}：{fresh} · {_esc(_ui("price_pop.market_basis"))}：{state} · {_esc(_ui("price_pop.currency"))}：{feed_ccy} · {_esc(_ui("price_pop.exchange"))}：{exchange} · {as_of}</div>
                 <table>
-                  <thead><tr><th>取得日</th><th class="num">成本</th><th class="num">數量</th><th class="num">損益</th></tr></thead>
+                  <thead><tr><th>{_esc(_ui("price_pop.acquired"))}</th><th class="num">{_esc(_ui("price_pop.cost"))}</th><th class="num">{_esc(_ui("price_pop.quantity"))}</th><th class="num">{_esc(_ui("price_pop.pnl"))}</th></tr></thead>
                   <tbody>{''.join(rows)}</tbody>
-                  <tfoot class="summary"><tr><td>平均成本 {foot_avg}</td><td class="num">{foot_total_cost}</td><td class="num">{agg.total_qty:g}</td><td class="num">{foot_pnl}</td></tr></tfoot>
+                  <tfoot class="summary"><tr><td>{_esc(_ui("price_pop.avg_cost"))} {foot_avg}</td><td class="num">{foot_total_cost}</td><td class="num">{agg.total_qty:g}</td><td class="num">{foot_pnl}</td></tr></tfoot>
                 </table>
               </div>"""
 
@@ -704,8 +1073,8 @@ def render_pnl_ranking(aggs: Dict[str, TickerAggregate]) -> str:
     return f"""\
   <section class="section">
     <div class="section-head">
-      <h2>持股損益排序</h2>
-      <span class="sub">已實現＋未實現損益（USD）</span>
+      <h2>{_esc(_ui("pnl_ranking.title"))}</h2>
+      <span class="sub">{_esc(_ui("pnl_ranking.subtitle"))}</span>
     </div>
     <div class="bars">{''.join(rows)}</div>
   </section>"""
@@ -714,37 +1083,37 @@ def render_pnl_ranking(aggs: Dict[str, TickerAggregate]) -> str:
 def render_holding_period(pacing: BookPacing) -> str:
     if pacing.avg_hold_years is None:
         return ""
-    oldest = pacing.oldest or ("n/a", "n/a", "n/a")
-    newest = pacing.newest or ("n/a", "n/a", "n/a")
-    over_1y = "n/a" if pacing.pct_held_over_1y is None else f"{pacing.pct_held_over_1y:.0f}%"
+    oldest = pacing.oldest or (_ui("common.na"), _ui("common.na"), _ui("common.na"))
+    newest = pacing.newest or (_ui("common.na"), _ui("common.na"), _ui("common.na"))
+    over_1y = _ui("common.na") if pacing.pct_held_over_1y is None else f"{pacing.pct_held_over_1y:.0f}%"
     d = pacing.distribution_pct
     return f"""\
   <section class="section">
     <div class="section-head">
-      <h2>持有期間與節奏</h2>
-      <span class="sub">成本加權，不含現金</span>
+      <h2>{_esc(_ui("holding_period.title"))}</h2>
+      <span class="sub">{_esc(_ui("holding_period.subtitle"))}</span>
     </div>
     <div class="kpis">
-      <div class="kpi"><div class="k">平均持有</div><div class="v">{pacing.avg_hold_years} 年</div><div class="delta">成本加權</div></div>
-      <div class="kpi"><div class="k">最舊批次</div><div class="v">{_esc(oldest[0])}</div><div class="delta">{_esc(oldest[1])} · {_esc(oldest[2])}</div></div>
-      <div class="kpi"><div class="k">最新批次</div><div class="v">{_esc(newest[0])}</div><div class="delta">{_esc(newest[1])} · {_esc(newest[2])}</div></div>
-      <div class="kpi"><div class="k">持有 &gt; 1 年</div><div class="v">{over_1y}</div><div class="delta">佔風險資產市值</div></div>
+      <div class="kpi"><div class="k">{_esc(_ui("holding_period.avg_hold"))}</div><div class="v">{_esc(_format_years(pacing.avg_hold_years))}</div><div class="delta">{_esc(_ui("holding_period.avg_hold_note"))}</div></div>
+      <div class="kpi"><div class="k">{_esc(_ui("holding_period.oldest_lot"))}</div><div class="v">{_esc(oldest[0])}</div><div class="delta">{_esc(oldest[1])} · {_esc(oldest[2])}</div></div>
+      <div class="kpi"><div class="k">{_esc(_ui("holding_period.newest_lot"))}</div><div class="v">{_esc(newest[0])}</div><div class="delta">{_esc(newest[1])} · {_esc(newest[2])}</div></div>
+      <div class="kpi"><div class="k">{_esc(_ui("holding_period.held_over_1y"))}</div><div class="v">{over_1y}</div><div class="delta">{_esc(_ui("holding_period.held_over_1y_note"))}</div></div>
     </div>
 
     <div style="margin-top:18px">
-      <div class="period-strip" aria-label="持有期間分布">
-        <span style="width:{d['<1m']}%;background:#b15309"  title="< 1 月"></span>
-        <span style="width:{d['1-6m']}%;background:#8a5a1c" title="1–6 月"></span>
-        <span style="width:{d['6-12m']}%;background:#1d4690" title="6–12 月"></span>
-        <span style="width:{d['1-3y']}%;background:#1f2937" title="1–3 年"></span>
-        <span style="width:{d['3y+']}%;background:#15703d" title="3 年以上"></span>
+      <div class="period-strip" aria-label="{_esc(_ui("holding_period.period_strip_label"))}">
+        <span style="width:{d['<1m']}%;background:#b15309"  title="{_esc(_ui("holding_period.lt_1m"))}"></span>
+        <span style="width:{d['1-6m']}%;background:#8a5a1c" title="{_esc(_ui("holding_period.m1_6"))}"></span>
+        <span style="width:{d['6-12m']}%;background:#1d4690" title="{_esc(_ui("holding_period.m6_12"))}"></span>
+        <span style="width:{d['1-3y']}%;background:#1f2937" title="{_esc(_ui("holding_period.y1_3"))}"></span>
+        <span style="width:{d['3y+']}%;background:#15703d" title="{_esc(_ui("holding_period.y3_plus"))}"></span>
       </div>
       <div class="period-legend">
-        <span><i style="background:#b15309"></i>&lt; 1 月 · {d['<1m']}%</span>
-        <span><i style="background:#8a5a1c"></i>1–6 月 · {d['1-6m']}%</span>
-        <span><i style="background:#1d4690"></i>6–12 月 · {d['6-12m']}%</span>
-        <span><i style="background:#1f2937"></i>1–3 年 · {d['1-3y']}%</span>
-        <span><i style="background:#15703d"></i>3 年以上 · {d['3y+']}%</span>
+        <span><i style="background:#b15309"></i>{_esc(_ui("holding_period.lt_1m"))} · {d['<1m']}%</span>
+        <span><i style="background:#8a5a1c"></i>{_esc(_ui("holding_period.m1_6"))} · {d['1-6m']}%</span>
+        <span><i style="background:#1d4690"></i>{_esc(_ui("holding_period.m6_12"))} · {d['6-12m']}%</span>
+        <span><i style="background:#1f2937"></i>{_esc(_ui("holding_period.y1_3"))} · {d['1-3y']}%</span>
+        <span><i style="background:#15703d"></i>{_esc(_ui("holding_period.y3_plus"))} · {d['3y+']}%</span>
       </div>
     </div>
   </section>"""
@@ -759,13 +1128,13 @@ def render_theme_sector(context: Dict[str, Any]) -> str:
     11-section ordering contract holds (per spec §10.1) and surface a TODO.
     """
     body = context.get("theme_sector_html") or (
-        '<div class="prose"><p>（主題與行業暴險待補 — 由 agent 在執行時依 §4.3 自動分類後注入）</p></div>'
+        f'<div class="prose"><p>{_esc(_ui("theme_sector.placeholder"))}</p></div>'
     )
     return f"""\
   <section class="section">
     <div class="section-head">
-      <h2>主題與行業暴險</h2>
-      <span class="sub">USD 基準 · 含 ETF 穿透分配</span>
+      <h2>{_esc(_ui("theme_sector.title"))}</h2>
+      <span class="sub">{_esc(_ui("theme_sector.subtitle"))}</span>
     </div>
     {body}
   </section>"""
@@ -774,19 +1143,23 @@ def render_theme_sector(context: Dict[str, Any]) -> str:
 def render_news(context: Dict[str, Any]) -> str:
     items = context.get("news") or []
     if not items:
-        body = '<div class="prose"><p>（最新重大新聞待補 — 由 agent 在執行時擷取 1–3 則／核心部位）</p></div>'
+        body = f'<div class="prose"><p>{_esc(_ui("news.placeholder"))}</p></div>'
     else:
         rows = []
         for n in items:
             impact = n.get("impact", "neu")
-            label = {"pos": "正面", "neg": "負面", "neu": "中性"}.get(impact, "中性")
+            label = {
+                "pos": _ui("news.positive"),
+                "neg": _ui("news.negative"),
+                "neu": _ui("news.neutral"),
+            }.get(impact, _ui("news.neutral"))
             url = _esc(n.get("url", "#"))
             rows.append(f"""\
       <div class="item">
-        <div class="meta"><span class="tk">{_esc(n.get('ticker', '—'))}</span>{_esc(n.get('date', ''))}</div>
+        <div class="meta"><span class="tk">{_esc(n.get('ticker', _ui("common.dash")))}</span>{_esc(n.get('date', ''))}</div>
         <div class="body">
           <div class="head">{_esc(n.get('headline', ''))}</div>
-          <div class="src">來源：<a href="{url}">{_esc(n.get('source', ''))}</a></div>
+          <div class="src">{_esc(_ui("news.source_prefix"))}<a href="{url}">{_esc(n.get('source', ''))}</a></div>
         </div>
         <span class="impact {impact}">{label}</span>
       </div>""")
@@ -794,8 +1167,8 @@ def render_news(context: Dict[str, Any]) -> str:
     return f"""\
   <section class="section">
     <div class="section-head">
-      <h2>最新重大新聞</h2>
-      <span class="sub">每核心部位 1–3 則</span>
+      <h2>{_esc(_ui("news.title"))}</h2>
+      <span class="sub">{_esc(_ui("news.subtitle"))}</span>
     </div>
     {body}
   </section>"""
@@ -813,17 +1186,19 @@ def render_events(context: Dict[str, Any]) -> str:
             <td><span class="tag {_esc(e.get('impact_class', ''))}">{_esc(e.get('impact_label', ''))}</span></td>
             <td>{_esc(e.get('watch', ''))}</td>
           </tr>""")
-    body = "\n".join(rows) if rows else '<tr><td colspan="5" class="na" style="text-align:center;padding:14px">（30 天內無已知事件）</td></tr>'
+    body = "\n".join(rows) if rows else (
+        f'<tr><td colspan="5" class="na" style="text-align:center;padding:14px">{_esc(_ui("events.empty"))}</td></tr>'
+    )
     return f"""\
   <section class="section">
     <div class="section-head">
-      <h2>未來 30 天事件曆</h2>
-      <span class="sub">財報、股東會、除息、產品、政策、央行、總體</span>
+      <h2>{_esc(_ui("events.title"))}</h2>
+      <span class="sub">{_esc(_ui("events.subtitle"))}</span>
     </div>
     <div class="tbl-wrap">
       <table>
         <thead>
-          <tr><th>日期</th><th>標的 / 主題</th><th>事件</th><th>影響</th><th>關注重點</th></tr>
+          <tr><th>{_esc(_ui("events.date"))}</th><th>{_esc(_ui("events.topic"))}</th><th>{_esc(_ui("events.event"))}</th><th>{_esc(_ui("events.impact"))}</th><th>{_esc(_ui("events.watch"))}</th></tr>
         </thead>
         <tbody>{body}</tbody>
       </table>
@@ -831,53 +1206,137 @@ def render_events(context: Dict[str, Any]) -> str:
   </section>"""
 
 
-def render_high_risk_opp(aggs: Dict[str, TickerAggregate], total_assets: float, context: Dict[str, Any]) -> str:
-    risk_cells = []
-    for agg in sorted([a for a in aggs.values() if not a.is_cash], key=lambda a: -(a.market_value or 0))[:10]:
-        mv = agg.market_value or 0
-        weight = (mv / total_assets * 100.0) if total_assets else 0.0
-        # crude risk score: high vol bucket / large weight → high
+@dataclass
+class RiskHeatItem:
+    ticker: str
+    score: int
+    band_class: str
+    weight_pct: float
+    move_pct: Optional[float]
+    reasons: List[str]
+
+
+def build_risk_heat_items(
+    aggs: Dict[str, TickerAggregate],
+    prices: Dict[str, Any],
+    total_assets: float,
+    config: Dict[str, float],
+) -> List[RiskHeatItem]:
+    items: List[RiskHeatItem] = []
+    single_name_cap = config.get("single_name_weight_warn_pct", DEFAULTS["single_name_weight_warn_pct"])
+    move_alert = config.get("single_day_move_alert_pct", DEFAULTS["single_day_move_alert_pct"])
+
+    for agg in aggs.values():
+        if agg.is_cash or agg.market_value in (None, 0):
+            continue
+        weight_pct = (agg.market_value / total_assets * 100.0) if total_assets else 0.0
+        pr = prices.get(agg.ticker, {}) or {}
+        reasons: List[str] = []
         score = 0
+
         if agg.market == MarketType.CRYPTO:
-            score += 6
-        if "short" in agg.bucket.lower():
+            score += 3
+            reasons.append(_ui("risk.factor_crypto"))
+
+        bucket_key = _bucket_key(agg.bucket)
+        if bucket_key == "short":
             score += 2
-        if weight > 10:
+            reasons.append(_ui("risk.factor_short_bucket"))
+        elif bucket_key == "mid":
+            score += 1
+            reasons.append(_ui("risk.factor_mid_bucket"))
+
+        if weight_pct >= single_name_cap * 1.5:
+            score += 3
+            reasons.append(_ui("risk.factor_concentration_breach", threshold=single_name_cap))
+        elif weight_pct >= single_name_cap:
             score += 2
-        if agg.move_pct is not None and abs(agg.move_pct) > 8:
+            reasons.append(_ui("risk.factor_concentration_warn", threshold=single_name_cap))
+        elif weight_pct >= single_name_cap * 0.5:
+            score += 1
+            reasons.append(_ui("risk.factor_concentration_watch", threshold=single_name_cap * 0.5))
+
+        if agg.move_pct is not None:
+            abs_move = abs(agg.move_pct)
+            if abs_move >= move_alert * 1.5:
+                score += 2
+                reasons.append(_ui("risk.factor_move_breach", threshold=move_alert))
+            elif abs_move >= move_alert:
+                score += 1
+                reasons.append(_ui("risk.factor_move_warn", threshold=move_alert))
+
+        if agg.latest_price is None or pr.get("price_source") == "n/a":
             score += 2
+            reasons.append(_ui("risk.factor_missing"))
+        else:
+            freshness = pr.get("price_freshness", "n/a")
+            if freshness == "delayed":
+                score += 1
+                reasons.append(_ui("risk.factor_delayed"))
+            elif freshness in {"stale_after_exhaustive_search", "n/a"}:
+                score += 2
+                reasons.append(_ui("risk.factor_stale"))
+
         score = min(score, 10)
-        cls = "r-high" if score >= 6 else "r-mid" if score >= 3 else "r-low"
-        move_str = f"{agg.move_pct:+.1f}%" if agg.move_pct is not None else "n/a"
-        risk_cells.append(
-            f'<div class="risk {cls}"><div class="t">{_esc(agg.ticker)}</div>'
-            f'<div class="s">風險 {score} / 10</div>'
-            f'<div class="m">{weight:.1f}% · {move_str}</div></div>'
+        if not reasons:
+            reasons.append(_ui("risk.factor_core"))
+        band_class = "r-high" if score >= 6 else "r-mid" if score >= 3 else "r-low"
+        items.append(
+            RiskHeatItem(
+                ticker=agg.ticker,
+                score=score,
+                band_class=band_class,
+                weight_pct=weight_pct,
+                move_pct=agg.move_pct,
+                reasons=reasons,
+            )
         )
 
+    items.sort(key=lambda item: (-item.score, -item.weight_pct, item.ticker))
+    return items[:10]
+
+
+def render_high_risk_opp(
+    aggs: Dict[str, TickerAggregate],
+    prices: Dict[str, Any],
+    total_assets: float,
+    context: Dict[str, Any],
+    config: Dict[str, float],
+) -> str:
+    risk_cells = []
+    for item in build_risk_heat_items(aggs, prices, total_assets, config):
+        move_str = f"{item.move_pct:+.1f}%" if item.move_pct is not None else _ui("common.na")
+        reason_summary = " · ".join(item.reasons[:3])
+        risk_cells.append(
+            f'<div class="risk {item.band_class}"><div class="t">{_esc(item.ticker)}</div>'
+            f'<div class="s">{_esc(_ui("risk.card_label", score=item.score))} · {_esc(reason_summary)}</div>'
+            f'<div class="m">{item.weight_pct:.1f}% · {move_str}</div></div>'
+        )
+
+    risk_html = ''.join(risk_cells) or f'<div class="prose"><p>{_esc(_ui("risk.empty_risk"))}</p></div>'
     opps = context.get("high_opps") or []
     opp_rows = []
     for o in opps:
         opp_rows.append(f"""\
           <div class="item">
-            <div class="tk">{_esc(o.get('ticker', '—'))}</div>
+            <div class="tk">{_esc(o.get('ticker', _ui("common.dash")))}</div>
             <div class="why">{_esc(o.get('why', ''))}</div>
             <div class="trig">{_esc(o.get('trigger', ''))}</div>
           </div>""")
-    opp_html = "".join(opp_rows) or '<div class="prose"><p>（無高機會清單）</p></div>'
+    opp_html = "".join(opp_rows) or f'<div class="prose"><p>{_esc(_ui("risk.empty_opp"))}</p></div>'
     return f"""\
   <section class="section">
     <div class="section-head">
-      <h2>高風險與高機會</h2>
-      <span class="sub">左：風險熱圖 ／ 右：機會清單</span>
+      <h2>{_esc(_ui("risk.title"))}</h2>
+      <span class="sub">{_esc(_ui("risk.subtitle"))}</span>
     </div>
     <div class="cols-2">
       <div>
-        <div class="eyebrow" style="margin-bottom:10px">高風險</div>
-        <div class="risk-grid">{''.join(risk_cells)}</div>
+        <div class="eyebrow" style="margin-bottom:10px">{_esc(_ui("risk.left_title"))} · {_esc(_ui("risk.standard"))}</div>
+        <div class="risk-grid">{risk_html}</div>
       </div>
       <div>
-        <div class="eyebrow" style="margin-bottom:10px">高機會</div>
+        <div class="eyebrow" style="margin-bottom:10px">{_esc(_ui("risk.right_title"))}</div>
         <div class="opp-list">{opp_html}</div>
       </div>
     </div>
@@ -890,16 +1349,16 @@ def render_adjustments(context: Dict[str, Any]) -> str:
         return f"""\
   <section class="section">
     <div class="section-head">
-      <h2>建議調整</h2>
-      <span class="sub">具體標的 · 動作 · 觸發</span>
+      <h2>{_esc(_ui("adjustments.title"))}</h2>
+      <span class="sub">{_esc(_ui("adjustments.subtitle"))}</span>
     </div>
-    <div class="prose"><p>（建議調整清單待 agent 補入）</p></div>
+    <div class="prose"><p>{_esc(_ui("adjustments.placeholder"))}</p></div>
   </section>"""
     rows = []
     for a in adjs:
         rows.append(f"""\
           <tr>
-            <td><span class="sym-trigger" tabindex="0" role="button">{_esc(a.get('ticker', '—'))}</span></td>
+            <td><span class="sym-trigger" tabindex="0" role="button">{_esc(a.get('ticker', _ui("common.dash")))}</span></td>
             <td class="num">{a.get('current_pct', 0):.1f}%</td>
             <td><span class="adj-action {_esc(a.get('action', 'hold'))}">{_esc(a.get('action_label', ''))}</span></td>
             <td class="why">{_esc(a.get('why', ''))}</td>
@@ -908,12 +1367,12 @@ def render_adjustments(context: Dict[str, Any]) -> str:
     return f"""\
   <section class="section">
     <div class="section-head">
-      <h2>建議調整</h2>
-      <span class="sub">具體標的 · 動作 · 觸發</span>
+      <h2>{_esc(_ui("adjustments.title"))}</h2>
+      <span class="sub">{_esc(_ui("adjustments.subtitle"))}</span>
     </div>
     <div class="tbl-wrap">
       <table class="adj-tbl">
-        <thead><tr><th>標的</th><th>目前</th><th>建議</th><th>理由</th><th>觸發</th></tr></thead>
+        <thead><tr><th>{_esc(_ui("adjustments.ticker"))}</th><th>{_esc(_ui("adjustments.current"))}</th><th>{_esc(_ui("adjustments.recommendation"))}</th><th>{_esc(_ui("adjustments.why"))}</th><th>{_esc(_ui("adjustments.trigger"))}</th></tr></thead>
         <tbody>{''.join(rows)}</tbody>
       </table>
     </div>
@@ -923,18 +1382,20 @@ def render_adjustments(context: Dict[str, Any]) -> str:
 def render_actions(context: Dict[str, Any]) -> str:
     a = context.get("actions") or {}
     rows = []
-    for label_class, label_zh, key in [("do", "必做", "must_do"),
-                                        ("may", "可做", "may_do"),
-                                        ("no", "不建議", "avoid"),
-                                        ("fix", "補資料", "need_data")]:
+    for label_class, label_text, key in [
+        ("do", _ui("actions.must_do"), "must_do"),
+        ("may", _ui("actions.may_do"), "may_do"),
+        ("no", _ui("actions.avoid"), "avoid"),
+        ("fix", _ui("actions.need_data"), "need_data"),
+    ]:
         for item in a.get(key, []) or []:
-            rows.append(f'<li><span class="lbl {label_class}">{label_zh}</span><span>{_esc(item)}</span></li>')
-    body = "\n".join(rows) or '<li><span class="lbl">—</span><span>（行動清單待補）</span></li>'
+            rows.append(f'<li><span class="lbl {label_class}">{_esc(label_text)}</span><span>{_esc(item)}</span></li>')
+    body = "\n".join(rows) or f'<li><span class="lbl">{_esc(_ui("common.dash"))}</span><span>{_esc(_ui("actions.placeholder"))}</span></li>'
     return f"""\
   <section class="section">
     <div class="section-head">
-      <h2>今日行動清單</h2>
-      <span class="sub">優先順序</span>
+      <h2>{_esc(_ui("actions.title"))}</h2>
+      <span class="sub">{_esc(_ui("actions.subtitle"))}</span>
     </div>
     <ul class="actions">
 {body}
@@ -952,44 +1413,46 @@ def render_sources(prices: Dict[str, Any], context: Dict[str, Any]) -> str:
         fresh = pr.get("price_freshness", "n/a")
         fresh_cls = {"fresh": "fresh", "delayed": "delayed",
                      "stale_after_exhaustive_search": "stale", "n/a": "stale"}.get(fresh, "stale")
+        fresh_label = _translate_freshness(fresh)
+        market_state_label = _translate_market_state(pr.get("market_state_basis", "n/a"))
         notes = []
         if pr.get("yfinance_auto_fix_applied"):
-            notes.append(f"自動修正：{pr.get('yfinance_auto_fix_summary')}")
+            notes.append(f"{_ui('sources.auto_fix')}：{pr.get('yfinance_auto_fix_summary')}")
         if pr.get("yfinance_retry_count"):
-            notes.append(f"重試 {pr.get('yfinance_retry_count')} 次")
+            notes.append(_ui("sources.retry", count=pr.get("yfinance_retry_count")))
         if pr.get("yfinance_failure_reason"):
             notes.append(_esc(pr.get("yfinance_failure_reason"))[:60])
         rows.append(f"""\
           <tr>
             <td>{_esc(ticker)}</td>
-            <td>{_esc(pr.get('price_source', 'n/a'))}</td>
-            <td>{_esc(pr.get('market_state_basis', 'n/a'))}</td>
-            <td class="num">{_esc(pr.get('price_as_of', 'n/a'))}</td>
-            <td><span class="freshness {fresh_cls}">{_esc(fresh)}</span></td>
-            <td>{_esc('；'.join(notes)) or '—'}</td>
+            <td>{_esc(pr.get('price_source', _ui("common.na")))}</td>
+            <td>{_esc(market_state_label)}</td>
+            <td class="num">{_esc(pr.get('price_as_of') or _ui("common.na"))}</td>
+            <td><span class="freshness {fresh_cls}">{_esc(fresh_label)}</span></td>
+            <td>{_esc('; '.join(notes)) or _esc(_ui("common.dash"))}</td>
           </tr>""")
     gaps = context.get("data_gaps") or []
-    gap_html = "".join(f'<li><b>{_esc(g.get("summary", ""))}：</b>{_esc(g.get("detail", ""))}</li>' for g in gaps) \
-        or '<li>（無資料缺口）</li>'
+    gap_html = "".join(f'<li><b>{_esc(g.get("summary", ""))}:</b> {_esc(g.get("detail", ""))}</li>' for g in gaps) \
+        or f'<li>{_esc(_ui("sources.no_gaps"))}</li>'
     spec_note = context.get("spec_update_note")
-    spec_html = (f'<div class="bucket-note" style="margin-top:18px"><b>建議更新 agent spec：</b>{_esc(spec_note)}</div>'
+    spec_html = (f'<div class="bucket-note" style="margin-top:18px"><b>{_esc(_ui("sources.spec_note"))}</b>{_esc(spec_note)}</div>'
                  if spec_note else "")
     return f"""\
   <section class="section">
     <div class="section-head">
-      <h2>資料來源與缺口</h2>
-      <span class="sub">每筆價格的取得方式與新鮮度 · 待補資料逐項列出</span>
+      <h2>{_esc(_ui("sources.title"))}</h2>
+      <span class="sub">{_esc(_ui("sources.subtitle"))}</span>
     </div>
-    <div class="eyebrow" style="margin-bottom:10px">最新價來源稽核</div>
+    <div class="eyebrow" style="margin-bottom:10px">{_esc(_ui("sources.audit_heading"))}</div>
     <div class="tbl-wrap">
       <table class="src-tbl">
         <thead>
-          <tr><th>標的</th><th>價格來源</th><th>市場狀態</th><th>取得時間</th><th>新鮮度</th><th>備註</th></tr>
+          <tr><th>{_esc(_ui("sources.ticker"))}</th><th>{_esc(_ui("sources.price_source"))}</th><th>{_esc(_ui("sources.market_state"))}</th><th>{_esc(_ui("sources.as_of"))}</th><th>{_esc(_ui("sources.freshness"))}</th><th>{_esc(_ui("sources.notes"))}</th></tr>
         </thead>
         <tbody>{''.join(rows)}</tbody>
       </table>
     </div>
-    <div class="eyebrow" style="margin-top:22px;margin-bottom:6px">資料缺口</div>
+    <div class="eyebrow" style="margin-top:22px;margin-bottom:6px">{_esc(_ui("sources.gaps_heading"))}</div>
     <ul class="gap-list">{gap_html}</ul>
     {spec_html}
   </section>"""
@@ -1005,6 +1468,7 @@ def render_html(
     context: Dict[str, Any],
     css: str,
     config: Dict[str, float],
+    settings: SettingsProfile,
 ) -> str:
     today = _dt.date.today()
 
@@ -1016,9 +1480,6 @@ def render_html(
 
     pacing = book_pacing(aggs, today)
     _ = special_checks(aggs, total_assets, config)  # results currently surfaced via context["alerts"]
-
-    lang_attr = {"繁體中文": "zh-Hant", "english": "en", "japanese": "ja",
-                 "簡體中文": "zh-Hans"}.get(context.get("language"), "zh-Hant")
 
     # Render sections (§10 order)
     sections = [
@@ -1032,25 +1493,25 @@ def render_html(
         render_theme_sector(context),                                      # §10.1 #5
         render_news(context),                                              # §10.1 #6
         render_events(context),                                            # §10.1 #7
-        render_high_risk_opp(aggs, total_assets, context),                 # §10.1 #8
+        render_high_risk_opp(aggs, prices, total_assets, context, config), # §10.1 #8
         render_adjustments(context),                                       # §10.1 #9
         render_actions(context),                                           # §10.1 #10
         render_sources(prices, context),                                   # §10.1 #11
     ]
 
     return f"""<!doctype html>
-<html lang="{lang_attr}">
+<html lang="{_esc(settings.locale)}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{_esc(context.get('title', '投資組合健康檢查'))}</title>
+<title>{_esc(context.get('title', _ui('masthead.title')))}</title>
 <style>{css}</style>
 </head>
 <body>
 <div class="wrap">
 {chr(10).join(s for s in sections if s)}
   <footer class="footer">
-    本報告依 <code>docs/portfolio_report_agent_guidelines.md</code> 規範產出，價格為產出時靜態快照，未持續刷新。
+    {_esc(_ui("footer.text"))}
   </footer>
 </div>
 </body>
@@ -1068,6 +1529,10 @@ def _cli(argv: Optional[List[str]] = None) -> argparse.Namespace:
     p.add_argument("--settings", default="SETTINGS.md", type=Path)
     p.add_argument("--prices", required=True, type=Path,
                    help="JSON output from scripts/fetch_prices.py")
+    p.add_argument("--ui-dict", default=None, type=Path,
+                   help="Optional UI dictionary JSON overlay. For non-built-in languages, "
+                        "the executing agent should translate scripts/i18n/report_ui.en.json "
+                        "and pass the translated JSON here.")
     p.add_argument("--context", default=None, type=Path,
                    help="Editorial context JSON (today summary, news, actions, ...)")
     p.add_argument("--sample", default=Path(__file__).resolve().parent.parent / "reports" / "_sample_redesign.html",
@@ -1091,17 +1556,61 @@ def main(argv: Optional[List[str]] = None) -> int:
     lots = parse_holdings(args.holdings)
     aggs = aggregate(lots)
     prices = json.loads(args.prices.read_text(encoding="utf-8"))
-    merge_prices(aggs, prices)
 
+    # §9.0 — load editorial context BEFORE merging prices so we can apply the supplied
+    # USD FX rates to non-USD positions during the merge.
     context: Dict[str, Any] = {}
     if args.context and args.context.exists():
         context = json.loads(args.context.read_text(encoding="utf-8"))
     elif args.context:
         logging.warning("Context file %s not found; rendering with placeholders.", args.context)
 
+    settings = parse_settings_profile(args.settings)
+    ui_dict_override: Optional[Dict[str, Any]] = None
+    if args.ui_dict and args.ui_dict.exists():
+        ui_dict_override = _load_json_ui_dict(args.ui_dict)
+    elif args.ui_dict:
+        logging.warning("UI dictionary file %s not found; ignoring.", args.ui_dict)
+    elif isinstance(context.get("ui_dictionary"), dict):
+        ui_dict_override = context.get("ui_dictionary")
+    elif context.get("ui_dictionary_path"):
+        candidate = Path(str(context.get("ui_dictionary_path")))
+        if candidate.exists():
+            ui_dict_override = _load_json_ui_dict(candidate)
+        else:
+            logging.warning("Context UI dictionary path %s not found; ignoring.", candidate)
+
+    if settings.locale not in STABLE_UI_TEXT and ui_dict_override is None:
+        logging.warning(
+            "Locale %s has no built-in UI dictionary. Falling back to English chrome. "
+            "The executing agent should translate %s and pass it via --ui-dict "
+            "or context['ui_dictionary'].",
+            settings.raw_language,
+            I18N_DIR / "report_ui.en.json",
+        )
+    _set_active_ui(resolve_ui_bundle(settings, ui_dict_override))
+    if settings.missing:
+        logging.warning("SETTINGS.md not found; defaulting report UI language to English.")
+
+    context["language"] = settings.display_name
+
+    fx = context.get("fx") or {}
+    merge_prices(aggs, prices, fx=fx)
+
+    # §9.0 audit — warn loudly for any non-USD currency in the book that lacks an FX rate.
+    needed_ccys = sorted({a.trade_currency for a in aggs.values() if a.trade_currency != "USD"})
+    missing_fx = [c for c in needed_ccys if f"USD/{c}" not in fx and c not in CASH_STABLECOIN_USD]
+    if missing_fx:
+        logging.warning(
+            "Non-USD currency in book without FX rate: %s. "
+            "Affected aggregates will render as `n/a` per spec §9.0. "
+            "Add `\"fx\": {\"USD/%s\": <rate>, ...}` to the context JSON.",
+            ", ".join(missing_fx), missing_fx[0],
+        )
+
     css = load_canonical_css(args.sample)
-    config = {**DEFAULTS}
-    html_doc = render_html(aggs, prices, context, css, config)
+    config = {**DEFAULTS, **settings.config_overrides}
+    html_doc = render_html(aggs, prices, context, css, config, settings)
 
     if args.output is None:
         ts = _dt.datetime.now().strftime("%Y-%m-%d_%H%M")

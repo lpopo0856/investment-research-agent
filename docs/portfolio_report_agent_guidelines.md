@@ -42,8 +42,8 @@ Before running the report, read these files. They are normative; this guidelines
 - `HOLDINGS.md` — current positions (auto-read every run).
 - `SETTINGS.md` — output language, tone, optional API keys, optional position-sizing rails.
 - `reports/_sample_redesign.html` — **canonical visual reference**. New reports must align color, typography, layout, and component styling with this file. If missing, rebuild from the tokens in §14.
-- `scripts/fetch_prices.py` — **canonical price-retrieval template** implementing §8 (yfinance batching, pacing, auto-correction, fallback chain). Run this rather than re-implementing the pipeline ad-hoc each report. Output: `prices.json`.
-- `scripts/generate_report.py` — **canonical HTML rendering template** implementing §10/§13/§14. Reads `HOLDINGS.md`, `prices.json`, and an editorial context JSON; emits the self-contained HTML. Reads CSS from `reports/_sample_redesign.html` so visual edits land in one place.
+- `scripts/fetch_prices.py` — **canonical price-retrieval template** implementing §8 (market-aware primary-source routing, yfinance pacing for listed securities / FX, crypto-native Binance / CoinGecko first, auto-correction, fallback chain). Run this rather than re-implementing the pipeline ad-hoc each report. Output: `prices.json`. **Before invoking it, the latest-price subagent must complete §8.0 (install `yfinance` and `requests`) for the yfinance branches.**
+- `scripts/generate_report.py` — **canonical HTML rendering template** implementing §5/§10/§13/§14. Reads `HOLDINGS.md`, `prices.json`, and an editorial context JSON; emits the self-contained HTML. Reads CSS from `reports/_sample_redesign.html` so visual edits land in one place. Stable built-in UI dictionaries live as JSON files under `scripts/i18n/` for English / Traditional Chinese / Simplified Chinese.
 
 ---
 
@@ -116,7 +116,7 @@ Every lot follows:
 
 #### Market-type tag values
 
-| Tag | Meaning | yfinance symbol convention |
+| Tag | Meaning | Primary quote routing |
 |---|---|---|
 | `[US]` | NYSE / NASDAQ / AMEX listed equity or ETF | bare ticker (`NVDA`); dotted classes use Yahoo dash form (`BRK.B` → `BRK-B`) |
 | `[TW]` | Taiwan listed equity (TWSE) | `<code>.TW` (`2330.TW`) |
@@ -124,7 +124,7 @@ Every lot follows:
 | `[JP]` | Tokyo Stock Exchange | `<code>.T` |
 | `[HK]` | Hong Kong Stock Exchange | `<code>.HK` |
 | `[LSE]` | London Stock Exchange (UCITS ETFs etc.) | `<code>.L` |
-| `[crypto]` | Crypto asset | `<SYM>-USD` (`BTC-USD`, `ETH-USD`) |
+| `[crypto]` | Crypto asset | Binance public spot `<SYM>USDT`; CoinGecko by coin id |
 | `[FX]` | Currency pair held as position | `<PAIR>=X` (`USDJPY=X`) |
 | `[cash]` | Cash / cash-equivalent (no price fetch) | — |
 
@@ -156,6 +156,8 @@ If a legacy lot has no `[<MARKET>]` tag, the price agent falls back to a heurist
 - Tag chips (`High vol`, `Long`, `Mid`, `Rich val`): translate every visible label. Default English class names stay (the CSS hooks); the visible text is translated.
 - The HTML `<title>` must also be in the SETTINGS language (the filename itself stays ASCII per §6).
 - If `SETTINGS.md` is missing or unparseable, default to **English** and surface the missing setting as a `n/a` in the masthead meta row.
+- `scripts/generate_report.py` must load **stable built-in dictionaries** for `english`, `traditional chinese`, and `simplified chinese` from JSON files under `scripts/i18n/`.
+- If `SETTINGS.md` requests another single language, the **executing agent** should translate `scripts/i18n/report_ui.en.json` into a temporary JSON overlay and pass it into the renderer via `--ui-dict` or `context["ui_dictionary"]`. The renderer itself should not call external translation services.
 
 ### 5.2 Allowed non-language tokens (allow-list)
 
@@ -232,21 +234,50 @@ For each hit, confirm it is purely a citation link; if it is anything else, inli
 
 ## 8. Latest-price retrieval pipeline
 
+### 8.0 Subagent prerequisites — install `yfinance` first (HARD REQUIREMENT)
+
+Before the latest-price subagent runs `scripts/fetch_prices.py` (or any ad-hoc yfinance code), it **must** ensure the `yfinance` and `requests` packages are importable. The subagent owns this step — the main agent should not assume the host environment already has them.
+
+Required actions, in order, every run:
+
+1. **Detect.** Try `python3 -c "import yfinance, requests"`. If both imports succeed, skip to step 4.
+2. **Install if missing.** Run **one** of the following — pick the first that succeeds for the active environment, and capture the install log in the source audit:
+   - `python3 -m pip install --quiet --upgrade yfinance requests`
+   - `pip install --quiet --upgrade yfinance requests`
+   - `uv pip install --quiet yfinance requests` (if `uv` is the active package manager)
+3. **Re-detect.** Re-run the import probe from step 1. If it still fails, **stop**: report the install error to the user, mark every ticker `price_source = "n/a"`, and let the main agent fall through to the keyed-API / web-search / no-token tiers (§8.5) without retrying yfinance.
+4. **Pin sanity.** Log the resolved `yfinance.__version__` once per run (informational only — the spec does not pin a version).
+5. **Record.** Capture the prerequisite outcome in **Sources & data gaps** under a `subagent_prerequisites` line: `installed=<true|false>`, `version=<yfinance version or n/a>`, `install_command=<the command that succeeded or "skipped">`. This lets future runs notice when the host environment regressed.
+
+Anti-patterns (do **not** do these):
+
+- Silently swallow `ImportError` and continue with stale prices from model memory.
+- Run `pip install` without `--quiet` (noisy output bleeds into the report log).
+- Install with `sudo`, `--user`, or any flag that mutates a system path the user did not ask for.
+- Skip the install probe because "yfinance was installed last week" — the subagent runs in a fresh process; assume nothing.
+- Pin a specific yfinance version in the install command unless the user explicitly asked. Pinning forces re-resolution on every run; let pip resolve the latest compatible version.
+- **Stop at the script's `price_source = "n/a"`.** The script handles the market-native primary branch (yfinance for listed securities / FX, Binance-CoinGecko-first for crypto), tier 2 (configured keyed APIs), and selected tier-4 stubs. **The agent owns tier 3 (web search) and any tier 4 entry that requires symbol mapping or source-specific handling the script cannot do.** A `n/a` from `scripts/fetch_prices.py` is a **handoff signal** — the agent must walk §8.1 tier 3 then tier 4 manually before declaring the ticker terminal. Generating a report with mass `n/a` for non-cash tickers when web search has not been attempted is a **workflow violation** (see §8.3.1).
+
+This prerequisite is the same regardless of who calls yfinance: the canonical `scripts/fetch_prices.py`, an ad-hoc script the agent wrote, or a one-off REPL probe. The pacing rules in §8.3 still apply once yfinance is importable — install is **separate** from rate-limit handling.
+
 ### 8.1 Source hierarchy
 
-Use the highest-priority source that returns a credible value. **`yfinance` first**, then **configured keyed APIs**, then **agent web search / public quote pages**, then **free no-token APIs**. If a source is delayed, EOD-only, or stale relative to another credible source, use the fresher higher-quality value when available and record the fallback / freshness in the source audit.
+Use the highest-priority source that returns a credible value. **The priority is asset-specific, not globally yfinance-first.** Listed securities and FX use `yfinance` first. Crypto uses **Binance public spot / CoinGecko first** and should normally skip yfinance altogether. After the market-native primary source, continue to configured keyed APIs, then agent web search / public quote pages, then free no-token APIs. If a source is delayed, EOD-only, or stale relative to another credible source, use the fresher higher-quality value when available and record the fallback / freshness in the source audit.
 
-1. **Latest-price subagent using `yfinance`** — before any other price-source work, delegate all holdings to a dedicated subagent that fetches latest data via `yfinance`, preferably in a single batched request. Accept only values that pass the **Freshness gate** (§8.7). Record `price_source` as `yfinance`, plus as-of timestamp, currency, exchange / market basis when available, and any ticker-level failure reason. If the subagent fails, it must diagnose the failure and attempt automatic correction up to three times before the main agent moves the affected ticker to fallback sources (§8.4).
-2. **Configured keyed APIs** — if the `yfinance` subagent still fails, lacks coverage, or returns a value that fails the freshness gate after up to three correction attempts, use any relevant key / token present in `SETTINGS.md` according to the per-asset order in §8.5. Missing keys are not errors.
-3. **Agent web search / public quote pages** — if no configured keyed API yields a credible current value, search the web directly and read public quote pages. Prefer official exchanges and widely used quote pages with visible price, timestamp, and prior-close / 24h reference. Record the page source and retrieval time.
-4. **Free no-token APIs** — if web search / quote pages fail, use free public endpoints that require no token. These can be unofficial, delayed, rate-limited, or CORS-sensitive, so they are the last fallback. Record them explicitly as no-token fallback sources.
+1. **Latest-price subagent using the market-native primary source** — before any other price-source work, delegate all holdings to a dedicated latest-price subagent. For listed securities / FX, fetch via `yfinance`, preferably in a single batched request. For crypto, start with Binance public spot and CoinGecko. Accept only values that pass the **Freshness gate** (§8.7). Record `price_source`, as-of timestamp, currency, exchange / market basis when available, and any ticker-level failure reason. For yfinance branches, if the subagent fails, it must diagnose the failure and attempt automatic correction up to three times before the main agent moves the affected ticker to fallback sources (§8.4).
+2. **Configured keyed APIs** — if the primary source for that asset class still fails, lacks coverage, or returns a value that fails the freshness gate after the allowed correction attempts, use any relevant key / token present in `SETTINGS.md` according to the per-asset order in §8.5. Missing keys are not errors.
+3. **Agent web search / public quote pages** *(MANDATORY continuation when tiers 1–2 fail)* — when prior tiers fail (including any failure mode of `scripts/fetch_prices.py` such as rate-limit, missing key, or empty response), the agent **must** search the web directly and read public quote pages. Make sure you search for currency of the trading pair specifically first so we can convert it correctly. This is not optional and is not gated on the `fetch_prices.py` exit code; the script writes `agent_web_search:TODO` precisely as a handoff signal. Prefer official exchanges and widely used quote pages with visible price, timestamp, and prior-close / 24h reference. Record the page source and retrieval time. See §8.3.1 for the per-market source priority.
+4. **Free no-token APIs** *(MANDATORY continuation when tier 3 fails)* — when web search / quote pages fail or are blocked, use free public endpoints that require no token. Make sure you search for currency of the trading pair specifically first so we can convert it correctly. These can be unofficial, delayed, rate-limited, or CORS-sensitive, so they are the last fallback. Record them explicitly as no-token fallback sources. See §8.3.1 for the recommended endpoint registry (Stooq JSON for US/JP/LSE, TWSE MIS for TW, Binance / Coinbase / CoinGecko for crypto).
 
 > **Conflict resolution:** When `yfinance` and another credible latest-price value conflict, prefer the source with the freshest timestamp and clearest market coverage; document the rejected source and reason in **Sources & data gaps**.
 
-### 8.2 yfinance — primary source
+> **Workflow gate (HARD):** Before generating the HTML, every non-cash ticker must have either (a) a valid `latest_price` with a recorded source, or (b) a `fallback_chain` containing explicit tier 3 **and** tier 4 entries (with `tier3:exhausted` / `tier4:exhausted` markers when nothing worked). A ticker carrying `agent_web_search:TODO` without follow-through is a workflow violation; do not generate the report until §8.3.1 has been walked.
 
-- For latest price, first delegate to a dedicated latest-price subagent that uses `yfinance` to fetch all holdings in one batch where possible. The subagent must return: price, prior close / 24h reference, move %, timestamp / as-of, currency, exchange, and any failure reason **per ticker**.
-- If `yfinance` fails or returns invalid data, follow §8.4 (3-attempt auto-correction) before moving to fallback.
+### 8.2 Primary source policy by asset class
+
+- For listed equities, ETFs, and FX, first delegate to a dedicated latest-price subagent that uses `yfinance` to fetch all eligible holdings in one batch where possible. The subagent must return: price, prior close / 24h reference, move %, timestamp / as-of, currency, exchange, and any failure reason **per ticker**.
+- For crypto, do **not** use `yfinance` as the primary source. Start with Binance public spot where the pair exists, then CoinGecko. Use yfinance only if the spec is later amended explicitly; the default policy is to skip it.
+- If the primary source fails or returns invalid data, follow §8.4 (3-attempt auto-correction) for yfinance branches before moving to fallback.
 - Always retrieve the latest market data at generation time. Never rely on stale model memory.
 - Each holding must be refreshed for: latest price snapshot, day / 24h and recent move, market cap, valuation multiples (PE, Forward PE, PS, EV/EBITDA where relevant), volume, next earnings date, and any imminent material event.
 - For company and event data, source priority remains: company IR, SEC / exchange filings, official press releases, then StockAnalysis, Nasdaq, Yahoo Finance, Reuters, CNBC, MarketWatch.
@@ -268,18 +299,81 @@ Use the highest-priority source that returns a credible value. **`yfinance` firs
 
 The pacing/backoff retries are part of the §8.4 three-attempt budget — a 429 retry counts as one correction attempt, not a free retry. If a run still trips the limiter, surface the incident in **Sources & data gaps** with offending request count and inter-request gap, and include a **建議更新 agent spec** note proposing a tighter pacing constant.
 
+### 8.3.1 Rate-limit handling — tier-down, not stop (HARD REQUIREMENT)
+
+A 429 / `YFRateLimitError` / batch-empty-due-to-throttling is a **tier-down signal**, not a workflow stop. The chain in §8.1 is **mandatory continuation** for every affected ticker. The script handles part of it; the agent must finish the rest.
+
+#### Decision tree on yfinance rate-limit failure
+
+```
+yfinance batch returns 429 / YFRateLimitError / empty
+  └── apply §8.3 backoff (30 → 60 → 120 → 300s, max 3 retries) at the BATCH level
+       ├── any retry succeeds → ticker accepted, record retry_count
+       └── all 3 retries fail → batch marked yfinance_rate_limited
+            └── for each ticker in the failed batch:
+                 ├── §8.4 auto-correction is SKIPPED (rate-limit is not a symbol problem)
+                 ├── tier 2: configured keyed APIs (§8.5) → if any key applies and works, accept
+                 ├── tier 3: AGENT web search / public quote pages (mandatory) → record source URL
+                 └── tier 4: no-token APIs (mandatory) → see §8.5 + endpoint registry below
+                      └── only after every tier above has been attempted
+                          may the ticker be marked price_source = "n/a"
+```
+
+#### Concrete rules
+
+1. **Skip §8.4 auto-correction when `failure_reason` is rate-limit.** Auto-correction is for symbol/format problems (`BRK.B → BRK-B`, suffix repair, period swap). Retrying yfinance during the rate-limit window wastes the §8.3 backoff budget and prolongs the limiter state. The script **must** distinguish `failure_reason = "rate_limited"` from `"symbol_not_found" / "empty_history" / "exception"` so this skip can fire deterministically.
+2. **Continuation is per-ticker, not per-batch.** A failed batch does not mean the whole report is degraded — most tickers can still be priced via tiers 2/3/4. Process each ticker independently after the batch fails.
+3. **Tier 3 (web search) is the agent's job, not the script's.** `scripts/fetch_prices.py` records `fallback_chain = ["agent_web_search:TODO"]` precisely so the agent knows it must take over. Make sure you search for currency of the trading pair specifically first so we can convert it correctly. Recommended sources by market:
+
+   | Market | Web-search source priority |
+   |---|---|
+   | US equities / ETFs | Yahoo Finance quote page → Google Finance → Nasdaq → MarketWatch / CNBC / TradingView / StockAnalysis |
+   | Crypto | CoinGecko → CoinMarketCap → Binance → Coinbase → TradingView |
+   | TW (TWSE / TPEx) | TWSE / TPEx official quote → Yahoo Finance Taiwan → TradingView |
+   | JP | Yahoo Finance Japan / Yahoo Finance global → JPX / issuer pages → Google Finance |
+   | LSE | Yahoo Finance UK → Google Finance → London Stock Exchange site |
+   | FX | Google Finance → Yahoo Finance → official central-bank reference |
+
+4. **Tier 4 (no-token APIs) — recommended endpoint registry.** Use these when web pages are slow / unreliable / blocked. The script implements Binance and CoinGecko for crypto plus Stooq / TWSE MIS for selected markets; the rest the agent invokes via its HTTP tooling:
+
+   | Market | No-token endpoint | Sample URL |
+   |---|---|---|
+   | US equities | Stooq JSON | `https://stooq.com/q/l/?s=NVDA.US&f=sd2t2ohlcv&h&e=json` |
+   | US equities | Yahoo public chart | `https://query1.finance.yahoo.com/v8/finance/chart/NVDA?range=5d&interval=1d` |
+| Crypto | Binance spot ticker | `https://api.binance.com/api/v3/ticker/24hr?symbol=BTCUSDT` |
+| Crypto | Coinbase Exchange ticker | `https://api.exchange.coinbase.com/products/BTC-USD/ticker` |
+| Crypto | CoinGecko simple price | `https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd` |
+   | TW | TWSE MIS public quote | `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=tse_2330.tw` |
+   | TW | TWSE OpenAPI daily | `https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_AVG_ALL` |
+   | JP / global | Stooq JSON (`.JP`, `.UK` codes) | `https://stooq.com/q/l/?s=7203.JP&f=sd2t2ohlcv&h&e=json` |
+   | LSE | Stooq JSON (`.UK`) | `https://stooq.com/q/l/?s=VWRA.UK&f=sd2t2ohlcv&h&e=json` |
+   | FX | ECB daily reference rate | `https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml` |
+
+5. **Audit every step.** Each tier the agent walks must add a row to the ticker's `fallback_chain` (e.g. `tier3:yahoo_quote_page`, `tier4:stooq_csv`) and update `price_source`, `price_as_of`, `price_freshness`. The **Sources & data gaps** table renders this trail.
+6. **Workflow gate before report rendering.** Before the agent calls `scripts/generate_report.py`, run a check: any ticker still at `price_source = "n/a"` with `fallback_chain` containing `agent_web_search:TODO` and **without** a tier 3 or tier 4 entry is a workflow violation. Fix it (or, if web/no-token sources genuinely all failed, replace the TODO with `tier3:exhausted` and `tier4:exhausted` so the audit shows real attempts).
+
+#### When `n/a` is acceptable
+
+After tiers 1–4 have **all** been attempted for a ticker, `price_source = "n/a"` is allowed. In that case the source-audit row must read along the lines of:
+
+> `yfinance: rate_limited (3 backoff retries) · keyed: no key configured · web: yahoo/google/nasdaq all returned page-not-found · no-token: stooq returned empty CSV, yahoo chart returned 401 · price_freshness: stale_after_exhaustive_search`
+
+Anything less specific signals the chain was not actually exhausted.
+
 ### 8.4 yfinance failure recovery (3-attempt budget)
 
-If the `yfinance` subagent returns an exception, empty data, stale data, invalid currency / exchange metadata, a symbol-not-found result, a rate-limit / timeout, or a value that fails the **Freshness gate** (§8.7), do not immediately fall back. First read the failure reason and attempt automatic correction.
+If the `yfinance` subagent returns an exception, empty data, stale data, invalid currency / exchange metadata, a symbol-not-found result, or a value that fails the **Freshness gate** (§8.7), do not immediately fall back. First read the failure reason and attempt automatic correction.
 
-- **Maximum attempts:** three correction attempts per failed ticker or batch failure class. Attempt count starts after the first failed `yfinance` call. Do not loop indefinitely.
+> **Exception — rate-limit failures skip auto-correction.** When `failure_reason ∈ {"rate_limited", "YFRateLimitError", "http_429", "batch_empty_throttled"}`, do **not** invoke this auto-correction loop. Auto-correction is for symbol / format problems; retrying yfinance during the rate-limit window wastes the §8.3 backoff budget and prolongs the limiter state. Apply §8.3.1 tier-down instead — go straight to keyed APIs / web / no-token.
+
+- **Maximum attempts:** three correction attempts per failed ticker or batch failure class (when the failure is a symbol / format / freshness issue, **not** a rate-limit). Attempt count starts after the first failed `yfinance` call. Do not loop indefinitely.
 - **Targeted corrections.** Match the attempt to the observed failure reason. Examples:
   - Normalize Yahoo symbols (`BRK.B` → `BRK-B`, crypto → `BTC-USD`, Taiwan / Japan suffixes).
-  - Retry as per-ticker calls after a failed batch.
+  - Retry as per-ticker calls after a failed batch (only when the batch failure was *not* rate-limit).
   - Switch between quote metadata and short interval history.
   - Request a shorter / longer period.
   - Repair timezone / calendar interpretation.
-  - Back off briefly after timeout / rate-limit (uses §8.3 backoff schedule).
+  - Brief retry after a transient timeout that is *not* a 429 (timeouts use a small fixed delay, not the §8.3 backoff schedule).
 - **Re-gate after each attempt.** If the corrected value passes the Freshness gate, use it and record `price_source = yfinance`, `yfinance_auto_fix_applied = true`, attempt count, and the successful fix summary.
 - **All 3 attempts fail.** Move that ticker to keyed APIs, then web search / quote pages, then no-token APIs. Record the original failure reason and all attempted fixes in **Sources & data gaps**.
 - **Spec-update note.** If a new correction pattern succeeds during a run, do **not** silently treat it as permanent spec knowledge. In the final user reply, include a short **建議更新 agent spec** note with the failure pattern, the fix that worked, and concise wording that could be added to this spec.
@@ -288,10 +382,10 @@ If the `yfinance` subagent returns an exception, empty data, stale data, invalid
 
 | Asset / market | Latest-price fallback order |
 |---|---|
-| US equities / ETFs | **First:** `yfinance` subagent batch quote / history. **Keyed APIs:** Twelve Data → Finnhub → FMP → Tiingo → Alpha Vantage → Polygon. **Web search / pages:** Yahoo Finance → Google Finance → Nasdaq → MarketWatch / CNBC / TradingView / StockAnalysis → other credible quote pages. **No-token APIs:** Yahoo public quote/chart endpoints → Stooq CSV / other credible no-token endpoints |
-| Crypto | **First:** `yfinance` subagent using Yahoo-style symbols where available (`BTC-USD`, `ETH-USD`, etc.). **Keyed APIs:** CoinGecko Demo → Alpha Vantage / FMP if configured. **Web search / pages:** CoinGecko → CoinMarketCap → Binance → Coinbase → TradingView. **No-token APIs:** Binance public spot ticker → Coinbase Exchange ticker → CoinGecko public simple price |
+| US equities / ETFs | **First:** `yfinance` subagent batch quote / history. **Keyed APIs:** Twelve Data → Finnhub → FMP → Tiingo → Alpha Vantage → Polygon. **Web search / pages:** Yahoo Finance → Google Finance → Nasdaq → MarketWatch / CNBC / TradingView / StockAnalysis → other credible quote pages. **No-token APIs:** Yahoo public quote/chart endpoints → Stooq JSON / other credible no-token endpoints |
+| Crypto | **First:** Binance public spot ticker where the pair exists → CoinGecko Demo/public. **Keyed APIs:** CoinGecko Demo → Alpha Vantage / FMP if configured. **Web search / pages:** CoinGecko → CoinMarketCap → Binance → Coinbase → TradingView. **No-token APIs:** Binance public spot ticker → Coinbase Exchange ticker → CoinGecko public simple price |
 | Taiwan listed / OTC equities | **First:** `yfinance` subagent using exchange suffixes where available (`2330.TW`, OTC forms where supported). **Keyed APIs:** Twelve Data / Finnhub / FMP when coverage exists. **Web search / pages:** TWSE / TPEx quote pages → Yahoo Finance Taiwan → TradingView → other credible quote pages. **No-token APIs:** TWSE MIS public quote → TWSE OpenAPI daily / after-market data → TPEx official no-token data |
-| Japan equities | **First:** `yfinance` subagent using exchange suffixes where available. **Keyed APIs:** Twelve Data → Finnhub → J-Quants when token is present. **Web search / pages:** Yahoo Finance Japan / Yahoo Finance global → JPX / issuer pages where price is visible → Google Finance → TradingView. **No-token APIs:** Stooq CSV / other credible no-token endpoints |
+| Japan equities | **First:** `yfinance` subagent using exchange suffixes where available. **Keyed APIs:** Twelve Data → Finnhub → J-Quants when token is present. **Web search / pages:** Yahoo Finance Japan / Yahoo Finance global → JPX / issuer pages where price is visible → Google Finance → TradingView. **No-token APIs:** Stooq JSON / other credible no-token endpoints |
 | FX / cash conversion | **First:** `yfinance` subagent using Yahoo FX symbols where available. **Keyed APIs:** Twelve Data FX → Alpha Vantage currency exchange rate. **Web search / pages:** Google Finance → Yahoo Finance → official central-bank / ECB / Fed reference pages. **No-token APIs:** official daily reference-rate feeds where available → other credible no-token FX endpoints |
 
 ### 8.6 Optional fallback API keys
@@ -346,6 +440,68 @@ Persist these fields for every ticker at generation time. The HTML embeds only t
 ---
 
 ## 9. Computations & missing-value glyphs
+
+### 9.0 Currency canonicalization — USD basis (HARD REQUIREMENT)
+
+**Every numeric value rendered in the report is in USD.** No bilingual currency mixing in aggregate cells, no implicit currency parity, no "well, the user knows it's TWD". A 2330.TW lot bought at NT$2,300 and an NVDA lot bought at $185 must contribute to the same USD-denominated `Σ` before any aggregation.
+
+This is a structural rule, not a stylistic one — totals, weights, P&L ranking, theme/sector exposure, holding-period pacing aggregates all collapse incorrectly when source currencies are summed naïvely. Treat any aggregate cell containing a non-USD number as a defect.
+
+#### Where USD is mandatory (every aggregate, every chart axis)
+
+- §10.1 #2 KPI strip: 總資產 / 投資部位 / 現金與類現金 / 已知損益 — all USD.
+- §10.1 #3 Holdings table — `市值` (Value) column, `損益` (P&L) column, all weights — all USD-derived. The `最新價` (Price) column shows the **native trade currency** (e.g. `NT$2,300`, `£123.45`) because that is the user-facing market price; everything that aggregates *with* that price is USD.
+- §10.4 P&L ranking bar chart, §10.1 #5 theme/sector exposure bars, §10.1 #8 risk heatmap weight rows, §10.1 #9 Recommended adjustments `目前` weight column — USD-derived.
+- §10.4 Holding period & pacing — the cost-weighted aggregates use USD cost basis, even when the original lot was acquired in a non-USD currency.
+
+#### Where the **native trade currency** is preserved (display only — never re-aggregated)
+
+- Symbol popover: prose / metadata only, no native-currency math.
+- **Price popover** lot-detail rows: each lot's `成本` (cost) shows the **original** acquisition currency with its prefix (`NT$2,300`, `¥3,150`, `£12.34`) so the user can recognize the trade as they entered it. The popover footer (`平均成本 / 總成本 / 總損益`) is rendered in **USD** with `$` prefix.
+- The `最新價` cell in the Holdings table shows the live native price as quoted by the source (TWSE returns TWD, JPX returns JPY, etc.).
+- **Sources & data gaps** audit row may quote raw native-currency feed values when explaining a fallback.
+- Masthead meta row: list every active FX pair as `USD/TWD 32.5`, `USD/JPY 156.0`, etc.
+
+#### Required FX inputs
+
+The agent must supply USD-quoted rates for every non-USD currency in the book, via `SETTINGS.md` (or the editorial context JSON consumed by `scripts/generate_report.py`):
+
+```jsonc
+"fx": {
+  "USD/TWD": 32.5,    // 1 USD = 32.5 TWD  → divide TWD amount by 32.5
+  "USD/JPY": 156.0,
+  "USD/HKD": 7.85,
+  "USD/GBP": 0.78
+}
+```
+
+If a non-USD currency appears in the book and no FX rate is configured, the agent **must** fetch a credible rate at generation time using §8 (yfinance `=X` symbols, ECB / central-bank reference, or any §8.5 fallback tier) and:
+
+1. Add the rate to the working `fx` dict for the run.
+2. Surface every fetched rate in the masthead meta row alongside any user-supplied rates.
+3. Record the rate's source and `as_of` timestamp in **Sources & data gaps**.
+
+**Never silently assume parity** (treating TWD or JPY as if it were USD). That produces multi-thousand-percent weight errors in the dashboard.
+
+#### Conversion rules
+
+| What | Conversion |
+|---|---|
+| Cash line in non-USD (`USD: 35600 [cash]`, `TWD: 1200000 [cash]`) | `USD_value = native_amount / FX(USD/native)`. The Price popover may show the original cash amount; the aggregate cash KPI is USD. |
+| Latest price × quantity | `USD_market_value = latest_price × quantity × FX(trade_currency → USD)`. The trade currency is determined by the `[<MARKET>]` tag (`TW` → TWD, `JP` → JPY, `LSE` → GBP, `HK` → HKD, `US` / `crypto` / `FX` → USD). |
+| Cost basis (per lot) | Same as price-side conversion. **Use the lot's acquisition-date FX rate** when the agent has it; otherwise fall back to the current rate and add a `cost_fx_approximation` note to the audit. The popover shows the per-lot original-currency cost as captured in `HOLDINGS.md`; the popover footer is USD-converted. |
+| Per-holding P&L | `USD_pnl = USD_market_value − Σ_lots(USD_cost)`. FX-swing P&L is implicit in this calculation; the spec does not separately decompose it. |
+| Move % / day move % | Pure ratios — no FX conversion needed. Stays in the native price's currency-relative terms. |
+
+#### Self-check items (run as part of Appendix A.5)
+
+- Every cell in the `市值` (Value) column starts with `$`.
+- Every cell in the `損益` (P&L) column starts with `+$` / `−$` (or `—` for cash, `n/a` for missing cost).
+- KPI strip's four big numbers all start with `$`.
+- Price popover footer (`總成本 / 總損益`) starts with `$`.
+- Price popover lot rows show **native currency** prefixes for `成本` (e.g. `NT$2,300` for a `[TW]` lot bought via `2330` at `NT$2300`).
+- Masthead meta row enumerates every FX pair used; each pair has a value and an `as_of` (or `(SETTINGS)` if user-supplied).
+- Source audit lists each FX rate's source for any rate not user-supplied.
 
 ### 9.1 Required metrics
 
@@ -460,6 +616,31 @@ The `Held` and `Move` columns from earlier specs are **removed**. Hold period st
 
 Every chart must have a clear title, readable labels, and tabular numerals. **No external chart libraries**; build with SVG `path` / `circle` / `rect` / `text` and CSS bars. See §14.5 for color and weight rules.
 
+### 10.4.1 High-risk heatmap scoring rubric (HARD REQUIREMENT)
+
+The heatmap must use a **stable deterministic rubric**, not free-form model judgment. Score every non-cash position on a **0–10** scale using the same factors every run:
+
+| Factor | Rule | Points |
+|---|---|---|
+| Asset-class volatility | Crypto asset | `+3` |
+| Bucket horizon | Mid Term | `+1` |
+| Bucket horizon | Short Term | `+2` |
+| Concentration | Weight ≥ 0.5 × single-name cap | `+1` |
+| Concentration | Weight ≥ 1.0 × single-name cap | `+2` |
+| Concentration | Weight ≥ 1.5 × single-name cap | `+3` |
+| Price shock | `abs(move_pct)` ≥ single-day alert threshold | `+1` |
+| Price shock | `abs(move_pct)` ≥ 1.5 × single-day alert threshold | `+2` |
+| Quote quality | `price_freshness = delayed` | `+1` |
+| Quote quality | `price_freshness = stale_after_exhaustive_search` or missing current quote | `+2` |
+
+Rules:
+
+- Cap the total score at `10`.
+- Banding is fixed: `0–2 = low`, `3–5 = mid`, `6–10 = high`.
+- Sort by `score desc`, then `weight desc`, then ticker.
+- Show the rubric version in the section subtitle or eyebrow (for example `Stable rubric v1` / `固定規則 v1`) so the scoring standard remains explicit across runs.
+- If no position has enough data to compute a score, render an explicit placeholder rather than leaving the grid blank.
+
 ### 10.5 News & event coverage
 
 - For each core position, surface **1–3 recent material news items**.
@@ -505,7 +686,7 @@ The Price column is a **static snapshot** produced by the agent at report genera
 
 ### 12.1 Generation-time retrieval
 
-- First delegate latest-price retrieval to the `yfinance` subagent for all tickers (§8.2, §8.3).
+- First delegate latest-price retrieval to the market-native primary source: `yfinance` for listed securities / FX, Binance / CoinGecko-first routing for crypto (§8.2, §8.3).
 - If the `yfinance` subagent returns missing, stale, unsupported, or invalid data, run §8.4 (3-attempt auto-correction) before moving that ticker to fallback sources.
 - Use configured keyed APIs only for tickers where `yfinance` remains missing, stale, unsupported, or invalid after the allowed correction attempts.
 - Use agent web search and public quote pages **before** no-token API endpoints.
@@ -979,9 +1160,13 @@ Run every item before declaring the report complete. Each item maps back to its 
 
 ### A.4 Latest-price retrieval
 
-- [ ] `yfinance` subagent ran first, batched where possible (§8.2).
+- [ ] **Prerequisite check ran before any yfinance call**: `import yfinance, requests` succeeded (or install completed and re-detection succeeded) (§8.0).
+- [ ] `subagent_prerequisites` line recorded in **Sources & data gaps**: install outcome, resolved version, install command (§8.0).
+- [ ] Market-native primary source ran first: `yfinance` for listed securities / FX (batched where possible), Binance / CoinGecko for crypto (§8.2).
 - [ ] Pacing rules respected: `threads=False`, ≥ 1.5–2.0s gap, ≤ 25/batch, single session, 10–15s timeout (§8.3).
-- [ ] Failures got up to 3 auto-corrections before fallback (§8.4).
+- [ ] **Rate-limit handling: §8.3.1 tier-down rule honored** — on any 429 / `YFRateLimitError`, §8.4 auto-correction was **skipped** and the agent continued to keyed APIs → web search → no-token APIs.
+- [ ] **No `agent_web_search:TODO` left dangling.** Every ticker still at `price_source = "n/a"` after the script ran has a `fallback_chain` showing real tier 3 + tier 4 attempts (or explicit `tier3:exhausted` / `tier4:exhausted` markers) (§8.1 workflow gate, §8.3.1).
+- [ ] Symbol/format-style failures got up to 3 auto-corrections before fallback; rate-limit failures did **not** consume the auto-correction budget (§8.4).
 - [ ] Per-asset fallback order followed (§8.5).
 - [ ] Freshness gate applied; no stale value accepted before exhausting sources (§8.7).
 - [ ] §8.8 fields stored per ticker; `n/a` rendered when nothing was credible (§8.7, §9.6).
@@ -989,6 +1174,9 @@ Run every item before declaring the report complete. Each item maps back to its 
 
 ### A.5 Computations
 
+- [ ] **USD basis enforced.** Every aggregate cell (KPI strip, `市值`, `損益`, P&L ranking, theme/sector, weights, period-pacing aggregates, popover footer) starts with `$`; native trade currency (`NT$` / `¥` / `£` / `HK$`) appears **only** inside the `最新價` cell, the per-lot popover `成本` rows, the cash-line popover, and the source audit (§9.0).
+- [ ] **FX rates resolved for every non-USD currency in the book.** Rates either came from `SETTINGS.md` or the editorial context JSON; or were fetched at generation time and recorded with their source + `as_of` in **Sources & data gaps**, plus listed in the masthead meta row (§9.0).
+- [ ] No silent parity assumption — the build did not treat any non-USD currency as if it were USD (§9.0).
 - [ ] Totals, weights, P&L, per-lot P&L, weighted-avg cost (§9.1).
 - [ ] Hold period rendered with `Xy Ym` / `Nm` / `Nd` / `n/a` rule (§9.2).
 - [ ] Move % derived from selected price; subline-only `n/a` if missing (§9.3).

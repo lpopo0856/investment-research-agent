@@ -14,14 +14,14 @@ This is an **example** holdings file. Copy it to `HOLDINGS.md` and replace every
 - `on YYYY-MM-DD` is the **acquisition date** for that lot. Required for new lots; optional only when truly unknown.
 - Crypto and FX use `<SYMBOL> <quantity> @ <cost> on <YYYY-MM-DD> [<MARKET>]` (no "shares").
 - Cash uses `<CURRENCY>: <amount> [cash]` (no `shares`, no `@ cost`, no date).
-- `[<MARKET>]` is the **market-type tag** (required for new lots; back-compat heuristic only when missing). It tells the price agent how to format the symbol for `yfinance` and which fallback hierarchy to use.
+- `[<MARKET>]` is the **market-type tag** (required for new lots; back-compat heuristic only when missing). It tells the price agent which primary quote route and fallback hierarchy to use.
 - Use `?` when the cost basis or the date is unknown — the agent will render the affected metric as `n/a` and list it under Sources & data gaps. Never invent a number.
 - Group lots into the four buckets below; lots within a bucket can be in any order.
 - Tickers below (`ALPH`, `BETA`, `GAMA`, ...) are **fictional** and used only for shape.
 
 ### Market-type tag values
 
-| Tag | Meaning | yfinance symbol convention |
+| Tag | Meaning | Primary quote routing |
 |---|---|---|
 | `[US]`     | NYSE / NASDAQ / AMEX listed equity or ETF | bare ticker (`NVDA`); `BRK.B` → `BRK-B` |
 | `[TW]`     | Taiwan listed equity (TWSE) | `<code>.TW` (`2330.TW`) |
@@ -29,7 +29,7 @@ This is an **example** holdings file. Copy it to `HOLDINGS.md` and replace every
 | `[JP]`     | Tokyo Stock Exchange | `<code>.T` |
 | `[HK]`     | Hong Kong Stock Exchange | `<code>.HK` |
 | `[LSE]`    | London Stock Exchange (UCITS ETFs etc.) | `<code>.L` |
-| `[crypto]` | Crypto asset | `<SYM>-USD` (`BTC-USD`, `ETH-USD`) |
+| `[crypto]` | Crypto asset | Binance public spot `<SYM>USDT`; CoinGecko by coin id |
 | `[FX]`     | Currency pair held as position | `<PAIR>=X` |
 | `[cash]`   | Cash / cash-equivalent holding (no price fetch) | — |
 

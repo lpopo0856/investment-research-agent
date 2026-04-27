@@ -7,3 +7,5 @@ SETTINGS.md
 .omc/
 .claude/
 /scripts/__pycache__/
+prices.json
+report_context.json

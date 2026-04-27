@@ -6,8 +6,8 @@ fetch_prices.py — Latest-price retrieval template for the portfolio report age
 Implements `docs/portfolio_report_agent_guidelines.md` §8 (Latest-price retrieval pipeline):
 
   1. Parse HOLDINGS.md (§4.1)
-  2. Group tickers by market type and resolve yfinance symbol (§8.5)
-  3. yfinance batch first, with strict pacing (§8.3)
+  2. Group tickers by market type and resolve the market-native primary source path (§8.5)
+  3. Use yfinance batch for listed securities / FX, but skip crypto (§8.3, §8.5)
   4. yfinance failure recovery — up to 3 auto-correction attempts per failure (§8.4)
   5. Fallback: keyed APIs → web (manual) → no-token APIs (§8.1, §8.5)
   6. Apply Freshness gate (§8.7)
@@ -18,13 +18,13 @@ Output JSON shape (per ticker):
     {
       "<TICKER>": {
         "latest_price":           177.34,            // null if n/a
-        "prior_close":             175.21,           // 24h reference for crypto
+        "prior_close":             175.21,           // prior close or 24h reference for crypto
         "move_pct":                1.22,
         "currency":               "USD",
         "exchange":               "NMS",
-        "price_source":           "yfinance",        // or "yfinance_per_ticker_history",
-                                                     // "twelve_data", "finnhub", "web:yahoo",
-                                                     // "no_token:binance", "n/a", ...
+        "price_source":           "yfinance",        // or "twelve_data", "finnhub",
+                                                     // "coingecko", "no_token:binance",
+                                                     // "web:yahoo", "n/a", ...
         "price_as_of":            "2026-04-28T13:30:00-04:00",
         "price_freshness":        "fresh",           // "fresh", "delayed",
                                                      // "stale_after_exhaustive_search", "n/a"
@@ -58,8 +58,15 @@ DEPENDENCIES
 ------------
     pip install yfinance requests
 
-The script imports yfinance lazily inside the batch function, so the parser, freshness
-gate, and JSON shape can be unit-tested without the network dependency installed.
+Per spec §8.0, the **latest-price subagent owns the install step** — it must verify
+that `yfinance` and `requests` are importable (and install them if not) *before*
+invoking this script. The script does not self-install: it imports yfinance lazily
+inside the batch function so the parser, freshness gate, and JSON shape can still be
+unit-tested via `--skip-yfinance` even when the package is absent.
+
+If `import yfinance` fails at runtime, every ticker is recorded with
+`price_source = "n/a"` and `yfinance_failure_reason = "yfinance_not_installed"`,
+and the agent should re-read §8.0, complete the install, and re-run.
 """
 
 from __future__ import annotations
@@ -111,7 +118,7 @@ class MarketType(str, Enum):
     JP = "JP"            # Tokyo (yfinance: <code>.T)
     HK = "HK"            # Hong Kong (yfinance: <code>.HK)
     LSE = "LSE"          # London (yfinance: <code>.L)
-    CRYPTO = "crypto"    # yfinance: <SYM>-USD
+    CRYPTO = "crypto"    # native crypto feeds: Binance / CoinGecko
     FX = "FX"            # yfinance: <PAIR>=X
     CASH = "cash"        # bare currency holding — no price fetch
     UNKNOWN = "unknown"
@@ -122,6 +129,37 @@ KNOWN_CRYPTO_SYMBOLS = {
     "BTC", "ETH", "SOL", "ADA", "XRP", "DOGE", "DOT", "MATIC", "LTC", "LINK",
     "AVAX", "USDC", "USDT", "DAI", "BNB", "TRX", "ATOM", "UNI", "FIL", "TON",
     "NEAR", "APT", "SUI", "ARB", "OP", "INJ", "RNDR", "SEI", "TIA",
+}
+COINGECKO_ID_MAP = {
+    "ADA": "cardano",
+    "APT": "aptos",
+    "ARB": "arbitrum",
+    "ATOM": "cosmos",
+    "AVAX": "avalanche-2",
+    "BNB": "binancecoin",
+    "BTC": "bitcoin",
+    "DAI": "dai",
+    "DOGE": "dogecoin",
+    "DOT": "polkadot",
+    "ETH": "ethereum",
+    "FIL": "filecoin",
+    "INJ": "injective-protocol",
+    "LINK": "chainlink",
+    "LTC": "litecoin",
+    "MATIC": "matic-network",
+    "NEAR": "near",
+    "OP": "optimism",
+    "RNDR": "render-token",
+    "SEI": "sei-network",
+    "SOL": "solana",
+    "SUI": "sui",
+    "TIA": "celestia",
+    "TON": "the-open-network",
+    "TRX": "tron",
+    "UNI": "uniswap",
+    "USDC": "usd-coin",
+    "USDT": "tether",
+    "XRP": "ripple",
 }
 KNOWN_FIAT_CODES = {
     "USD", "TWD", "JPY", "EUR", "GBP", "HKD", "CNY", "KRW", "SGD", "AUD",
@@ -405,7 +443,7 @@ def to_yfinance_symbol(ticker: str, market: MarketType) -> Optional[str]:
     if market == MarketType.CASH:
         return None  # cash never gets a yfinance lookup
     if market == MarketType.CRYPTO:
-        return t if "-USD" in t else f"{t}-USD"
+        return None  # crypto is sourced from native market APIs, not yfinance
     if market == MarketType.FX:
         return t if t.endswith("=X") else f"{t}=X"
     if market == MarketType.TW:
@@ -523,7 +561,11 @@ def _yfinance_batch(
             session=session,
         )
     except Exception as exc:                                  # noqa: BLE001
-        return {}, f"yfinance_batch_exception:{type(exc).__name__}:{exc!s:.200}"
+        # §8.3.1 — distinguish rate-limit from other failures so auto-correction can skip.
+        msg = f"{type(exc).__name__}:{exc!s:.200}"
+        if _is_rate_limit_error(exc):
+            return {}, "rate_limited"
+        return {}, f"yfinance_batch_exception:{msg}"
     finally:
         latency_ms = int((time.monotonic() - started) * 1000)
         logging.info("yfinance batch (%d symbols) finished in %dms", len(yf_symbols), latency_ms)
@@ -577,12 +619,42 @@ def _yfinance_per_ticker_history(symbol: str, pacer: Pacer, session: Optional[An
 # Auto-correction (§8.4)
 # ----------------------------------------------------------------------------- #
 
+def _is_rate_limit_error(exc: BaseException) -> bool:
+    """§8.3.1 — recognize yfinance rate-limit signals so auto-correction can skip."""
+    name = type(exc).__name__.lower()
+    s = str(exc).lower()
+    if "ratelimit" in name or "ratelimit" in s:
+        return True
+    if "429" in s or "too many requests" in s or "too-many-requests" in s:
+        return True
+    return False
+
+
+def _is_rate_limit_failure_reason(reason: Optional[str]) -> bool:
+    """Match the failure_reason string set by `_yfinance_batch` and friends."""
+    if not reason:
+        return False
+    r = reason.lower()
+    return ("rate_limit" in r) or ("ratelimit" in r) or ("429" in r) or ("too many requests" in r)
+
+
 def _auto_correct(
     result: PriceResult,
     pacer: Pacer,
     session: Optional[Any],
 ) -> PriceResult:
-    """Up to 3 targeted correction attempts. Each attempt counts toward the §8.4 budget."""
+    """Up to 3 targeted correction attempts. Each attempt counts toward the §8.4 budget.
+
+    §8.3.1 — rate-limit failures **skip** this loop entirely; retrying yfinance during
+    the rate-limit window wastes the §8.3 backoff budget and prolongs the limiter
+    state. The caller continues to keyed APIs / web / no-token instead.
+    """
+    if _is_rate_limit_failure_reason(result.yfinance_failure_reason):
+        logging.info("Skipping yfinance auto-correction for %s (rate-limited; §8.3.1 tier-down).",
+                     result.ticker)
+        result.fallback_chain.append("yfinance_auto_correction:skipped_rate_limited")
+        return result
+
     base_symbol = result.yfinance_symbol or result.ticker
     candidates: List[Tuple[str, str]] = []
 
@@ -704,24 +776,84 @@ def _try_finnhub(symbol: str, key: str, session: Any) -> Optional[Dict[str, Any]
         return None
 
 
-def _try_coingecko_demo(symbol: str, key: str, session: Any) -> Optional[Dict[str, Any]]:
-    """CoinGecko Demo simple/price endpoint. `symbol` here is a coin id (e.g. "bitcoin")."""
-    # NOTE: callers should map BTC → "bitcoin", ETH → "ethereum" before calling.
+def _normalize_crypto_symbol(symbol: str) -> str:
+    s = symbol.upper()
+    if s.endswith("-USD"):
+        s = s[:-4]
+    if s.endswith("USDT"):
+        s = s[:-4]
+    return s
+
+
+def _resolve_coingecko_id(raw_ticker: str, session: Any, key: Optional[str] = None) -> Optional[str]:
+    symbol = _normalize_crypto_symbol(raw_ticker)
+    if symbol in COINGECKO_ID_MAP:
+        return COINGECKO_ID_MAP[symbol]
+
     try:
-        url = f"https://api.coingecko.com/api/v3/simple/price?ids={symbol}&vs_currencies=usd&include_24hr_change=true&x_cg_demo_api_key={key}"
-        r = session.get(url, timeout=YF_HTTP_TIMEOUT_SEC)
+        params = {"query": symbol}
+        if key:
+            params["x_cg_demo_api_key"] = key
+        r = session.get(
+            "https://api.coingecko.com/api/v3/search",
+            params=params,
+            timeout=YF_HTTP_TIMEOUT_SEC,
+        )
+        if r.status_code != 200:
+            return None
+        coins = r.json().get("coins") or []
+        exact = [
+            coin for coin in coins
+            if str(coin.get("symbol", "")).upper() == symbol
+        ]
+        if not exact:
+            return None
+        exact.sort(key=lambda coin: coin.get("market_cap_rank") or 10**9)
+        coin_id = exact[0].get("id")
+        return str(coin_id) if coin_id else None
+    except Exception:                                         # noqa: BLE001
+        return None
+
+
+def _try_coingecko(raw_ticker: str, session: Any, key: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """CoinGecko simple/price endpoint with deterministic symbol→id resolution."""
+    try:
+        coin_id = _resolve_coingecko_id(raw_ticker, session, key)
+        if not coin_id:
+            return None
+        params = {
+            "ids": coin_id,
+            "vs_currencies": "usd",
+            "include_24hr_change": "true",
+        }
+        if key:
+            params["x_cg_demo_api_key"] = key
+        r = session.get(
+            "https://api.coingecko.com/api/v3/simple/price",
+            params=params,
+            timeout=YF_HTTP_TIMEOUT_SEC,
+        )
         if r.status_code != 200:
             return None
         data = r.json()
-        coin = data.get(symbol)
+        coin = data.get(coin_id)
         if not coin or "usd" not in coin:
             return None
         latest = float(coin["usd"])
         change_24h = coin.get("usd_24h_change")
+        prior = None
+        if change_24h not in (None, -100):
+            try:
+                prior = latest / (1.0 + float(change_24h) / 100.0)
+            except ZeroDivisionError:
+                prior = None
         return {
             "latest_price": latest,
+            "prior_close": prior,
             "move_pct": round(float(change_24h), 4) if change_24h is not None else None,
-            "price_source": "coingecko_demo",
+            "currency": "USD",
+            "exchange": "CoinGecko",
+            "price_source": "coingecko_demo" if key else "coingecko",
             "price_as_of": _utc_iso(),
         }
     except Exception:                                         # noqa: BLE001
@@ -737,14 +869,121 @@ def _try_no_token_binance(symbol: str, session: Any) -> Optional[Dict[str, Any]]
             return None
         data = r.json()
         latest = float(data.get("lastPrice", 0)) or None
+        prior = float(data.get("openPrice", 0)) or None
         change_pct = data.get("priceChangePercent")
         if latest is None:
             return None
         return {
             "latest_price": latest,
+            "prior_close": prior,
             "move_pct": round(float(change_pct), 4) if change_pct is not None else None,
+            "currency": "USD",
+            "exchange": "Binance",
             "price_source": "no_token:binance",
             "price_as_of": _utc_iso(),
+        }
+    except Exception:                                         # noqa: BLE001
+        return None
+
+
+# §8.3.1 endpoint registry — Stooq covers US / JP / LSE without a token.
+def _try_no_token_stooq(stooq_symbol: str, session: Any) -> Optional[Dict[str, Any]]:
+    """Stooq JSON — free, no-token, supports `.US` / `.UK` / `.JP` / `.HK` suffixes.
+
+    `stooq_symbol` examples: `nvda.us`, `vwra.uk`, `7203.jp`, `2330.tw` (lowercase).
+    Stooq returns a JSON payload with `symbols[0]` containing
+    `symbol`, `date`, `time`, `open`, `high`, `low`, `close`, `volume`.
+    """
+    try:
+        url = f"https://stooq.com/q/l/?s={stooq_symbol}&f=sd2t2ohlcv&h&e=json"
+        r = session.get(url, timeout=YF_HTTP_TIMEOUT_SEC)
+        if r.status_code != 200:
+            return None
+        data = r.json()
+        symbols = data.get("symbols")
+        if not isinstance(symbols, list) or not symbols:
+            return None
+        row = symbols[0] or {}
+        if not isinstance(row, dict):
+            return None
+
+        def _as_float(key: str) -> Optional[float]:
+            raw = row.get(key)
+            if raw in (None, "", "N/D", "-"):
+                return None
+            try:
+                return float(raw)
+            except (TypeError, ValueError):
+                return None
+
+        close_val = _as_float("close")
+        open_val = _as_float("open")
+        if close_val is None or close_val <= 0:
+            return None
+
+        date_str = str(row.get("date") or "").strip()
+        time_str = str(row.get("time") or "").strip()
+        if date_str and time_str:
+            price_as_of = f"{date_str}T{time_str}"
+        elif date_str:
+            price_as_of = date_str
+        else:
+            price_as_of = _utc_iso()
+
+        move_pct = round(((close_val - open_val) / open_val) * 100.0, 4) if open_val else None
+        return {
+            "latest_price": close_val,
+            "prior_close": open_val,
+            "move_pct": move_pct,
+            "exchange": "Stooq",
+            "price_source": "no_token:stooq",
+            "price_as_of": price_as_of,
+        }
+    except Exception:                                         # noqa: BLE001
+        return None
+
+
+def _try_no_token_twse_mis(twse_code: str, session: Any) -> Optional[Dict[str, Any]]:
+    """TWSE MIS public quote — Taiwan Stock Exchange real-time-ish endpoint, no token.
+
+    `twse_code` examples: `tse_2330.tw` for listed, `otc_3105.tw` for OTC.
+    Endpoint returns JSON with latest trade and prior close in `msgArray[0]`.
+    """
+    try:
+        url = f"https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch={twse_code}"
+        r = session.get(url, timeout=YF_HTTP_TIMEOUT_SEC,
+                        headers={"Referer": "https://mis.twse.com.tw/stock/"})
+        if r.status_code != 200:
+            return None
+        data = r.json()
+        arr = data.get("msgArray") or []
+        if not arr:
+            return None
+        row = arr[0]
+        # `z` = latest trade price, `y` = prior-day close. Sometimes `z` is `-` pre-open.
+        latest_str = row.get("z", "-")
+        prior_str = row.get("y", "-")
+        if latest_str in ("-", "", None) and prior_str in ("-", "", None):
+            return None
+        try:
+            prior = float(prior_str) if prior_str not in ("-", "", None) else None
+        except ValueError:
+            prior = None
+        try:
+            latest = float(latest_str) if latest_str not in ("-", "", None) else prior
+        except ValueError:
+            latest = prior
+        if latest is None:
+            return None
+        move_pct = round(((latest - prior) / prior) * 100.0, 4) if prior else None
+        return {
+            "latest_price": latest,
+            "prior_close": prior,
+            "move_pct": move_pct,
+            "price_source": "no_token:twse_mis",
+            "price_as_of": _utc_iso(),
+            "currency": "TWD",
+            "exchange": "TWSE",
         }
     except Exception:                                         # noqa: BLE001
         return None
@@ -764,25 +1003,41 @@ def _build_fallback_chain(
     s = yf_symbol or raw_ticker
 
     if market in (MarketType.US, MarketType.UNKNOWN):
+        # Keyed APIs first (§8.5)
         if "TWELVE_DATA_API_KEY" in keys:
             chain.append(("twelve_data", lambda: _try_twelve_data(s, keys["TWELVE_DATA_API_KEY"], session)))
         if "FINNHUB_API_KEY" in keys:
             chain.append(("finnhub", lambda: _try_finnhub(s, keys["FINNHUB_API_KEY"], session)))
-        # FMP / Tiingo / Alpha Vantage / Polygon — left as TODO; same pattern.
+        # FMP / Tiingo / Alpha Vantage / Polygon — TODO; same pattern.
+        # No-token (§8.3.1 endpoint registry — must fire even when no keys are configured)
+        chain.append(("no_token:stooq", lambda: _try_no_token_stooq(f"{raw_ticker.lower()}.us", session)))
     elif market == MarketType.CRYPTO:
-        if "COINGECKO_DEMO_API_KEY" in keys:
-            # NOTE: coin id mapping is a TODO; agent should resolve BTC → "bitcoin".
-            chain.append(("coingecko_demo", lambda: _try_coingecko_demo(raw_ticker.lower(), keys["COINGECKO_DEMO_API_KEY"], session)))
-        # No-token Binance fallback (BTC → BTCUSDT)
-        binance_sym = f"{raw_ticker.upper().replace('-USD','')}USDT"
+        # Crypto does not use yfinance. Prefer exchange-native spot first, then CoinGecko.
+        binance_sym = f"{_normalize_crypto_symbol(raw_ticker)}USDT"
         chain.append(("no_token:binance", lambda: _try_no_token_binance(binance_sym, session)))
+        if "COINGECKO_DEMO_API_KEY" in keys:
+            chain.append(("coingecko_demo", lambda: _try_coingecko(raw_ticker, session, keys["COINGECKO_DEMO_API_KEY"])))
+        chain.append(("coingecko", lambda: _try_coingecko(raw_ticker, session)))
     elif market in (MarketType.TW, MarketType.TWO):
-        # TWSE MIS / OpenAPI fallback — left as TODO; agent should add public quote URL.
-        pass
+        # No-token TWSE MIS — works for both listed (`tse_`) and OTC (`otc_`) prefixes.
+        prefix = "tse" if market == MarketType.TW else "otc"
+        twse_code = f"{prefix}_{raw_ticker.lower()}.tw" if not raw_ticker.lower().endswith(".tw") \
+                    else f"{prefix}_{raw_ticker.lower()}"
+        chain.append(("no_token:twse_mis", lambda: _try_no_token_twse_mis(twse_code, session)))
+        # Stooq JSON as a second-line no-token fallback for TW (covers most listed names)
+        chain.append(("no_token:stooq", lambda: _try_no_token_stooq(f"{raw_ticker.lower()}.tw", session)))
     elif market == MarketType.JP:
         if "JQUANTS_REFRESH_TOKEN" in keys:
             # JQuants flow — left as TODO; auth + endpoint resolution required.
             pass
+        # No-token Stooq covers `.jp` codes like `7203.jp`
+        chain.append(("no_token:stooq", lambda: _try_no_token_stooq(f"{raw_ticker.lower()}.jp", session)))
+    elif market == MarketType.LSE:
+        # No-token Stooq for `.uk` (e.g. vwra.uk, lse-listed UCITS ETFs)
+        chain.append(("no_token:stooq", lambda: _try_no_token_stooq(f"{raw_ticker.lower()}.uk", session)))
+    elif market == MarketType.HK:
+        # No-token Stooq for `.hk`
+        chain.append(("no_token:stooq", lambda: _try_no_token_stooq(f"{raw_ticker.lower()}.hk", session)))
     elif market == MarketType.FX:
         if "TWELVE_DATA_API_KEY" in keys:
             chain.append(("twelve_data_fx", lambda: _try_twelve_data(s, keys["TWELVE_DATA_API_KEY"], session)))
@@ -839,6 +1094,8 @@ def fetch_all_prices(
             market=market,
             yfinance_symbol=sym,
         )
+        if market == MarketType.CRYPTO:
+            results[ticker].fallback_chain.append("primary:crypto_native_sources")
 
     # ---- Group by market for batched yfinance calls ------------------------- #
     if not skip_yfinance:
@@ -892,16 +1149,22 @@ def fetch_all_prices(
                 results[ticker] = pr
                 continue
 
-        # Step 2: keyed-API fallback chain
-        if session is not None:
+        # Step 2: keyed-API + no-token fallback chain (§8.5 + §8.3.1 endpoint registry)
+        # `skip_yfinance` is repurposed as "no network" for smoke-testing the parser,
+        # so we also skip the keyed/no-token tier when it is set.
+        if session is not None and not skip_yfinance:
+            tried_any = False
             for label, callable_ in _build_fallback_chain(
                 market, settings_keys, session, pr.yfinance_symbol, ticker
             ):
+                tried_any = True
                 out = callable_()
                 if out and out.get("latest_price") is not None:
                     pr.latest_price = out.get("latest_price")
                     pr.prior_close = out.get("prior_close")
                     pr.move_pct = out.get("move_pct")
+                    pr.currency = out.get("currency") or pr.currency
+                    pr.exchange = out.get("exchange") or pr.exchange
                     pr.price_source = out.get("price_source", label)
                     pr.price_as_of = out.get("price_as_of") or _utc_iso()
                     state = _classify_market_state(market)
@@ -909,10 +1172,22 @@ def fetch_all_prices(
                     pr.price_freshness = _freshness_for_state(state, has_intraday=True)
                     pr.fallback_chain.append(label)
                     break
+                else:
+                    pr.fallback_chain.append(f"{label}:miss")
+            if not tried_any:
+                pr.fallback_chain.append("tier2_4:no_endpoints_for_market")
 
         if pr.price_source == "n/a":
-            # Step 3: web search / no-token public APIs left to the agent. Mark and move on.
-            pr.fallback_chain.append("agent_web_search:TODO")
+            # Step 3 (handoff): tiers 1-2 + scripted tier 4 are exhausted.
+            # Per §8.3.1, the agent must now manually walk web search (tier 3) and any
+            # remaining no-token endpoints not implemented here. The marker tells the
+            # agent this is a HANDOFF, not a terminal state.
+            pr.fallback_chain.append("agent_web_search:TODO_required")
+            # If the failure was rate-limit, the spec requires a tier-down even if
+            # the agent forgets — surface this prominently in the audit so the
+            # workflow gate (§8.1) catches it before the report renders.
+            if _is_rate_limit_failure_reason(pr.yfinance_failure_reason):
+                pr.fallback_chain.append("rate_limited:tier3_4_continuation_required")
             pr.price_freshness = "n/a"
 
         results[ticker] = pr
@@ -945,7 +1220,9 @@ def _cli_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     p.add_argument("--output", default=None, type=Path,
                    help="Write JSON output to this path; default: stdout")
     p.add_argument("--skip-yfinance", action="store_true",
-                   help="Skip the yfinance branch (useful for testing parsers)")
+                   help="Skip yfinance AND the keyed/no-token fallback chain — leaves every "
+                        "non-cash ticker at price_source=n/a. Useful for testing the parser and "
+                        "JSON shape without making any network calls.")
     p.add_argument("--verbose", "-v", action="store_true",
                    help="Enable INFO-level logging")
     return p.parse_args(argv)

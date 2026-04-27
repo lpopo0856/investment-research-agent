@@ -98,7 +98,7 @@ Do not default to neutral answers. Unless there is genuinely no edge, give a cle
 
 ## Portfolio reports
 
-Any automated portfolio report (HTML deliverable) must follow `/docs/portfolio_report_agent_guidelines.md`. The agent runs `scripts/fetch_prices.py` and `scripts/generate_report.py` rather than re-implementing the price retrieval or HTML scaffolding each session — those scripts are the canonical templates and embed the spec rules (§8 pacing, §10 section order, §13 popovers, §14 visual standard).
+Any automated portfolio report (HTML deliverable) must follow `/docs/portfolio_report_agent_guidelines.md`. The agent runs `scripts/fetch_prices.py` and `scripts/generate_report.py` rather than re-implementing the price retrieval or HTML scaffolding each session — those scripts are the canonical templates and embed the spec rules (§8 market-aware pricing: yfinance for listed securities / FX, Binance / CoinGecko first for crypto; §10 section order; §13 popovers; §14 visual standard; stable EN / 繁中 / 简中字典 via `scripts/i18n/*.json`). For non-built-in languages, the executing agent translates `scripts/i18n/report_ui.en.json` and passes the translated overlay into the renderer.
 
 ## Holdings updates via natural language
 
