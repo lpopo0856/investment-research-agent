@@ -13,7 +13,7 @@ This is an **example** holdings file. Copy it to `HOLDINGS.md` and replace every
 - One position lot per line.
 - `on YYYY-MM-DD` is the **acquisition date** for that lot. Required for new lots; optional only when truly unknown.
 - Crypto and FX use `<SYMBOL> <quantity> @ <cost> on <YYYY-MM-DD>` (no "shares").
-- Use `?` when the cost basis or the date is unknown — the agent will mark it as a data gap and will not invent a number.
+- Use `?` when the cost basis or the date is unknown — the agent will render the affected metric as `n/a` and list it under Sources & data gaps. Never invent a number.
 - Group lots into the four buckets below; lots within a bucket can be in any order.
 - Tickers below (`ALPH`, `BETA`, `GAMA`, ...) are **fictional** and used only for shape.
 

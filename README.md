@@ -15,8 +15,8 @@ The agent runs inside an LLM client (e.g. Cowork / Claude). When you ask it to "
 .
 ├── README.md                              ← you are here
 ├── AGENTS.md                              ← global agent spec (research style, output structure)
-├── portfolio_report_agent_guidelines.md   ← spec for portfolio report HTML / Markdown deliverables
-├── holdings_update_agent_guidelines.md    ← spec for natural-language holdings updates
+├── /docs/portfolio_report_agent_guidelines.md   ← spec for portfolio report HTML / Markdown deliverables
+├── /docs/holdings_update_agent_guidelines.md    ← spec for natural-language holdings updates
 ├── SETTINGS.md                            ← your settings (git-ignored, copy from .example)
 ├── SETTINGS.example.md                    ← template for SETTINGS.md
 ├── HOLDINGS.md                            ← your holdings (git-ignored, copy from .example)
@@ -46,7 +46,7 @@ The agent runs inside an LLM client (e.g. Cowork / Claude). When you ask it to "
    - Replace every line with your actual positions.
    - Keep the four-bucket structure (`Long Term`, `Mid Term`, `Short Term`, `Cash Holdings`).
    - One lot per line: `<TICKER>: <quantity> shares @ <cost basis> on <YYYY-MM-DD>` — the trailing `on YYYY-MM-DD` is the lot's acquisition date and powers hold-period and IRR analysis.
-   - Use `?` when cost basis or date is unknown — the agent will mark the affected metric as a data gap rather than guessing.
+   - Use `?` when cost basis or date is unknown — the agent renders the affected metric as `n/a` (vs. `—` for cells that never apply, e.g. cash IRR) rather than guessing.
 
 `HOLDINGS.md`, `HOLDINGS.md.bak`, and `SETTINGS.md` are listed in `.gitignore`. They never leave your machine via git.
 
@@ -67,7 +67,7 @@ The agent reads `SETTINGS.md` for tone and `HOLDINGS.md` for positions, then fol
 - "Produce today's portfolio health check."
 - "Run my pre-market battle report."
 
-The agent follows `portfolio_report_agent_guidelines.md` to produce a self-contained HTML report plus a Markdown summary in `reports/`. Sections include high-priority alerts, KPI dashboard, holdings table with P&L / IRR / hold period, holding-period & pacing flags, theme exposure, news, forward-30-day events, risk heatmap, and an action list.
+The agent follows `/docs/portfolio_report_agent_guidelines.md` to produce a self-contained HTML report plus a Markdown summary in `reports/`. Sections include high-priority alerts, KPI dashboard, holdings table with P&L / IRR / hold period, holding-period & pacing flags, theme exposure, news, forward-30-day events, risk heatmap, and an action list.
 
 ### 3. Update holdings via natural language
 
@@ -86,7 +86,7 @@ The agent will:
 3. Wait for an explicit `yes` from you in the same turn.
 4. Back up the existing file to `HOLDINGS.md.bak`, write the new file, re-read it to verify, then reply with the path.
 
-It will **never** silently overwrite. It will **never** invent missing fields. If something is ambiguous (no price currency, multiple matching cash lines, unknown bucket for a new ticker), it asks one specific question. Full rules live in `holdings_update_agent_guidelines.md`.
+It will **never** silently overwrite. It will **never** invent missing fields. If something is ambiguous (no price currency, multiple matching cash lines, unknown bucket for a new ticker), it asks one specific question. Full rules live in `/docs/holdings_update_agent_guidelines.md`.
 
 ## Generated reports
 
@@ -103,7 +103,7 @@ The HTML is a single self-contained file — no external CSS, JS, fonts, or char
 
 ## Editing the agent specs
 
-`AGENTS.md`, `portfolio_report_agent_guidelines.md`, and `holdings_update_agent_guidelines.md` are the contracts that shape every agent run. Treat them like prompts under version control:
+`AGENTS.md`, `/docs/portfolio_report_agent_guidelines.md`, and `/docs/holdings_update_agent_guidelines.md` are the contracts that shape every agent run. Treat them like prompts under version control:
 
 - Change them when you want to change *how* the agent thinks or writes.
 - Don't put personal data in them — that belongs in `SETTINGS.md` or `HOLDINGS.md`.

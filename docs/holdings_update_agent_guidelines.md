@@ -101,4 +101,4 @@ Write only on `yes` / `confirm` / `go` / equivalent. On `edit`, re-prompt for wh
 
 ## After-write follow-up (optional)
 
-If the user wants the portfolio report regenerated after the write, hand off to `portfolio_report_agent_guidelines.md`. Do not auto-trigger; wait for the user to ask.
+If the user wants the portfolio report regenerated after the write, hand off to `/docs/portfolio_report_agent_guidelines.md`. Do not auto-trigger; wait for the user to ask.

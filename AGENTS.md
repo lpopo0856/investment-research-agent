@@ -98,8 +98,8 @@ Do not default to neutral answers. Unless there is genuinely no edge, give a cle
 
 ## Portfolio reports
 
-Any automated portfolio report and HTML / Markdown deliverable must follow `portfolio_report_agent_guidelines.md`.
+Any automated portfolio report and HTML / Markdown deliverable must follow `/docs/portfolio_report_agent_guidelines.md`.
 
 ## Holdings updates via natural language
 
-When the user describes a trade, correction, or cash adjustment in natural language ("I bought 30 NVDA at $185 yesterday", "sold 10 TSLA at $400", "fix the GOOG lot from last September"), follow `holdings_update_agent_guidelines.md` end-to-end. Hard rule: never write to `HOLDINGS.md` without showing a parsed plan, a unified diff, and getting an explicit `yes` from the user in the same turn. Every write is preceded by a backup to `HOLDINGS.md.bak`.
+When the user describes a trade, correction, or cash adjustment in natural language ("I bought 30 NVDA at $185 yesterday", "sold 10 TSLA at $400", "fix the GOOG lot from last September"), follow `/docs/holdings_update_agent_guidelines.md` end-to-end. Hard rule: never write to `HOLDINGS.md` without showing a parsed plan, a unified diff, and getting an explicit `yes` from the user in the same turn. Every write is preceded by a backup to `HOLDINGS.md.bak`.
