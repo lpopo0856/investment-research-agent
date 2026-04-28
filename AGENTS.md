@@ -174,6 +174,8 @@ Any automated portfolio report (HTML deliverable) must follow `/docs/portfolio_r
 
 The investment-content layer of the report (§10.8 high-risk and high-opportunity list, §10.9 recommended adjustments, §10.10 today's action list) must apply the **Style readout**, **Variant view**, **R:R**, **Pre-mortem**, **Portfolio fit**, and **sized %** requirements above. See `/docs/portfolio_report_agent_guidelines/07-investment-content-and-checklist.md` §§15.4–15.7 for the prescriptive formats and Appendix A.11 self-check items.
 
+**Canonical calculation logic** for those PM-grade fields lives in `scripts/generate_report.py` (R:R, rail check, Style readout, lever bands, length budget, A.11 validation). Pass raw inputs (`entry_price`, `target_price`, `stop_price`, `sized_pp_delta`, `variant_tag`, `consensus`, `anchor`, `kill_trigger`, `kill_action`, `failure_mode`, `theme_overlap`, `correlated_with`, etc.) through each `report_context.json["adjustments"][i]` and the renderer will produce the canonical strings. Pre-publish, run `python scripts/generate_report.py --self-check` to confirm the math has not drifted; the unit tests in that block are the regression gate.
+
 ## Holdings updates via natural language
 
 **MAKE SURE YOU READ FULL CONTENT OF /docs/holdings_update_agent_guidelines.md BY PARTIAL READING**

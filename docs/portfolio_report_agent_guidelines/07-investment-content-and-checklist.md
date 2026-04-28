@@ -1,5 +1,20 @@
 ## 15. Investment content standard
 
+> **Canonical math lives in `scripts/generate_report.py`.** The PM-grade calculations introduced by §§15.4–15.7 (R:R, lever bands, rail check, Style readout, length budget, A.11 validation) have authoritative implementations in the renderer module — see the `# PM-grade indicators & style binding` section. The agent must pass raw inputs (entry / target / stop / sized_pp_delta / consensus / variant / anchor / kill_trigger / kill_action / failure_mode / variant_tag) through `report_context.json["adjustments"][i]` and let the renderer compute the canonical strings. Never recompute these locally — that's how silent drift creeps in. Run `python scripts/generate_report.py --self-check` to validate the math before relying on it.
+>
+> **Helper inventory** (importable from `scripts.generate_report`):
+> - `StyleLevers` (data type) + `validate_style_levers(levers) → list[str]` — the **agent** resolves levers via natural-language reading of `## Investment Style` bullets in SETTINGS.md; the script only validates allowed values. Optionally pass the resolved levers through `context["style_levers"]` for documentation.
+> - `compute_rr_ratio(target, entry, stop)` and `format_rr_string(...)` (§15.4)
+> - `suggest_stop_pct_band(drawdown_tolerance)` (§15.5 lever-driven stop width)
+> - `suggest_size_pp_band(conviction_sizing)` (§15.6 sizing band)
+> - `check_rails(config, current_pct, delta_pp, ...) → RailReport` and `format_portfolio_fit_line(...)` (§15.6)
+> - `length_budget_status(text, max_words, max_chars)` (§15.6.2)
+> - `validate_recommendation_block(adj) → list[str]` (Appendix A.11 self-check)
+>
+> **Lever resolution policy:** the script does NOT infer levers from bullet text. The agent reads `## Investment Style` semantically (LLM judgment) and produces lever values + sources directly.
+>
+> **Style readout policy:** the agent composes the Style readout **prose** itself (in the SETTINGS `Language`, in its own voice) and passes it as a string via `context["style_readout"]`. The renderer slots the string verbatim as the first item under §10.11 Sources & data gaps — it does not template-format a readout from lever values, because the prose belongs to the agent.
+
 ### 15.1 Voice and stance
 
 - Output language follows `SETTINGS.md` strictly (see §5). Default tone: **professional research note**, not casual chat. Be concise, direct, and data-driven.

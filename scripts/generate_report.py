@@ -142,6 +142,7 @@ DEFAULTS = {
     "single_name_weight_warn_pct": 15.0,    # §11 special check #1
     "theme_concentration_warn_pct": 25.0,   # §11 #2
     "high_vol_bucket_warn_pct": 30.0,       # §11 #3
+    "cash_floor_warn_pct": 10.0,            # §15.6 cash floor (warn below)
     "single_day_move_alert_pct": 8.0,       # §10.6 alert #4
     "earnings_within_days": 7,              # §10.6 alert #5
     "earnings_weight_pct": 5.0,             # §10.6 alert #5
@@ -285,6 +286,396 @@ def parse_settings_profile(path: Path) -> SettingsProfile:
         base_currency=base_currency,
         missing=False,
     )
+
+
+# ----------------------------------------------------------------------------- #
+# PM-grade indicators & style binding
+#
+# Canonical implementation of the calculation logic introduced by AGENTS.md
+# and `/docs/portfolio_report_agent_guidelines/07-investment-content-and-checklist.md`
+# §§15.4–15.7. The agent must use these helpers (or pass raw inputs through
+# `report_context.json` and let the renderer call them) so every report uses
+# the same math:
+#
+#   - StyleLevers (data type)  — §15.7 lever resolution. **Resolved by the
+#     agent via natural-language reading of `## Investment Style`** in
+#     SETTINGS.md, then optionally passed through `context["style_levers"]`.
+#     The script deliberately does NOT do keyword-based inference and does
+#     NOT auto-format the Style readout — both belong to the agent's
+#     semantic / linguistic layer. The script only validates lever values.
+#   - The Style readout prose is supplied by the agent via
+#     `context["style_readout"]` (string) and slotted verbatim by the renderer.
+#   - compute_rr_ratio() / format_rr_string()  — §15.4 Reward-to-risk asymmetry
+#   - suggest_stop_pct_band()  — §15.5 kill-price width by drawdown lever
+#   - suggest_size_pp_band()   — §15.6 conviction-sizing band
+#   - check_rails() / format_portfolio_fit_line()  — §15.6 sizing-rail gate
+#   - length_budget_status() / validate_recommendation_block()  — §15.6.2 / A.11
+#
+# Determinism is enforced by exact-string outputs and tested via `--self-check`.
+# ----------------------------------------------------------------------------- #
+
+# Neutral defaults (per §15.7 — single source of truth in this module).
+LEVER_DEFAULT = {
+    "drawdown_tolerance": "medium",
+    "conviction_sizing": "flat",
+    "holding_period_bias": "investor",
+    "confirmation_threshold": "medium",
+    "contrarian_appetite": "selective",
+    "hype_tolerance": "low",
+}
+
+LEVER_ALLOWED = {
+    "drawdown_tolerance": ("low", "medium", "high"),
+    "conviction_sizing": ("flat", "kelly-lite", "aggressive"),
+    "holding_period_bias": ("trader", "swing", "investor", "lifer"),
+    "confirmation_threshold": ("low", "medium", "high"),
+    "contrarian_appetite": ("none", "selective", "strong"),
+    "hype_tolerance": ("zero", "low", "medium"),
+}
+
+
+@dataclass
+class StyleLevers:
+    """Resolved Style-Conditioning Matrix (§15.7).
+
+    Built by the **agent** from a semantic reading of `## Investment Style`
+    bullets in SETTINGS.md (the agent is the LLM judge — the script does not
+    keyword-match). The agent passes the resolved values via
+    `context["style_levers"]` and the renderer formats them deterministically.
+
+    `sources[lever]` carries the confidence tag rendered in the Style readout:
+      "bullet \"<text>\""          — derived semantically from a specific bullet
+      "inferred — pin to confirm" — the agent inferred a value but no single
+                                    bullet clearly supports it
+      "default"                   — neutral fallback (no signal in SETTINGS)
+
+    Validation: pass through `validate_style_levers()` to enforce that every
+    field's value is in `LEVER_ALLOWED[field]`.
+    """
+
+    drawdown_tolerance: str = LEVER_DEFAULT["drawdown_tolerance"]
+    conviction_sizing: str = LEVER_DEFAULT["conviction_sizing"]
+    holding_period_bias: str = LEVER_DEFAULT["holding_period_bias"]
+    confirmation_threshold: str = LEVER_DEFAULT["confirmation_threshold"]
+    contrarian_appetite: str = LEVER_DEFAULT["contrarian_appetite"]
+    hype_tolerance: str = LEVER_DEFAULT["hype_tolerance"]
+    sources: Dict[str, str] = field(default_factory=dict)
+
+    def as_dict(self) -> Dict[str, str]:
+        return {
+            "drawdown_tolerance": self.drawdown_tolerance,
+            "conviction_sizing": self.conviction_sizing,
+            "holding_period_bias": self.holding_period_bias,
+            "confirmation_threshold": self.confirmation_threshold,
+            "contrarian_appetite": self.contrarian_appetite,
+            "hype_tolerance": self.hype_tolerance,
+        }
+
+
+def validate_style_levers(levers: "StyleLevers") -> List[str]:
+    """Return list of invalid lever values (out of LEVER_ALLOWED). Empty = ok."""
+
+    bad: List[str] = []
+    for field_name, allowed in LEVER_ALLOWED.items():
+        value = getattr(levers, field_name, None)
+        if value not in allowed:
+            bad.append(f"{field_name}={value!r} not in {allowed}")
+    return bad
+
+
+# --------------------------------------------------------------------------- #
+# §15.4 Reward-to-risk asymmetry
+# --------------------------------------------------------------------------- #
+
+
+def compute_rr_ratio(
+    target: Optional[float],
+    entry: Optional[float],
+    stop: Optional[float],
+) -> Optional[float]:
+    """Return R:R as a positive float (target_distance / stop_distance), or None
+    when inputs are missing or degenerate. Sign-aware: long if target > entry > stop,
+    short if target < entry < stop. Returns None for inverted setups."""
+
+    if target is None or entry is None or stop is None:
+        return None
+    upside = target - entry
+    downside = entry - stop
+    # Long: upside > 0 and downside > 0. Short: upside < 0 and downside < 0.
+    if upside == 0 or downside == 0:
+        return None
+    if (upside > 0) != (downside > 0):
+        return None  # inverted — likely operator error
+    rr = abs(upside) / abs(downside)
+    return round(rr, 2)
+
+
+def format_rr_string(
+    target: Optional[float],
+    entry: Optional[float],
+    stop: Optional[float],
+    horizon_label: Optional[str] = None,
+    *,
+    binary: bool = False,
+    rebalance: bool = False,
+    hedged: bool = False,
+    structural_reason: Optional[str] = None,
+) -> str:
+    """Canonical R:R string per §15.4.
+
+    Output examples:
+      "Target $260 (+30%) / Stop $185 (-7%) → R:R = 4.3:1 over 9 months"
+      "R:R = n/a (binary outcome — see kill criteria)"
+      "R:R = n/a (rebalance)"
+      "Target $260 (+30%) / Stop = n/a (hedged structure — see kill action)"
+    """
+
+    if rebalance:
+        return "R:R = n/a (rebalance)"
+    if binary:
+        return "R:R = n/a (binary outcome — see kill criteria)"
+    if hedged and target is not None and entry is not None:
+        upside_pct = (target - entry) / entry * 100.0
+        return (
+            f"Target ${target:g} ({upside_pct:+.0f}%) / "
+            f"Stop = n/a (hedged structure — see kill action)"
+        )
+    if structural_reason:
+        return f"R:R = n/a ({structural_reason})"
+
+    rr = compute_rr_ratio(target, entry, stop)
+    if rr is None or target is None or entry is None or stop is None:
+        return "R:R = n/a (inputs incomplete)"
+
+    upside_pct = (target - entry) / entry * 100.0
+    downside_pct = (stop - entry) / entry * 100.0
+    horizon = f" over {horizon_label}" if horizon_label else ""
+    return (
+        f"Target ${target:g} ({upside_pct:+.0f}%) / "
+        f"Stop ${stop:g} ({downside_pct:+.0f}%) → R:R = {rr:g}:1{horizon}"
+    )
+
+
+# --------------------------------------------------------------------------- #
+# §15.5 / §15.6 lever-driven suggestion bands
+# --------------------------------------------------------------------------- #
+
+# Drawdown tolerance → (-low_pct, -high_pct) suggested stop-distance range.
+STOP_PCT_BAND_BY_DRAWDOWN: Dict[str, Tuple[float, float]] = {
+    "low":    (7.0, 10.0),
+    "medium": (12.0, 18.0),
+    "high":   (20.0, 30.0),
+}
+
+# Conviction sizing → (min_pp, max_pp) recommended pp-of-NAV per single name.
+SIZE_PP_BAND_BY_CONVICTION: Dict[str, Tuple[float, float]] = {
+    "flat":       (0.0, 5.0),
+    "kelly-lite": (2.0, 8.0),
+    "aggressive": (8.0, 15.0),
+}
+
+
+def suggest_stop_pct_band(drawdown_tolerance: str) -> Tuple[float, float]:
+    """Return (low%, high%) magnitude — both positive numbers; subtract from entry."""
+    return STOP_PCT_BAND_BY_DRAWDOWN.get(drawdown_tolerance, STOP_PCT_BAND_BY_DRAWDOWN["medium"])
+
+
+def suggest_size_pp_band(conviction_sizing: str) -> Tuple[float, float]:
+    """Return (min_pp, max_pp) recommended position-size band per name."""
+    return SIZE_PP_BAND_BY_CONVICTION.get(conviction_sizing, SIZE_PP_BAND_BY_CONVICTION["flat"])
+
+
+# --------------------------------------------------------------------------- #
+# §15.6 sizing-rail gate
+# --------------------------------------------------------------------------- #
+
+
+@dataclass
+class RailReport:
+    """Outcome of checking a proposed action against SETTINGS sizing rails."""
+
+    single_name_pct_after: float
+    single_name_warn: float
+    single_name_breach: bool
+    theme_pct_after: Optional[float]
+    theme_warn: float
+    theme_breach: bool
+    high_vol_pct_after: Optional[float]
+    high_vol_warn: float
+    high_vol_breach: bool
+    cash_pct_after: Optional[float]
+    cash_floor_warn: float
+    cash_floor_breach: bool
+
+    @property
+    def any_breach(self) -> bool:
+        return self.single_name_breach or self.theme_breach or self.high_vol_breach or self.cash_floor_breach
+
+    def breached_rails(self) -> List[str]:
+        out = []
+        if self.single_name_breach:
+            out.append("single-name")
+        if self.theme_breach:
+            out.append("theme")
+        if self.high_vol_breach:
+            out.append("high-vol bucket")
+        if self.cash_floor_breach:
+            out.append("cash floor")
+        return out
+
+
+def check_rails(
+    config: Dict[str, float],
+    *,
+    current_pct: float,
+    delta_pp: float,
+    theme_pct_after: Optional[float] = None,
+    high_vol_pct_after: Optional[float] = None,
+    cash_pct_after: Optional[float] = None,
+) -> RailReport:
+    """Apply the §15.6 rail gate. All percentages are pp of NAV (incl cash).
+
+    `delta_pp` is signed: + adds to position, − trims. The single-name `pct_after`
+    is computed; theme / high-vol / cash values are passed in by the caller because
+    the renderer cannot infer them without the agent's classification.
+    """
+
+    sn_warn = config.get("single_name_weight_warn_pct", DEFAULTS["single_name_weight_warn_pct"])
+    th_warn = config.get("theme_concentration_warn_pct", DEFAULTS["theme_concentration_warn_pct"])
+    hv_warn = config.get("high_vol_bucket_warn_pct", DEFAULTS["high_vol_bucket_warn_pct"])
+    cash_warn = config.get("cash_floor_warn_pct", DEFAULTS["cash_floor_warn_pct"])
+
+    sn_after = max(current_pct + delta_pp, 0.0)
+
+    return RailReport(
+        single_name_pct_after=sn_after,
+        single_name_warn=sn_warn,
+        single_name_breach=sn_after > sn_warn,
+        theme_pct_after=theme_pct_after,
+        theme_warn=th_warn,
+        theme_breach=theme_pct_after is not None and theme_pct_after > th_warn,
+        high_vol_pct_after=high_vol_pct_after,
+        high_vol_warn=hv_warn,
+        high_vol_breach=high_vol_pct_after is not None and high_vol_pct_after > hv_warn,
+        cash_pct_after=cash_pct_after,
+        cash_floor_warn=cash_warn,
+        cash_floor_breach=cash_pct_after is not None and cash_pct_after < cash_warn,
+    )
+
+
+def format_portfolio_fit_line(
+    *,
+    sized_pp: float,
+    correlated_with: Optional[List[str]] = None,
+    theme_overlap: Optional[List[str]] = None,
+    rails: Optional[RailReport] = None,
+) -> str:
+    """One-line `Portfolio fit — ...` annotation per §15.6."""
+
+    parts: List[str] = [f"sized {sized_pp:+.1f}pp of NAV"]
+    if correlated_with:
+        parts.append(f"correlated with {', '.join(correlated_with)}")
+    if theme_overlap:
+        parts.append(f"theme overlap with {', '.join(theme_overlap)}")
+    if rails is not None:
+        if rails.any_breach:
+            breached = ", ".join(rails.breached_rails())
+            parts.append(f"BREACHES rails: {breached}")
+        else:
+            parts.append("rails OK")
+        parts.append(
+            f"single-name {rails.single_name_pct_after:.1f}% vs warn {rails.single_name_warn:.1f}%"
+        )
+        if rails.cash_pct_after is not None:
+            parts.append(
+                f"cash {rails.cash_pct_after:.1f}% vs floor {rails.cash_floor_warn:.1f}%"
+            )
+    return "Portfolio fit — " + "; ".join(parts) + "."
+
+
+# --------------------------------------------------------------------------- #
+# §15.6.2 length budget + §A.11 validation
+# --------------------------------------------------------------------------- #
+
+
+def length_budget_status(
+    text: str,
+    *,
+    max_words: Optional[int] = None,
+    max_chars: Optional[int] = None,
+) -> Dict[str, Any]:
+    """Word/char count + over-budget warning. Used by Appendix A.11 self-check."""
+
+    words = len(text.split())
+    chars = len(text)
+    over = False
+    reasons: List[str] = []
+    if max_words is not None and words > max_words:
+        over = True
+        reasons.append(f"words {words} > {max_words}")
+    if max_chars is not None and chars > max_chars:
+        over = True
+        reasons.append(f"chars {chars} > {max_chars}")
+    return {"words": words, "chars": chars, "over": over, "reasons": reasons}
+
+
+REBALANCE_VARIANT_TAGS = {"rebalance"}
+
+
+def validate_recommendation_block(adj: Dict[str, Any]) -> List[str]:
+    """Return list of A.11 / §15 violations for a single adjustment dict.
+
+    Empty list = compliant. The agent should fix or downgrade any item that
+    returns non-empty findings before publishing the report.
+    """
+
+    findings: List[str] = []
+    variant_tag = (adj.get("variant_tag") or "").lower()
+    is_rebalance = variant_tag in REBALANCE_VARIANT_TAGS
+
+    if not is_rebalance:
+        if not adj.get("variant_tag"):
+            findings.append("variant_tag missing (§15.4)")
+        elif variant_tag not in ("consensus-aligned", "variant", "contrarian"):
+            findings.append(f"variant_tag invalid: {variant_tag!r} (§15.4)")
+
+        if not adj.get("consensus"):
+            findings.append("consensus missing — write `unknown-consensus (...)` if no public consensus (§15.4)")
+        if variant_tag in ("variant", "contrarian") and not adj.get("anchor"):
+            findings.append("anchor missing for variant/contrarian call — downgrade to `consensus-aligned` (§15.4)")
+
+        # R:R fields — required unless explicit binary/hedged/rebalance escape.
+        has_rr_inputs = all(adj.get(k) is not None for k in ("entry_price", "target_price", "stop_price"))
+        binary = bool(adj.get("binary_catalyst"))
+        hedged = bool(adj.get("hedged_structure"))
+        if not (has_rr_inputs or binary or hedged):
+            findings.append("R:R inputs missing (entry/target/stop) and no binary/hedged escape (§15.4)")
+
+        # Kill criteria triplet — required for non-rebalance.
+        if not adj.get("kill_trigger"):
+            findings.append("kill_trigger missing (§15.5)")
+        if not adj.get("kill_action"):
+            findings.append("kill_action missing (§15.5)")
+        if not adj.get("failure_mode"):
+            findings.append("failure_mode missing (§15.5)")
+
+    if adj.get("sized_pp_delta") is None:
+        findings.append("sized_pp_delta missing (§15.3 / §15.6)")
+
+    return findings
+
+
+# Module-level export so the agent can import helpers without digging into
+# private names.
+__all__ = [
+    "StyleLevers", "validate_style_levers",
+    "compute_rr_ratio", "format_rr_string",
+    "suggest_stop_pct_band", "suggest_size_pp_band",
+    "RailReport", "check_rails", "format_portfolio_fit_line",
+    "length_budget_status", "validate_recommendation_block",
+    "LEVER_DEFAULT", "LEVER_ALLOWED",
+    "STOP_PCT_BAND_BY_DRAWDOWN", "SIZE_PP_BAND_BY_CONVICTION",
+]
 
 
 # ----------------------------------------------------------------------------- #
@@ -1773,8 +2164,89 @@ def render_high_risk_opp(
   </section>"""
 
 
-def render_adjustments(context: Dict[str, Any]) -> str:
+def _enrich_adjustment_why(a: Dict[str, Any], config: Dict[str, float]) -> str:
+    """Append PM-grade structured lines to an adjustment's `why` cell.
+
+    Reads optional fields per §15.3 / §15.4 / §15.5 / §15.6 and produces the
+    canonical strings via the helpers above. Back-compat: when the agent's
+    context omits these fields entirely, the `why` cell renders unchanged.
+    """
+
+    base_why = a.get("why", "") or ""
+    extras: List[str] = []
+
+    variant_tag = (a.get("variant_tag") or "").strip()
+    consensus = a.get("consensus")
+    variant = a.get("variant")
+    anchor = a.get("anchor")
+    if variant_tag:
+        line = f"[{variant_tag}]"
+        if consensus:
+            line += f" Consensus: {consensus}"
+        if variant and variant_tag in ("variant", "contrarian"):
+            line += f" · Variant: {variant}"
+        if anchor and variant_tag in ("variant", "contrarian"):
+            line += f" · Anchor: {anchor}"
+        extras.append(line)
+
+    # R:R line
+    binary = bool(a.get("binary_catalyst"))
+    hedged = bool(a.get("hedged_structure"))
+    is_rebalance = variant_tag == "rebalance"
+    rr_line = format_rr_string(
+        a.get("target_price"),
+        a.get("entry_price"),
+        a.get("stop_price"),
+        a.get("horizon_label"),
+        binary=binary,
+        rebalance=is_rebalance,
+        hedged=hedged,
+        structural_reason=a.get("rr_structural_reason"),
+    )
+    extras.append(rr_line)
+
+    # Pre-mortem triplet (§15.5)
+    if not is_rebalance:
+        pm_bits: List[str] = []
+        if a.get("failure_mode"):
+            pm_bits.append(f"Fail: {a['failure_mode']}")
+        if a.get("kill_trigger"):
+            pm_bits.append(f"Kill: {a['kill_trigger']}")
+        if a.get("kill_action"):
+            pm_bits.append(f"Action: {a['kill_action']}")
+        if pm_bits:
+            extras.append(" · ".join(pm_bits))
+
+    # Portfolio fit (§15.6)
+    sized_pp = a.get("sized_pp_delta")
+    if sized_pp is not None:
+        rails = check_rails(
+            config,
+            current_pct=float(a.get("current_pct", 0.0) or 0.0),
+            delta_pp=float(sized_pp),
+            theme_pct_after=a.get("theme_pct_after"),
+            high_vol_pct_after=a.get("high_vol_pct_after"),
+            cash_pct_after=a.get("cash_pct_after"),
+        )
+        extras.append(format_portfolio_fit_line(
+            sized_pp=float(sized_pp),
+            correlated_with=a.get("correlated_with"),
+            theme_overlap=a.get("theme_overlap"),
+            rails=rails,
+        ))
+
+    if not extras:
+        return base_why
+
+    enriched_lines = "<br>".join(_esc(line) for line in extras)
+    if base_why:
+        return f"{_esc(base_why)}<br><span class=\"pm-meta\">{enriched_lines}</span>"
+    return f'<span class="pm-meta">{enriched_lines}</span>'
+
+
+def render_adjustments(context: Dict[str, Any], config: Optional[Dict[str, float]] = None) -> str:
     adjs = context.get("adjustments") or []
+    cfg = config or DEFAULTS
     if not adjs:
         return f"""\
   <section class="section">
@@ -1786,12 +2258,15 @@ def render_adjustments(context: Dict[str, Any]) -> str:
   </section>"""
     rows = []
     for a in adjs:
+        # `why_cell` is already escaped (or contains pre-escaped HTML for the
+        # PM-meta span); skip _esc in the template to avoid double-escape.
+        why_cell = _enrich_adjustment_why(a, cfg)
         rows.append(f"""\
           <tr>
             <td><span class="sym-trigger" tabindex="0" role="button">{_esc(a.get('ticker', _ui("common.dash")))}</span></td>
             <td class="num">{a.get('current_pct', 0):.1f}%</td>
             <td><span class="adj-action {_esc(a.get('action', 'hold'))}">{_esc(a.get('action_label', ''))}</span></td>
-            <td class="why">{_esc(a.get('why', ''))}</td>
+            <td class="why">{why_cell}</td>
             <td class="trig">{_esc(a.get('trigger', ''))}</td>
           </tr>""")
     return f"""\
@@ -1893,8 +2368,21 @@ def render_sources(prices: Dict[str, Any], context: Dict[str, Any]) -> str:
             <td>{_esc('; '.join(notes)) or _esc(_ui("common.dash"))}</td>
           </tr>""")
     gaps = context.get("data_gaps") or []
-    gap_html = "".join(f'<li><b>{_esc(g.get("summary", ""))}:</b> {_esc(g.get("detail", ""))}</li>' for g in gaps) \
-        or f'<li>{_esc(_ui("sources.no_gaps"))}</li>'
+    gap_items: List[str] = []
+
+    # §15.7 Style readout — agent supplies the pre-formatted string.
+    # The script does not auto-format from style_levers because the readout
+    # is natural-language prose; the LLM writes it (in the SETTINGS Language)
+    # using its semantic reading of `## Investment Style`. Renderer just slots it.
+    style_readout_str = context.get("style_readout")
+    if style_readout_str:
+        gap_items.append(f'<li class="style-readout">{_esc(style_readout_str)}</li>')
+
+    for g in gaps:
+        gap_items.append(
+            f'<li><b>{_esc(g.get("summary", ""))}:</b> {_esc(g.get("detail", ""))}</li>'
+        )
+    gap_html = "".join(gap_items) or f'<li>{_esc(_ui("sources.no_gaps"))}</li>'
     spec_note = context.get("spec_update_note")
     spec_html = (f'<div class="bucket-note" style="margin-top:18px"><b>{_esc(_ui("sources.spec_note"))}</b>{_esc(spec_note)}</div>'
                  if spec_note else "")
@@ -1961,7 +2449,7 @@ def render_html(
         render_news(context),                                              # §10.1 #6
         render_events(context),                                            # §10.1 #7
         render_high_risk_opp(aggs, prices, total_assets, context, config), # §10.1 #8
-        render_adjustments(context),                                       # §10.1 #9
+        render_adjustments(context, config),                               # §10.1 #9
         render_actions(context),                                           # §10.1 #10
         render_sources(prices, context),                                   # §10.1 #11
     ]
@@ -1994,8 +2482,8 @@ def _cli(argv: Optional[List[str]] = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--holdings", default="HOLDINGS.md", type=Path)
     p.add_argument("--settings", default="SETTINGS.md", type=Path)
-    p.add_argument("--prices", required=True, type=Path,
-                   help="JSON output from scripts/fetch_prices.py")
+    p.add_argument("--prices", required=False, type=Path,
+                   help="JSON output from scripts/fetch_prices.py (required unless --self-check)")
     p.add_argument("--ui-dict", default=None, type=Path,
                    help="Optional UI dictionary JSON overlay. For non-built-in languages, "
                         "the executing agent should translate scripts/i18n/report_ui.en.json "
@@ -2006,8 +2494,142 @@ def _cli(argv: Optional[List[str]] = None) -> argparse.Namespace:
                    type=Path, help="Canonical visual reference (read-only, supplies CSS)")
     p.add_argument("--output", default=None, type=Path,
                    help="Output HTML path; default: reports/<timestamp>_portfolio_report.html")
+    p.add_argument("--self-check", action="store_true",
+                   help="Run unit tests for PM-grade indicator helpers and exit. Validates "
+                        "the canonical math (R:R, rails, style readout, lever inference) "
+                        "without rendering a report. Use this in CI to catch silent drift.")
     p.add_argument("--verbose", "-v", action="store_true")
     return p.parse_args(argv)
+
+
+# --------------------------------------------------------------------------- #
+# Self-check — unit tests for PM-grade helpers (§§15.4–15.7)
+# --------------------------------------------------------------------------- #
+
+def _run_self_check() -> int:
+    """Validate the canonical math. Returns 0 on success, 1 on failure."""
+
+    failures: List[str] = []
+
+    def check(name: str, actual: Any, expected: Any) -> None:
+        if actual != expected:
+            failures.append(f"  - {name}: expected {expected!r}, got {actual!r}")
+
+    # --- R:R ratio ---
+    check("rr long 4.3:1", compute_rr_ratio(target=260, entry=200, stop=186), 4.29)
+    check("rr long 2:1",   compute_rr_ratio(target=120, entry=100, stop=90), 2.0)
+    check("rr short",      compute_rr_ratio(target=80,  entry=100, stop=110), 2.0)
+    check("rr inverted",   compute_rr_ratio(target=80,  entry=100, stop=90), None)
+    check("rr missing",    compute_rr_ratio(target=None, entry=100, stop=90), None)
+    check("rr zero stop",  compute_rr_ratio(target=120, entry=100, stop=100), None)
+
+    # --- R:R formatted strings ---
+    rr_str = format_rr_string(target=260, entry=200, stop=186, horizon_label="9 months")
+    if "R:R = 4.29:1" not in rr_str or "Target $260" not in rr_str:
+        failures.append(f"  - rr_str canonical: got {rr_str!r}")
+    check("rr binary",
+          format_rr_string(target=None, entry=None, stop=None, binary=True),
+          "R:R = n/a (binary outcome — see kill criteria)")
+    check("rr rebalance",
+          format_rr_string(target=None, entry=None, stop=None, rebalance=True),
+          "R:R = n/a (rebalance)")
+    rr_hedged = format_rr_string(target=200, entry=180, stop=None, hedged=True)
+    if "Stop = n/a (hedged structure" not in rr_hedged:
+        failures.append(f"  - rr hedged: got {rr_hedged!r}")
+
+    # --- Lever bands ---
+    check("stop band high",   suggest_stop_pct_band("high"),   (20.0, 30.0))
+    check("stop band medium", suggest_stop_pct_band("medium"), (12.0, 18.0))
+    check("stop band low",    suggest_stop_pct_band("low"),    (7.0, 10.0))
+    check("size band aggressive", suggest_size_pp_band("aggressive"), (8.0, 15.0))
+    check("size band kelly-lite", suggest_size_pp_band("kelly-lite"), (2.0, 8.0))
+    check("size band flat",       suggest_size_pp_band("flat"),       (0.0, 5.0))
+
+    # --- Rail check ---
+    cfg = {**DEFAULTS}
+    rep = check_rails(cfg, current_pct=4.0, delta_pp=2.0,
+                      cash_pct_after=15.0, theme_pct_after=20.0, high_vol_pct_after=10.0)
+    check("rail no breach",      rep.any_breach, False)
+    check("rail single after",   rep.single_name_pct_after, 6.0)
+
+    rep2 = check_rails(cfg, current_pct=14.0, delta_pp=3.0)  # 17 > 15
+    check("rail single breach",  rep2.single_name_breach, True)
+    check("rail breached list",  rep2.breached_rails(), ["single-name"])
+
+    rep3 = check_rails(cfg, current_pct=4.0, delta_pp=1.0,
+                      cash_pct_after=8.0, theme_pct_after=35.0, high_vol_pct_after=40.0)
+    check("rail multi breaches", set(rep3.breached_rails()), {"theme", "high-vol bucket", "cash floor"})
+
+    # --- Portfolio fit line ---
+    fit = format_portfolio_fit_line(sized_pp=2.0, correlated_with=["DELT"], theme_overlap=["AI"], rails=rep)
+    if "sized +2.0pp of NAV" not in fit or "correlated with DELT" not in fit or "rails OK" not in fit:
+        failures.append(f"  - portfolio fit OK case: got {fit!r}")
+    fit_breach = format_portfolio_fit_line(sized_pp=3.0, rails=rep2)
+    if "BREACHES rails: single-name" not in fit_breach:
+        failures.append(f"  - portfolio fit breach: got {fit_breach!r}")
+
+    # --- Style lever validation ---
+    # The agent (LLM) builds StyleLevers from natural-language reading of
+    # `## Investment Style`; the script only validates and formats.
+    good_levers = StyleLevers(
+        drawdown_tolerance="high", conviction_sizing="kelly-lite",
+        holding_period_bias="investor", confirmation_threshold="low",
+        contrarian_appetite="selective", hype_tolerance="zero",
+        sources={"drawdown_tolerance": 'bullet "我能承受極大的短期虧損與波動"',
+                 "conviction_sizing": 'bullet "願意在高勝率或高報酬風險比的機會上積極投入"',
+                 "holding_period_bias": "default",
+                 "confirmation_threshold": "inferred — pin to confirm",
+                 "contrarian_appetite": "default",
+                 "hype_tolerance": 'bullet "不希望聽到過度誇大的樂觀預測"'},
+    )
+    check("validate good levers", validate_style_levers(good_levers), [])
+
+    bad_levers = StyleLevers(drawdown_tolerance="extreme")  # invalid
+    bad_findings = validate_style_levers(bad_levers)
+    if not any("drawdown_tolerance=" in f for f in bad_findings):
+        failures.append(f"  - validate_style_levers should flag bad value: {bad_findings}")
+
+    defaults = StyleLevers()  # all neutral defaults
+    check("default levers valid", validate_style_levers(defaults), [])
+
+    # Note: the Style readout *prose* is composed by the agent in natural
+    # language and passed via context["style_readout"]. The script does not
+    # format the readout — that would force template English/Chinese into a
+    # block that should match the SETTINGS Language and the agent's voice.
+
+    # --- Length budget ---
+    lb = length_budget_status("hello world", max_words=5, max_chars=20)
+    check("length OK",  lb["over"], False)
+    lb2 = length_budget_status("a " * 50, max_words=10)
+    check("length over", lb2["over"], True)
+
+    # --- Validation: rebalance item is exempt from variant/R:R ---
+    rebalance_adj = {"variant_tag": "rebalance", "sized_pp_delta": -1.0}
+    check("rebalance compliant", validate_recommendation_block(rebalance_adj), [])
+
+    # Variant call missing R:R + kill → multiple findings
+    bad_adj = {"variant_tag": "variant", "consensus": "EPS 4.20", "anchor": "10-Q",
+               "sized_pp_delta": 2.0}
+    findings = validate_recommendation_block(bad_adj)
+    if not any("R:R inputs missing" in f for f in findings):
+        failures.append(f"  - bad_adj should flag R:R missing: {findings}")
+    if not any("kill_trigger missing" in f for f in findings):
+        failures.append(f"  - bad_adj should flag kill_trigger missing: {findings}")
+
+    # Fully compliant variant call
+    good_adj = {"variant_tag": "variant", "consensus": "EPS 4.20", "anchor": "10-Q",
+                "entry_price": 200, "target_price": 260, "stop_price": 186,
+                "failure_mode": "GM compresses", "kill_trigger": "Q3 GM < 30%",
+                "kill_action": "cut full position", "sized_pp_delta": 2.0}
+    check("good_adj compliant", validate_recommendation_block(good_adj), [])
+
+    if failures:
+        print(f"FAIL — {len(failures)} self-check assertions failed:")
+        for f in failures:
+            print(f)
+        return 1
+    print("OK — all self-check assertions passed.")
+    return 0
 
 
 def _auto_fx_from_prices(
@@ -2056,6 +2678,11 @@ def main(argv: Optional[List[str]] = None) -> int:
     logging.basicConfig(level=logging.INFO if args.verbose else logging.WARNING,
                         format="%(asctime)s [%(levelname)s] %(message)s")
 
+    if args.self_check:
+        return _run_self_check()
+
+    if args.prices is None:
+        print("ERROR: --prices is required (omit only when running --self-check)", file=sys.stderr); return 2
     if not args.holdings.exists():
         print(f"ERROR: {args.holdings} not found", file=sys.stderr); return 2
     if not args.prices.exists():
