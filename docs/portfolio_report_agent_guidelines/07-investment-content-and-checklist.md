@@ -53,9 +53,13 @@ Each item that *is* in **Must do** or **May do** must carry, inline:
 
 If any of those four fields is missing on a non-rebalance item, the item is incomplete and must either be filled in or moved to **Need data**.
 
+**Executable-action boundary (HARD).** Only items that change NAV or explicitly tell the user to buy / add / sell / trim / cut / hedge are "actionable" for the Variant / R:R / Kill template. `hold`, `watch`, `do not add`, `avoid chasing`, `wait for earnings`, and empty-bucket placeholders are status guidance, not executable actions. Do **not** pad these rows with fake `R:R = n/a` or invented kill fields. If the advice is "wait", write the wait trigger and keep the PM-grade template off unless a real executable order is attached.
+
+**Structured-field rule (HARD).** The agent must not hand-write `R:R`, `pp of NAV` / `NAV百分點`, `Portfolio fit`, or PM-meta HTML inside free-form prose. Pass raw structured fields (`variant_tag`, `sized_pp_delta`, `target_pct`, `entry_price`, `target_price`, `stop_price`, `kill_trigger`, `kill_action`, `correlated_with`, `theme_overlap`, etc.) to `report_context.json`; `scripts/generate_report.py` is responsible for computing the NAV delta and formatting the canonical strings. If the renderer cannot compute a valid R:R, omit the R:R line or move the item to **Need data** — never print `R:R = n/a (inputs incomplete)` as if it were investment content.
+
 ### 15.4 Variant view & asymmetry (HARD REQUIREMENT)
 
-Every actionable recommendation in §10.8 (high-risk / high-opportunity), §10.9 (recommended adjustments), and §10.10 (today's action list) must carry a variant view and an explicit R:R **where the framework applies** (carve-outs in §15.4.1). Recommendations that are pure consensus must say so (`consensus-aligned`) and justify why consensus is still mispriced (timing, magnitude, second-order effect) or be downgraded.
+Every actionable recommendation in §10.8 (high-risk / high-opportunity), §10.9 (recommended adjustments), and §10.10 (today's action list) must carry a variant view and an explicit R:R **where the framework applies** (carve-outs in §15.4.1). "Actionable" means the row changes NAV or names a buy / add / sell / trim / cut / hedge. Pure hold / watch / avoid-chasing rows with `sized_pp_delta = 0` are non-action status guidance and must not be forced into the template. Recommendations that are pure consensus must say so (`consensus-aligned`) and justify why consensus is still mispriced (timing, magnitude, second-order effect) or be downgraded.
 
 **Required template per recommendation:**
 
@@ -112,13 +116,15 @@ The kill action drives the §10.9 stop-loss and the §15.3 today's-action `kill:
 
 ### 15.6 Portfolio fit & sizing rails (HARD REQUIREMENT)
 
-Every recommendation in §10.9 must be checked against `SETTINGS.md` sizing rails before being printed. The required output is a one-line `Portfolio fit` annotation:
+Every actionable recommendation in §10.9 must be checked against `SETTINGS.md` sizing rails before being printed. The required output is a one-line `Portfolio fit` annotation:
 
 ```
 Portfolio fit — sized Xpp of NAV; correlated with {top-3 overlapping holdings}; theme overlap with {theme name(s)} → {pushes / does not push} {single-name | theme | high-vol bucket} cap toward warn ({current % vs warn %}); cash floor after action {Y%} vs floor {Z%}.
 ```
 
 `pp of NAV` = percentage points of total net asset value including cash (the same denominator used by the §10.1 KPI strip and §9.1 weights). Never use ambiguous "% of book".
+
+**Renderer-owned NAV math (HARD).** The `目前` / `Current` weight shown in §10.9 is computed by `scripts/generate_report.py` from `HOLDINGS.md + prices.json`, not trusted from `report_context.json`. For sizing, pass either numeric `sized_pp_delta` (signed percentage points of total NAV) or numeric `target_pct`; if `target_pct` is supplied, the renderer computes `sized_pp_delta = target_pct − actual_current_pct`. Do not hand-write NAV percentages in prose, do not use risk-asset-only denominators for `pp of NAV`, and do not mix share-count trims with NAV pp without converting through the current price and total NAV.
 
 Rails to check (defaults; override from `SETTINGS.md` if specified):
 
@@ -155,6 +161,7 @@ Inline content size, by surface:
 
 - **§10.10 today's-action items** — single line each (variant tag + sized pp + R:R + kill, per §15.3). Hard cap: 240 characters.
 - **§10.9 recommended adjustments** — `≤ 60 words per position`. Use bullet form: 1 line consensus + 1 line variant + 1 line anchor + 1 line R:R + 1 line kill + 1 line portfolio fit. Promote only the **top 5 by conviction** to the full block; remaining holdings get a one-line `hold / pass / trim Xpp / kill: $X` summary in the same section.
+- **§10.9 renderer input hygiene** — `why` is plain text only. Do not include `<br>`, `<span>`, preformatted PM-meta strings, manual `R:R`, or manual NAV labels inside `why`; the renderer escapes prose and appends structured PM fields itself.
 - **§10.8 high-risk / high-opportunity watchlist** — one-line per name: `{tag} {ticker}: {1-clause thesis} [variant: {tag}] [R:R {value}] [kill: {trigger}]`.
 - **Style readout** — single paragraph, ≤ 90 words, ≤ 6 sentences.
 
@@ -314,11 +321,13 @@ Run every item before declaring the report complete. Each item maps back to its 
 - [ ] **Style readout** rendered as the first item under §10.11 Sources & data gaps (not in the masthead — masthead template is fixed). Names all six resolved levers with confidence tags `pinned` / `bullet "<text>"` / `inferred — pin to confirm` / `default` (§15.7).
 - [ ] Distinct-bullet rule respected — any lever inferred from a bullet already used for another lever is tagged `(inferred — pin to confirm)` (§15.7).
 - [ ] Every actionable recommendation (§10.8 / §10.9 / §10.10) carries a **Variant view** (Consensus / Variant / Anchor), is explicitly `consensus-aligned`, or uses a §15.4.1 carve-out template (Index ETF / sector ETF / crypto / short / rebalance).
+- [ ] Non-action status rows (`hold`, `watch`, `do not add`, `avoid chasing`, `wait`) with `sized_pp_delta = 0` do **not** print fake R:R / kill / NAV strings; they show only the wait trigger or data need (§15.3 / §15.4).
 - [ ] **No fabricated consensus numbers.** Every `Consensus` line cites a real source (IBES, Visible Alpha, named report) or uses `unknown-consensus (...)` (§15.4).
 - [ ] **No fabricated anchors.** Every Anchor cites a verifiable source (10-K/Q, transcript, named index, named macro series). Recommendations without a verifiable anchor are downgraded to `consensus-aligned` (§15.4).
 - [ ] Every actionable recommendation has explicit **R:R** in the §15.4 format, or `n/a (binary outcome — see kill criteria)`, or `n/a (rebalance / tax / rail)` for housekeeping items. Stop equals §15.5 kill price for price-based cuts; uses `Stop = n/a (hedged ...)` or `Stop = n/a (binary)` when kill action is non-cut (§15.4 / §15.5).
 - [ ] Every actionable recommendation (rebalance items excepted) carries a **Pre-mortem & kill criteria** triplet (failure mode, kill trigger, kill action) (§15.5).
-- [ ] Every recommendation carries a **Portfolio fit** annotation — sized pp of NAV, correlated holdings, theme overlap, rail-check vs SETTINGS sizing rails (§15.6).
+- [ ] Every actionable recommendation carries a **Portfolio fit** annotation — sized pp of NAV, correlated holdings, theme overlap, rail-check vs SETTINGS sizing rails (§15.6).
+- [ ] NAV math is renderer-owned: `Current` uses actual total-NAV weight from `HOLDINGS.md + prices.json`; action size is numeric `sized_pp_delta` or `target_pct`; no free-form `NAV百分點` / `pp of NAV` strings are hand-written in prose (§15.3 / §15.6).
 - [ ] No recommendation breaches a SETTINGS rail without either an accompanying named-lot trim, a downsize, or escalation to §10.6 High-priority alerts (§15.6). Rail-breach is a §10.6 trigger.
 - [ ] `Contrarian appetite` lever respected as a **ceiling, not a floor**. Zero contrarian calls is acceptable and is the correct output when consensus is right. Manufacture-to-fill flagged as a violation (§15.4 / §15.7).
 - [ ] `Hype tolerance` lever respected — no superlatives at `zero`; price targets are base/bull/bear bracketed; bull case ≤ 1.5× base unless a named comparable trade is cited (§15.7).

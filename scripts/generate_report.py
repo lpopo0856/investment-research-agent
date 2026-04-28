@@ -620,6 +620,58 @@ def length_budget_status(
 
 
 REBALANCE_VARIANT_TAGS = {"rebalance"}
+ACTIONABLE_ACTIONS = {
+    "add", "buy", "trim", "sell", "cut", "reduce", "increase", "short", "cover", "hedge"
+}
+PM_FIELD_KEYS = {
+    "variant_tag", "consensus", "variant", "anchor",
+    "entry_price", "target_price", "stop_price", "horizon_label",
+    "binary_catalyst", "hedged_structure", "rr_structural_reason",
+    "failure_mode", "kill_trigger", "kill_action",
+    "sized_pp_delta", "target_pct", "correlated_with", "theme_overlap",
+    "theme_pct_after", "high_vol_pct_after", "cash_pct_after",
+}
+
+
+def _float_or_none(value: Any) -> Optional[float]:
+    try:
+        if value is None or value == "":
+            return None
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _resolved_sized_pp_delta(adj: Dict[str, Any], current_pct: Optional[float] = None) -> Optional[float]:
+    """Resolve action size as pp of total NAV.
+
+    The canonical denominator is total NAV including cash. Agents may pass either
+    an explicit `sized_pp_delta` or a `target_pct`; when `target_pct` is used the
+    renderer computes the delta from the actual current weight, not a context-
+    supplied current_pct string.
+    """
+
+    direct = _float_or_none(adj.get("sized_pp_delta"))
+    if direct is not None:
+        return direct
+    target = _float_or_none(adj.get("target_pct"))
+    if target is not None and current_pct is not None:
+        return target - current_pct
+    return None
+
+
+def is_actionable_recommendation(adj: Dict[str, Any], current_pct: Optional[float] = None) -> bool:
+    """A report row is actionable only when it changes NAV or explicitly names a trade.
+
+    Hold / no-add / watch / avoid rows are status guidance. They may carry a
+    trigger, but they should not be forced into fake R:R or kill fields.
+    """
+
+    delta = _resolved_sized_pp_delta(adj, current_pct)
+    if delta is not None and abs(delta) > 1e-9:
+        return True
+    action = str(adj.get("action") or "").strip().lower()
+    return action in ACTIONABLE_ACTIONS
 
 
 def validate_recommendation_block(adj: Dict[str, Any]) -> List[str]:
@@ -632,8 +684,13 @@ def validate_recommendation_block(adj: Dict[str, Any]) -> List[str]:
     findings: List[str] = []
     variant_tag = (adj.get("variant_tag") or "").lower()
     is_rebalance = variant_tag in REBALANCE_VARIANT_TAGS
+    is_actionable = is_actionable_recommendation(adj)
+    has_pm_fields = any(adj.get(k) not in (None, "", []) for k in PM_FIELD_KEYS)
 
-    if not is_rebalance:
+    if not is_actionable and not has_pm_fields:
+        return findings
+
+    if is_actionable and not is_rebalance:
         if not adj.get("variant_tag"):
             findings.append("variant_tag missing (§15.4)")
         elif variant_tag not in ("consensus-aligned", "variant", "contrarian"):
@@ -659,8 +716,8 @@ def validate_recommendation_block(adj: Dict[str, Any]) -> List[str]:
         if not adj.get("failure_mode"):
             findings.append("failure_mode missing (§15.5)")
 
-    if adj.get("sized_pp_delta") is None:
-        findings.append("sized_pp_delta missing (§15.3 / §15.6)")
+    if is_actionable and _resolved_sized_pp_delta(adj) is None:
+        findings.append("sized_pp_delta or target_pct missing (§15.3 / §15.6)")
 
     return findings
 
@@ -2164,7 +2221,84 @@ def render_high_risk_opp(
   </section>"""
 
 
-def _enrich_adjustment_why(a: Dict[str, Any], config: Dict[str, float]) -> str:
+def _format_rr_string_ui(
+    target: Optional[float],
+    entry: Optional[float],
+    stop: Optional[float],
+    horizon_label: Optional[str] = None,
+    *,
+    binary: bool = False,
+    rebalance: bool = False,
+    hedged: bool = False,
+    structural_reason: Optional[str] = None,
+) -> str:
+    """Localized report-facing R:R formatter.
+
+    The exported `format_rr_string()` remains an English deterministic helper for
+    tests and external callers; the HTML renderer uses this function so labels
+    follow SETTINGS language and incomplete inputs do not leak into hold rows.
+    """
+
+    if rebalance:
+        return _ui("pm.rr_rebalance")
+    if binary:
+        return _ui("pm.rr_binary")
+    if structural_reason:
+        return f"R:R = n/a（{structural_reason}）"
+    if hedged and target is not None and entry is not None:
+        upside_pct = (target - entry) / entry * 100.0
+        return (
+            f"{_ui('pm.target')} ${target:g} ({upside_pct:+.0f}%) / "
+            f"{_ui('pm.stop')} = n/a（{_ui('pm.hedged_stop')}）"
+        )
+
+    rr = compute_rr_ratio(target, entry, stop)
+    if rr is None or target is None or entry is None or stop is None:
+        return ""
+
+    upside_pct = (target - entry) / entry * 100.0
+    downside_pct = (stop - entry) / entry * 100.0
+    horizon = f" {_ui('pm.over')} {horizon_label}" if horizon_label else ""
+    return (
+        f"{_ui('pm.target')} ${target:g} ({upside_pct:+.0f}%) / "
+        f"{_ui('pm.stop')} ${stop:g} ({downside_pct:+.0f}%) → R:R = {rr:g}:1{horizon}"
+    )
+
+
+def _format_portfolio_fit_line_ui(
+    *,
+    sized_pp: float,
+    correlated_with: Optional[List[str]] = None,
+    theme_overlap: Optional[List[str]] = None,
+    rails: Optional[RailReport] = None,
+) -> str:
+    parts: List[str] = [f"{_ui('pm.sized')} {sized_pp:+.1f}{_ui('pm.pp_nav')}"]
+    if correlated_with:
+        parts.append(f"{_ui('pm.correlated_with')} {', '.join(correlated_with)}")
+    if theme_overlap:
+        parts.append(f"{_ui('pm.theme_overlap')} {', '.join(theme_overlap)}")
+    if rails is not None:
+        if rails.any_breach:
+            parts.append(f"{_ui('pm.rail_breach')} {', '.join(rails.breached_rails())}")
+        else:
+            parts.append(_ui("pm.rails_ok"))
+        parts.append(
+            f"{_ui('pm.single_name')} {rails.single_name_pct_after:.1f}% "
+            f"{_ui('pm.vs_warn')} {rails.single_name_warn:.1f}%"
+        )
+        if rails.cash_pct_after is not None:
+            parts.append(
+                f"{_ui('pm.cash')} {rails.cash_pct_after:.1f}% "
+                f"{_ui('pm.vs_floor')} {rails.cash_floor_warn:.1f}%"
+            )
+    return f"{_ui('pm.portfolio_fit')} — " + "；".join(parts)
+
+
+def _enrich_adjustment_why(
+    a: Dict[str, Any],
+    config: Dict[str, float],
+    current_pct: Optional[float] = None,
+) -> str:
     """Append PM-grade structured lines to an adjustment's `why` cell.
 
     Reads optional fields per §15.3 / §15.4 / §15.5 / §15.6 and produces the
@@ -2174,61 +2308,72 @@ def _enrich_adjustment_why(a: Dict[str, Any], config: Dict[str, float]) -> str:
 
     base_why = a.get("why", "") or ""
     extras: List[str] = []
+    has_pm_fields = any(a.get(k) not in (None, "", []) for k in PM_FIELD_KEYS)
+    if not has_pm_fields:
+        return _esc(base_why)
 
     variant_tag = (a.get("variant_tag") or "").strip()
     consensus = a.get("consensus")
     variant = a.get("variant")
     anchor = a.get("anchor")
     if variant_tag:
-        line = f"[{variant_tag}]"
+        line = f"{_ui('pm.tag')}：{variant_tag}"
         if consensus:
-            line += f" Consensus: {consensus}"
+            line += f"；{_ui('pm.consensus')}：{consensus}"
         if variant and variant_tag in ("variant", "contrarian"):
-            line += f" · Variant: {variant}"
+            line += f"；{_ui('pm.variant')}：{variant}"
         if anchor and variant_tag in ("variant", "contrarian"):
-            line += f" · Anchor: {anchor}"
+            line += f"；{_ui('pm.anchor')}：{anchor}"
         extras.append(line)
 
     # R:R line
     binary = bool(a.get("binary_catalyst"))
     hedged = bool(a.get("hedged_structure"))
     is_rebalance = variant_tag == "rebalance"
-    rr_line = format_rr_string(
-        a.get("target_price"),
-        a.get("entry_price"),
-        a.get("stop_price"),
+    should_print_rr = (
+        any(a.get(k) is not None for k in ("target_price", "entry_price", "stop_price"))
+        or binary
+        or hedged
+        or bool(a.get("rr_structural_reason"))
+        or (is_rebalance and is_actionable_recommendation(a, current_pct))
+    )
+    rr_line = _format_rr_string_ui(
+        _float_or_none(a.get("target_price")),
+        _float_or_none(a.get("entry_price")),
+        _float_or_none(a.get("stop_price")),
         a.get("horizon_label"),
         binary=binary,
         rebalance=is_rebalance,
         hedged=hedged,
         structural_reason=a.get("rr_structural_reason"),
-    )
-    extras.append(rr_line)
+    ) if should_print_rr else ""
+    if rr_line:
+        extras.append(rr_line)
 
     # Pre-mortem triplet (§15.5)
     if not is_rebalance:
         pm_bits: List[str] = []
         if a.get("failure_mode"):
-            pm_bits.append(f"Fail: {a['failure_mode']}")
+            pm_bits.append(f"{_ui('pm.failure')}：{a['failure_mode']}")
         if a.get("kill_trigger"):
-            pm_bits.append(f"Kill: {a['kill_trigger']}")
+            pm_bits.append(f"{_ui('pm.kill')}：{a['kill_trigger']}")
         if a.get("kill_action"):
-            pm_bits.append(f"Action: {a['kill_action']}")
+            pm_bits.append(f"{_ui('pm.kill_action')}：{a['kill_action']}")
         if pm_bits:
-            extras.append(" · ".join(pm_bits))
+            extras.append("；".join(pm_bits))
 
     # Portfolio fit (§15.6)
-    sized_pp = a.get("sized_pp_delta")
+    sized_pp = _resolved_sized_pp_delta(a, current_pct)
     if sized_pp is not None:
         rails = check_rails(
             config,
-            current_pct=float(a.get("current_pct", 0.0) or 0.0),
+            current_pct=float(current_pct if current_pct is not None else a.get("current_pct", 0.0) or 0.0),
             delta_pp=float(sized_pp),
-            theme_pct_after=a.get("theme_pct_after"),
-            high_vol_pct_after=a.get("high_vol_pct_after"),
-            cash_pct_after=a.get("cash_pct_after"),
+            theme_pct_after=_float_or_none(a.get("theme_pct_after")),
+            high_vol_pct_after=_float_or_none(a.get("high_vol_pct_after")),
+            cash_pct_after=_float_or_none(a.get("cash_pct_after")),
         )
-        extras.append(format_portfolio_fit_line(
+        extras.append(_format_portfolio_fit_line_ui(
             sized_pp=float(sized_pp),
             correlated_with=a.get("correlated_with"),
             theme_overlap=a.get("theme_overlap"),
@@ -2244,7 +2389,12 @@ def _enrich_adjustment_why(a: Dict[str, Any], config: Dict[str, float]) -> str:
     return f'<span class="pm-meta">{enriched_lines}</span>'
 
 
-def render_adjustments(context: Dict[str, Any], config: Optional[Dict[str, float]] = None) -> str:
+def render_adjustments(
+    context: Dict[str, Any],
+    config: Optional[Dict[str, float]] = None,
+    aggs: Optional[Dict[str, TickerAggregate]] = None,
+    total_assets: Optional[float] = None,
+) -> str:
     adjs = context.get("adjustments") or []
     cfg = config or DEFAULTS
     if not adjs:
@@ -2258,13 +2408,22 @@ def render_adjustments(context: Dict[str, Any], config: Optional[Dict[str, float
   </section>"""
     rows = []
     for a in adjs:
+        ticker = str(a.get("ticker", "")).strip()
+        actual_current_pct: Optional[float] = None
+        if aggs is not None and total_assets and ticker in aggs:
+            mv = aggs[ticker].market_value
+            if mv is not None:
+                actual_current_pct = mv / total_assets * 100.0
+        current_pct = actual_current_pct
+        if current_pct is None:
+            current_pct = _float_or_none(a.get("current_pct")) or 0.0
         # `why_cell` is already escaped (or contains pre-escaped HTML for the
         # PM-meta span); skip _esc in the template to avoid double-escape.
-        why_cell = _enrich_adjustment_why(a, cfg)
+        why_cell = _enrich_adjustment_why(a, cfg, current_pct)
         rows.append(f"""\
           <tr>
-            <td><span class="sym-trigger" tabindex="0" role="button">{_esc(a.get('ticker', _ui("common.dash")))}</span></td>
-            <td class="num">{a.get('current_pct', 0):.1f}%</td>
+            <td><span class="sym-trigger" tabindex="0" role="button">{_esc(ticker or _ui("common.dash"))}</span></td>
+            <td class="num">{current_pct:.1f}%</td>
             <td><span class="adj-action {_esc(a.get('action', 'hold'))}">{_esc(a.get('action_label', ''))}</span></td>
             <td class="why">{why_cell}</td>
             <td class="trig">{_esc(a.get('trigger', ''))}</td>
@@ -2449,7 +2608,7 @@ def render_html(
         render_news(context),                                              # §10.1 #6
         render_events(context),                                            # §10.1 #7
         render_high_risk_opp(aggs, prices, total_assets, context, config), # §10.1 #8
-        render_adjustments(context, config),                               # §10.1 #9
+        render_adjustments(context, config, aggs, total_assets),           # §10.1 #9
         render_actions(context),                                           # §10.1 #10
         render_sources(prices, context),                                   # §10.1 #11
     ]
@@ -2607,9 +2766,13 @@ def _run_self_check() -> int:
     rebalance_adj = {"variant_tag": "rebalance", "sized_pp_delta": -1.0}
     check("rebalance compliant", validate_recommendation_block(rebalance_adj), [])
 
+    # Non-action status guidance should not be forced into fake R:R / kill fields.
+    hold_status = {"ticker": "NVDA", "action": "hold", "why": "Wait for earnings."}
+    check("hold status has no PM requirements", validate_recommendation_block(hold_status), [])
+
     # Variant call missing R:R + kill → multiple findings
-    bad_adj = {"variant_tag": "variant", "consensus": "EPS 4.20", "anchor": "10-Q",
-               "sized_pp_delta": 2.0}
+    bad_adj = {"action": "add", "variant_tag": "variant", "consensus": "EPS 4.20",
+               "anchor": "10-Q", "sized_pp_delta": 2.0}
     findings = validate_recommendation_block(bad_adj)
     if not any("R:R inputs missing" in f for f in findings):
         failures.append(f"  - bad_adj should flag R:R missing: {findings}")
