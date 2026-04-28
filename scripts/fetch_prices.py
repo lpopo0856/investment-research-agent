@@ -7,11 +7,15 @@ Implements `docs/portfolio_report_agent_guidelines.md` §8 (Latest-price retriev
 
   1. Parse HOLDINGS.md (§4.1)
   2. Group tickers by market type and resolve the market-native primary source path (§8.5)
-  3. Use yfinance batch for listed securities / FX, but skip crypto (§8.3, §8.5)
-  4. yfinance failure recovery — up to 3 auto-correction attempts per failure (§8.4)
-  5. Fallback: keyed APIs → web (manual) → no-token APIs (§8.1, §8.5)
-  6. Apply Freshness gate (§8.7)
-  7. Emit JSON with the §8.8 stored-fields contract per ticker.
+  3. **PRIMARY**: Stooq (no-token) for listed securities — `.us`/`.uk`/`.jp`/`.hk`/`.tw` suffixes
+  4. **SECONDARY**: yfinance per-ticker history (skip crypto) — used only when Stooq misses (§8.3)
+  5. yfinance failure recovery — up to 3 auto-correction attempts per failure (§8.4)
+  6. Tertiary fallback: keyed APIs (Twelve Data / Finnhub / etc.) → web (manual) (§8.1, §8.5)
+  7. **Currency verification**: every successful price result has its `currency` confirmed
+     against a live internet source (Stooq metadata, yfinance fast_info, exchange API) before
+     falling back to the hardcoded MARKET_DEFAULT_CCY map.
+  8. Apply Freshness gate (§8.7)
+  9. Emit JSON with the §8.8 stored-fields contract per ticker.
 
 Output JSON shape (per ticker):
 
@@ -1115,59 +1119,243 @@ def _try_no_token_twse_mis(twse_code: str, session: Any) -> Optional[Dict[str, A
 
 # Per-asset fallback order (§8.5). Each entry is a callable that returns dict | None.
 # The caller loops the list and stops on the first success.
+#
+# §8.5 ORDERING — Stooq is the **primary** source for listed securities, yfinance
+# per-ticker history is the **secondary** fallback. Keyed APIs and exchange-native
+# endpoints (TWSE MIS) are tertiary. This matches the operator preference:
+# Stooq quotes are stable, no-token, and currency-verifiable; yfinance is rate-limited
+# and noisier so it is only consulted when Stooq misses.
 def _build_fallback_chain(
     market: MarketType,
     keys: Dict[str, str],
     session: Any,
     yf_symbol: Optional[str],
     raw_ticker: str,
+    pacer: Optional["Pacer"] = None,
 ) -> List[Tuple[str, Any]]:
     """Returns [(label, callable), ...] in spec order for the given market."""
     chain: List[Tuple[str, Any]] = []
     s = yf_symbol or raw_ticker
 
+    def _yf_callable(symbol: str) -> Any:
+        return lambda: _try_yfinance_per_ticker(symbol, pacer or Pacer(), session)
+
     if market in (MarketType.US, MarketType.UNKNOWN):
-        # Keyed APIs first (§8.5)
+        # Primary: Stooq no-token JSON
+        chain.append(("no_token:stooq", lambda: _try_no_token_stooq(f"{raw_ticker.lower()}.us", session)))
+        # Secondary: yfinance per-ticker
+        if yf_symbol:
+            chain.append(("yfinance", _yf_callable(yf_symbol)))
+        # Tertiary: keyed APIs (§8.5)
         if "TWELVE_DATA_API_KEY" in keys:
             chain.append(("twelve_data", lambda: _try_twelve_data(s, keys["TWELVE_DATA_API_KEY"], session)))
         if "FINNHUB_API_KEY" in keys:
             chain.append(("finnhub", lambda: _try_finnhub(s, keys["FINNHUB_API_KEY"], session)))
         # FMP / Tiingo / Alpha Vantage / Polygon — TODO; same pattern.
-        # No-token (§8.3.1 endpoint registry — must fire even when no keys are configured)
-        chain.append(("no_token:stooq", lambda: _try_no_token_stooq(f"{raw_ticker.lower()}.us", session)))
     elif market == MarketType.CRYPTO:
-        # Crypto does not use yfinance. Prefer exchange-native spot first, then CoinGecko.
+        # Crypto does not use Stooq or yfinance. Exchange-native spot first, then CoinGecko.
         binance_sym = f"{_normalize_crypto_symbol(raw_ticker)}USDT"
         chain.append(("no_token:binance", lambda: _try_no_token_binance(binance_sym, session)))
         if "COINGECKO_DEMO_API_KEY" in keys:
             chain.append(("coingecko_demo", lambda: _try_coingecko(raw_ticker, session, keys["COINGECKO_DEMO_API_KEY"])))
         chain.append(("coingecko", lambda: _try_coingecko(raw_ticker, session)))
     elif market in (MarketType.TW, MarketType.TWO):
-        # No-token TWSE MIS — works for both listed (`tse_`) and OTC (`otc_`) prefixes.
+        # Primary: Stooq for TW listed names (covers most equities/ETFs)
+        chain.append(("no_token:stooq", lambda: _try_no_token_stooq(f"{raw_ticker.lower()}.tw", session)))
+        # Secondary: yfinance per-ticker
+        if yf_symbol:
+            chain.append(("yfinance", _yf_callable(yf_symbol)))
+        # Tertiary: TWSE MIS (works for both listed `tse_` and OTC `otc_` prefixes)
         prefix = "tse" if market == MarketType.TW else "otc"
         twse_code = f"{prefix}_{raw_ticker.lower()}.tw" if not raw_ticker.lower().endswith(".tw") \
                     else f"{prefix}_{raw_ticker.lower()}"
         chain.append(("no_token:twse_mis", lambda: _try_no_token_twse_mis(twse_code, session)))
-        # Stooq JSON as a second-line no-token fallback for TW (covers most listed names)
-        chain.append(("no_token:stooq", lambda: _try_no_token_stooq(f"{raw_ticker.lower()}.tw", session)))
     elif market == MarketType.JP:
+        # Primary: Stooq covers `.jp` codes like `7203.jp`
+        chain.append(("no_token:stooq", lambda: _try_no_token_stooq(f"{raw_ticker.lower()}.jp", session)))
+        # Secondary: yfinance per-ticker
+        if yf_symbol:
+            chain.append(("yfinance", _yf_callable(yf_symbol)))
         if "JQUANTS_REFRESH_TOKEN" in keys:
             # JQuants flow — left as TODO; auth + endpoint resolution required.
             pass
-        # No-token Stooq covers `.jp` codes like `7203.jp`
-        chain.append(("no_token:stooq", lambda: _try_no_token_stooq(f"{raw_ticker.lower()}.jp", session)))
     elif market == MarketType.LSE:
-        # No-token Stooq for `.uk` (e.g. vwra.uk, lse-listed UCITS ETFs)
+        # Primary: Stooq `.uk` (e.g. vwra.uk, lse-listed UCITS ETFs)
         chain.append(("no_token:stooq", lambda: _try_no_token_stooq(f"{raw_ticker.lower()}.uk", session)))
+        # Secondary: yfinance per-ticker
+        if yf_symbol:
+            chain.append(("yfinance", _yf_callable(yf_symbol)))
     elif market == MarketType.HK:
-        # No-token Stooq for `.hk`
+        # Primary: Stooq `.hk`
         chain.append(("no_token:stooq", lambda: _try_no_token_stooq(f"{raw_ticker.lower()}.hk", session)))
+        # Secondary: yfinance per-ticker
+        if yf_symbol:
+            chain.append(("yfinance", _yf_callable(yf_symbol)))
     elif market == MarketType.FX:
+        # FX preserves the legacy order: yfinance primary (no Stooq endpoint for FX),
+        # then keyed Twelve Data, then Frankfurter (ECB), then Open ER.
+        if yf_symbol:
+            chain.append(("yfinance", _yf_callable(yf_symbol)))
         if "TWELVE_DATA_API_KEY" in keys:
             chain.append(("twelve_data_fx", lambda: _try_twelve_data(s, keys["TWELVE_DATA_API_KEY"], session)))
         chain.append(("no_token:frankfurter", lambda: _try_no_token_frankfurter_fx(s, session)))
         chain.append(("no_token:open_er_api", lambda: _try_no_token_open_er_fx(s, session)))
     return chain
+
+
+def _try_yfinance_per_ticker(symbol: str, pacer: "Pacer", session: Optional[Any]) -> Optional[Dict[str, Any]]:
+    """Wrap `_yfinance_per_ticker_history` to return the same dict shape as Stooq/keyed callers."""
+    out = _yfinance_per_ticker_history(symbol, pacer, session)
+    if out is None:
+        return None
+    latest, prior, currency, exchange = out
+    move_pct = (
+        round(((latest - prior) / prior) * 100.0, 4)
+        if prior and prior != 0 else None
+    )
+    return {
+        "latest_price": latest,
+        "prior_close": prior,
+        "move_pct": move_pct,
+        "currency": currency,
+        "exchange": exchange,
+        "price_source": "yfinance",
+        "price_as_of": _utc_iso(),
+    }
+
+
+# ----------------------------------------------------------------------------- #
+# Currency verification via internet (post-fetch)
+# ----------------------------------------------------------------------------- #
+
+# Process-level cache so the same symbol is only probed once per run.
+_CURRENCY_CACHE: Dict[str, str] = {}
+
+
+def _yahoo_chart_currency(symbol: str, session: Any) -> Optional[Tuple[str, Optional[str]]]:
+    """Direct call to Yahoo's v8 chart endpoint (no auth, returns currency in meta).
+
+    Returns (currency, exchange) on success, None on failure. This is the canonical
+    internet-based ticker-currency lookup the spec's "Stooq currency rule" requires;
+    `https://query1.finance.yahoo.com/v8/finance/chart/<sym>?interval=1d&range=5d`
+    works without a crumb/cookie unlike the v7 quote endpoint.
+    """
+    if not symbol:
+        return None
+    try:
+        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
+        r = session.get(
+            url,
+            params={"interval": "1d", "range": "5d"},
+            timeout=YF_HTTP_TIMEOUT_SEC,
+            headers={
+                "User-Agent": "Mozilla/5.0 (portfolio-report-agent)",
+                "Accept": "application/json",
+            },
+        )
+        if r.status_code != 200:
+            return None
+        data = r.json() or {}
+        rows = (data.get("chart") or {}).get("result") or []
+        if not rows:
+            return None
+        meta = rows[0].get("meta") or {}
+        ccy = meta.get("currency")
+        if not ccy:
+            return None
+        exch = meta.get("exchangeName") or meta.get("fullExchangeName")
+        return str(ccy).upper(), (str(exch) if exch else None)
+    except Exception:                                             # noqa: BLE001
+        return None
+
+
+def _verify_currency_via_internet(
+    pr: PriceResult,
+    session: Optional[Any],
+    pacer: Pacer,
+) -> None:
+    """Ensure `pr.currency` is populated from a live internet source.
+
+    Strategy (in order):
+      1. Keep `pr.currency` if the price-source already supplied a non-empty value
+         (yfinance / keyed APIs usually include it; Stooq does not).
+      2. Direct Yahoo v8 chart endpoint probe — no-auth HTTP that returns canonical
+         exchange-confirmed currency/exchange in `chart.result[0].meta.currency`.
+         This is the "agent web-search the listing exchange" step the spec's Stooq
+         currency rule requires, run as a deterministic API call.
+      3. yfinance.Ticker.fast_info probe — backup if the v8 endpoint is blocked.
+      4. For TW markets, the MIS endpoint always implies TWD (Stooq `.tw` listings).
+      5. Fall back to MARKET_DEFAULT_CCY for the market type.
+
+    Cash and crypto rows are skipped — cash is set elsewhere, crypto is always USD-quoted.
+    """
+    if pr.market == MarketType.CASH:
+        return
+    if pr.currency:
+        return  # already verified by the price source
+
+    sym = pr.yfinance_symbol
+
+    # 2. Yahoo v8 chart API (preferred — direct HTTP, no auth, returns currency in meta)
+    if sym and session is not None:
+        cached = _CURRENCY_CACHE.get(sym)
+        if cached:
+            pr.currency = cached
+            pr.fallback_chain.append("currency_verify:yahoo_chart_cached")
+            return
+        # Pace the chart probe so back-to-back Stooq+Yahoo bursts don't double the
+        # outbound rate; Yahoo throttles the v8 endpoint less aggressively than v7
+        # but still benefits from the §8.3 inter-call gap.
+        pacer.wait()
+        out = _yahoo_chart_currency(sym, session)
+        if out:
+            ccy, exch = out
+            pr.currency = ccy
+            if exch and not pr.exchange:
+                pr.exchange = exch
+            _CURRENCY_CACHE[sym] = ccy
+            pr.fallback_chain.append("currency_verify:yahoo_chart")
+            return
+
+    # 3. yfinance.Ticker.fast_info probe (backup; subject to rate-limit). `fast_info`
+    # is a `FastInfo` object — not a dict — so we use attribute/key access via the
+    # suppress block.
+    if sym and session is not None:
+        try:
+            import yfinance as yf  # type: ignore[import-not-found]
+            pacer.wait()
+            tk = yf.Ticker(sym, session=session)
+            ccy: Optional[str] = None
+            with contextlib.suppress(Exception):
+                fi = tk.fast_info
+                if fi is not None:
+                    ccy = getattr(fi, "currency", None)
+                    if ccy is None:
+                        try:
+                            ccy = fi["currency"]                  # type: ignore[index]
+                        except (KeyError, TypeError):
+                            ccy = None
+            if ccy:
+                pr.currency = str(ccy).upper()
+                _CURRENCY_CACHE[sym] = pr.currency
+                pr.fallback_chain.append("currency_verify:yfinance_fast_info")
+                return
+        except ImportError:
+            pass
+        except Exception:                                         # noqa: BLE001
+            pass
+
+    # 4. TW-specific exchange metadata (MIS endpoint always returns TWD)
+    if pr.market in (MarketType.TW, MarketType.TWO):
+        pr.currency = "TWD"
+        pr.fallback_chain.append("currency_verify:twse_mis_metadata")
+        return
+
+    # 5. Fallback to hardcoded market default (last resort, no internet hit)
+    default_ccy = MARKET_DEFAULT_CCY.get(pr.market)
+    if default_ccy:
+        pr.currency = default_ccy
+        pr.fallback_chain.append(f"currency_verify:default_for_{pr.market.value}")
 
 
 # ----------------------------------------------------------------------------- #
@@ -1223,98 +1411,68 @@ def fetch_all_prices(
         if market == MarketType.CRYPTO:
             results[ticker].fallback_chain.append("primary:crypto_native_sources")
 
-    # ---- Group by market for batched yfinance calls ------------------------- #
-    if not skip_yfinance:
-        groups: Dict[MarketType, List[str]] = {}
-        for (ticker, market) in distinct:
-            if market == MarketType.CASH:
-                continue
-            sym = results[ticker].yfinance_symbol
-            if sym is None:
-                continue
-            groups.setdefault(market, []).append(sym)
-
-        for market, symbols in groups.items():
-            for batch in _chunked(symbols, YF_BATCH_SIZE):
-                results_for_batch, batch_err = _yfinance_batch(batch, pacer, session)
-                # Apply results
-                for sym in batch:
-                    pr = _result_by_symbol(results, sym)
-                    if pr is None:
-                        continue
-                    if sym in results_for_batch:
-                        latest, prior, currency = results_for_batch[sym]
-                        pr.latest_price = latest
-                        pr.prior_close = prior
-                        pr.currency = currency
-                        pr.move_pct = (
-                            round(((latest - prior) / prior) * 100.0, 4)
-                            if (latest is not None and prior not in (None, 0))
-                            else None
-                        )
-                        pr.price_source = "yfinance"
-                        pr.price_as_of = _utc_iso()
-                        state = _classify_market_state(pr.market)
-                        pr.market_state_basis = state.value
-                        pr.price_freshness = _freshness_for_state(state, has_intraday=True)
-                        pr.fallback_chain.append("yfinance_batch")
-                    else:
-                        pr.yfinance_failure_reason = batch_err or "missing_in_batch_response"
-                pacer.reset_after_batch()
-
-    # ---- Per-ticker recovery + keyed/no-token fallback ---------------------- #
+    # ---- Per-ticker fetch: Stooq primary → yfinance secondary → keyed APIs --- #
+    # `skip_yfinance` is repurposed as "no network": skip the entire fetch chain so the
+    # parser and JSON shape can be smoke-tested without making any HTTP calls.
     for (ticker, market) in distinct:
         pr = results[ticker]
-        if pr.price_source in ("cash", "yfinance"):
+        if pr.price_source == "cash":
             continue
 
-        # Step 1: yfinance auto-correction (counts toward §8.4 budget)
-        if not skip_yfinance and pr.yfinance_symbol:
-            pr = _auto_correct(pr, pacer, session)
-            if pr.price_source == "yfinance":
-                results[ticker] = pr
-                continue
+        if session is None or skip_yfinance:
+            pr.fallback_chain.append("network_disabled:no_fetch")
+            results[ticker] = pr
+            continue
 
-        # Step 2: keyed-API + no-token fallback chain (§8.5 + §8.3.1 endpoint registry)
-        # `skip_yfinance` is repurposed as "no network" for smoke-testing the parser,
-        # so we also skip the keyed/no-token tier when it is set.
-        if session is not None and not skip_yfinance:
-            tried_any = False
-            for label, callable_ in _build_fallback_chain(
-                market, settings_keys, session, pr.yfinance_symbol, ticker
-            ):
-                tried_any = True
-                out = callable_()
-                if out and out.get("latest_price") is not None:
-                    pr.latest_price = out.get("latest_price")
-                    pr.prior_close = out.get("prior_close")
-                    pr.move_pct = out.get("move_pct")
-                    pr.currency = out.get("currency") or pr.currency
-                    pr.exchange = out.get("exchange") or pr.exchange
-                    pr.price_source = out.get("price_source", label)
-                    pr.price_as_of = out.get("price_as_of") or _utc_iso()
-                    state = _classify_market_state(market)
-                    pr.market_state_basis = state.value
-                    pr.price_freshness = _freshness_for_state(state, has_intraday=True)
-                    pr.fallback_chain.append(label)
-                    break
-                else:
-                    pr.fallback_chain.append(f"{label}:miss")
-            if not tried_any:
-                pr.fallback_chain.append("tier2_4:no_endpoints_for_market")
+        tried_any = False
+        for label, callable_ in _build_fallback_chain(
+            market, settings_keys, session, pr.yfinance_symbol, ticker, pacer=pacer
+        ):
+            tried_any = True
+            # §8.8 audit: stamp yfinance request started/latency for the yfinance branch
+            # only. Other sources don't carry these fields per the contract.
+            yf_started_mono: Optional[float] = None
+            if label == "yfinance":
+                pr.yfinance_request_started_at = _utc_iso()
+                yf_started_mono = time.monotonic()
+            out = callable_()
+            if label == "yfinance" and yf_started_mono is not None:
+                pr.yfinance_request_latency_ms = int((time.monotonic() - yf_started_mono) * 1000)
+            if out and out.get("latest_price") is not None:
+                pr.latest_price = out.get("latest_price")
+                pr.prior_close = out.get("prior_close")
+                pr.move_pct = out.get("move_pct")
+                pr.currency = out.get("currency") or pr.currency
+                pr.exchange = out.get("exchange") or pr.exchange
+                pr.price_source = out.get("price_source", label)
+                pr.price_as_of = out.get("price_as_of") or _utc_iso()
+                state = _classify_market_state(market)
+                pr.market_state_basis = state.value
+                pr.price_freshness = _freshness_for_state(state, has_intraday=True)
+                pr.fallback_chain.append(label)
+                break
+            else:
+                pr.fallback_chain.append(f"{label}:miss")
+                if label == "yfinance":
+                    pr.yfinance_failure_reason = "yfinance_per_ticker_miss"
+        if not tried_any:
+            pr.fallback_chain.append("primary_chain:no_endpoints_for_market")
+
+        # §8.4 yfinance auto-correction — only consulted when Stooq AND yfinance
+        # per-ticker both missed but a yfinance symbol exists. Rate-limit failures
+        # short-circuit per §8.3.1.
+        if pr.price_source == "n/a" and pr.yfinance_symbol and market != MarketType.CRYPTO:
+            pr = _auto_correct(pr, pacer, session)
 
         if pr.price_source == "n/a":
-            # Step 3 (handoff): tiers 1-2 + scripted tier 4 are exhausted.
-            # Per §8.3.1, the agent must now manually walk web search (tier 3) and any
-            # remaining no-token endpoints not implemented here. The marker tells the
-            # agent this is a HANDOFF, not a terminal state.
+            # Final handoff to the agent's web search tier (§8.3.1 tier 3).
             pr.fallback_chain.append("agent_web_search:TODO_required")
-            # If the failure was rate-limit, the spec requires a tier-down even if
-            # the agent forgets — surface this prominently in the audit so the
-            # workflow gate (§8.1) catches it before the report renders.
             if _is_rate_limit_failure_reason(pr.yfinance_failure_reason):
                 pr.fallback_chain.append("rate_limited:tier3_4_continuation_required")
             pr.price_freshness = "n/a"
+        else:
+            # Internet-based currency verification for the ticker quote currency.
+            _verify_currency_via_internet(pr, session, pacer)
 
         results[ticker] = pr
 

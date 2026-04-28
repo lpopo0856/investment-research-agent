@@ -1,8 +1,8 @@
 ## 8. Latest-price retrieval pipeline
 
-### 8.0 Subagent prerequisites — install `yfinance` first (HARD REQUIREMENT)
+### 8.0 Subagent prerequisites — install `yfinance` and `requests` (HARD REQUIREMENT)
 
-Before the latest-price subagent runs `scripts/fetch_prices.py` (or any ad-hoc yfinance code), it **must** ensure the `yfinance` and `requests` packages are importable. The subagent owns this step — the main agent should not assume the host environment already has them.
+Before the latest-price subagent runs `scripts/fetch_prices.py` (or any ad-hoc yfinance code), it **must** ensure the `yfinance` and `requests` packages are importable. The subagent owns this step — the main agent should not assume the host environment already has them. `requests` is required for the Stooq, Yahoo v8 chart (currency verification), and keyed-API branches; `yfinance` is required for the secondary fallback (listed securities) and the FX primary branch.
 
 Required actions, in order, every run:
 
@@ -22,15 +22,15 @@ Anti-patterns (do **not** do these):
 - Install with `sudo`, `--user`, or any flag that mutates a system path the user did not ask for.
 - Skip the install probe because "yfinance was installed last week" — the subagent runs in a fresh process; assume nothing.
 - Pin a specific yfinance version in the install command unless the user explicitly asked. Pinning forces re-resolution on every run; let pip resolve the latest compatible version.
-- **Stop at the script's `price_source = "n/a"`.** The script handles the market-native primary branch (yfinance for listed securities / FX, Binance-CoinGecko-first for crypto), tier 2 (configured keyed APIs), and selected tier-4 stubs. **The agent owns tier 3 (web search) and any tier 4 entry that requires symbol mapping or source-specific handling the script cannot do.** A `n/a` from `scripts/fetch_prices.py` is a **handoff signal** — the agent must walk §8.1 tier 3 then tier 4 manually before declaring the ticker terminal. Generating a report with mass `n/a` for non-cash tickers when web search has not been attempted is a **workflow violation** (see §8.3.1).
+- **Stop at the script's `price_source = "n/a"`.** The script handles the market-native primary branch (**Stooq JSON primary for listed securities, yfinance per-ticker secondary**; **yfinance primary for FX**; Binance / CoinGecko first for crypto), tier 2 (configured keyed APIs), and selected tier-4 stubs. After every Stooq hit the script also probes Yahoo's v8 chart endpoint to confirm the ticker quote currency (`fallback_chain` line `currency_verify:yahoo_chart`). **The agent owns tier 3 (web search) and any tier 4 entry that requires symbol mapping or source-specific handling the script cannot do.** A `n/a` from `scripts/fetch_prices.py` is a **handoff signal** — the agent must walk §8.1 tier 3 then tier 4 manually before declaring the ticker terminal. Generating a report with mass `n/a` for non-cash tickers when web search has not been attempted is a **workflow violation** (see §8.3.1).
 
 This prerequisite is the same regardless of who calls yfinance: the canonical `scripts/fetch_prices.py`, an ad-hoc script the agent wrote, or a one-off REPL probe. The pacing rules in §8.3 still apply once yfinance is importable — install is **separate** from rate-limit handling.
 
 ### 8.1 Source hierarchy
 
-Use the highest-priority source that returns a credible value. **The priority is asset-specific, not globally yfinance-first.** Listed securities and FX use `yfinance` first. Crypto uses **Binance public spot / CoinGecko first** and should normally skip yfinance altogether. After the market-native primary source, continue to configured keyed APIs, then agent web search / public quote pages, then free no-token APIs. If a source is delayed, EOD-only, or stale relative to another credible source, use the fresher higher-quality value when available and record the fallback / freshness in the source audit.
+Use the highest-priority source that returns a credible value. **The priority is asset-specific, not globally yfinance-first.** Listed securities use **Stooq JSON first**, then `yfinance` per-ticker history as the secondary fallback. **FX** uses `yfinance` per-pair first (Stooq does not cover FX). **Crypto** uses **Binance public spot / CoinGecko first** and skips yfinance altogether. After the market-native primary source, continue to configured keyed APIs, then agent web search / public quote pages, then free no-token APIs. If a source is delayed, EOD-only, or stale relative to another credible source, use the fresher higher-quality value when available and record the fallback / freshness in the source audit.
 
-1. **Latest-price subagent using the market-native primary source** — before any other price-source work, delegate all holdings to a dedicated latest-price subagent. For listed securities / FX, fetch via `yfinance`, preferably in a single batched request. For crypto, start with Binance public spot and CoinGecko. Accept only values that pass the **Freshness gate** (§8.7). Record `price_source`, as-of timestamp, currency, exchange / market basis when available, and any ticker-level failure reason. For yfinance branches, if the subagent fails, it must diagnose the failure and attempt automatic correction up to three times before the main agent moves the affected ticker to fallback sources (§8.4).
+1. **Latest-price subagent using the market-native primary source** — before any other price-source work, delegate all holdings to a dedicated latest-price subagent. For **listed securities (US / TW / TWO / JP / HK / LSE)** the primary call is the **no-token Stooq JSON endpoint** (`https://stooq.com/q/l/?s=<ticker>.<suffix>&f=sd2t2ohlcv&h&e=json`) and the secondary fallback is **`yfinance` per-ticker history**. For **FX** the primary call is `yfinance` `<PAIR>=X`. For **crypto** start with Binance public spot and CoinGecko. After every Stooq success the agent / script **must** verify the ticker quote currency via Yahoo's v8 chart meta (`https://query1.finance.yahoo.com/v8/finance/chart/<symbol>` → `chart.result[0].meta.currency`) — Stooq does not return currency, and the suffix is not authoritative (`.UK` covers GBP shares **and** USD UCITS ETFs; `.US` covers ADRs whose underlying currencies vary). Accept only values that pass the **Freshness gate** (§8.7). Record `price_source`, as-of timestamp, currency, exchange / market basis when available, and any ticker-level failure reason. For yfinance branches that did fire (secondary fallback or FX primary), if the call fails the subagent must diagnose the failure and attempt automatic correction up to three times before the main agent moves the affected ticker to the next tier (§8.4).
 2. **Configured keyed APIs** — if the primary source for that asset class still fails, lacks coverage, or returns a value that fails the freshness gate after the allowed correction attempts, use any relevant key / token present in `SETTINGS.md` according to the per-asset order in §8.5. Missing keys are not errors.
 3. **Agent web search / public quote pages** *(MANDATORY continuation when tiers 1–2 fail)* — when prior tiers fail (including any failure mode of `scripts/fetch_prices.py` such as rate-limit, missing key, or empty response), the agent **must** search the web directly and read public quote pages. Make sure you search for currency of the trading pair specifically first so we can convert it correctly. This is not optional and is not gated on the `fetch_prices.py` exit code; the script writes `agent_web_search:TODO` precisely as a handoff signal. Prefer official exchanges and widely used quote pages with visible price, timestamp, and prior-close / 24h reference. Record the page source and retrieval time. See §8.3.1 for the per-market source priority.
 4. **Free no-token APIs** *(MANDATORY continuation when tier 3 fails)* — when web search / quote pages fail or are blocked, use free public endpoints that require no token. Make sure you search for currency of the trading pair specifically first so we can convert it correctly. These can be unofficial, delayed, rate-limited, or CORS-sensitive, so they are the last fallback. Record them explicitly as no-token fallback sources. See §8.3.1 for the recommended endpoint registry (Stooq JSON for US/JP/LSE, TWSE MIS for TW, Binance / Coinbase / CoinGecko for crypto).
@@ -41,48 +41,48 @@ Use the highest-priority source that returns a credible value. **The priority is
 
 ### 8.2 Primary source policy by asset class
 
-- For listed equities, ETFs, and FX, first delegate to a dedicated latest-price subagent that uses `yfinance` to fetch all eligible holdings in one batch where possible. The subagent must return: price, prior close / 24h reference, move %, timestamp / as-of, currency, exchange, and any failure reason **per ticker**.
-- For crypto, do **not** use `yfinance` as the primary source. Start with Binance public spot where the pair exists, then CoinGecko. Use yfinance only if the spec is later amended explicitly; the default policy is to skip it.
-- If the primary source fails or returns invalid data, follow §8.4 (3-attempt auto-correction) for yfinance branches before moving to fallback.
+- For **listed equities and ETFs (US / TW / TWO / JP / HK / LSE)** the primary source is the **no-token Stooq JSON endpoint**, with `yfinance` per-ticker history as the **secondary** fallback. After every Stooq quote, the agent / script verifies the ticker's quote currency via Yahoo's v8 chart endpoint (`currency_verify:yahoo_chart`); never trust the Stooq suffix alone.
+- For **FX**, the primary source is `yfinance` per-pair (`<PAIR>=X`); Stooq does not provide FX. Fallback follows §8.5: keyed Twelve Data → Frankfurter (ECB) → Open ExchangeRate-API.
+- The latest-price subagent must return per ticker: price, prior close / 24h reference, move %, timestamp / as-of, currency (verified), exchange, and any failure reason.
+- For **crypto**, do **not** use `yfinance` or Stooq. Start with Binance public spot where the pair exists, then CoinGecko. Use yfinance only if the spec is later amended explicitly; the default policy is to skip it.
+- If the primary source fails or returns invalid data, the subagent advances to the next tier in §8.5. Auto-correction (§8.4) applies to yfinance branches only when yfinance actually fired (i.e. the secondary fallback for listed securities, or the primary for FX).
 - Always retrieve the latest market data at generation time. Never rely on stale model memory.
 - Each holding must be refreshed for: latest price snapshot, day / 24h and recent move, market cap, valuation multiples (PE, Forward PE, PS, EV/EBITDA where relevant), volume, next earnings date, and any imminent material event.
 - For company and event data, source priority remains: company IR, SEC / exchange filings, official press releases, then StockAnalysis, Nasdaq, Yahoo Finance, Reuters, CNBC, MarketWatch.
 
 ### 8.3 yfinance rate limiting & request pacing (HARD REQUIREMENT)
 
-`yfinance` proxies Yahoo Finance's unofficial endpoints, which throttle aggressively and return `YFRateLimitError` / HTTP 429 / empty payloads when hit too fast. The latest-price subagent **must** pace requests to avoid the rate limiter — a tripped limiter typically blocks the IP for 15–60 minutes and forces the entire run onto fallback sources.
+`yfinance` proxies Yahoo Finance's unofficial endpoints, which throttle aggressively and return `YFRateLimitError` / HTTP 429 / empty payloads when hit too fast. yfinance is now invoked **per-ticker** (as the secondary fallback for listed securities and the primary path for FX), so pacing is even more critical — a tripped limiter typically blocks the IP for 15–60 minutes and forces the entire run onto fallback sources. The latest-price subagent **must** pace every yfinance request that fires.
 
 | Rule | Detail |
 |---|---|
-| Batch first | Use `yf.download(tickers="AAPL MSFT NVDA …", period="5d", interval="1d", group_by="ticker", threads=False, progress=False)` or iterate `yf.Tickers("AAPL MSFT …").tickers[t].fast_info` so a single HTTP round-trip covers the whole book |
-| No internal threading | Set `threads=False` on `download`. Concurrent requests are the fastest way to trip the limiter |
+| Per-ticker, no batch | The canonical script calls `yf.Ticker(symbol, session=session).history(period="5d", interval="1d", auto_adjust=False, timeout=12)` for each ticker that fell through Stooq. Do not reintroduce `yf.download(...)` batches; per-ticker is what `_yfinance_per_ticker_history` and `_auto_correct` use. (Historic batch advice has been retired with the Stooq-primary refactor.) |
+| No internal threading | Stay sequential. Concurrent yfinance requests are the fastest way to trip the limiter |
 | Min inter-call gap | **1.5–2.0s** between successive yfinance HTTP calls. For per-ticker iteration use `time.sleep(random.uniform(1.5, 2.5))`. **Never go below 1.0s** |
-| Backoff on 429 / `YFRateLimitError` / empty `history()` | Exponential: 30s → 60s → 120s → 300s, **max 3 retries**. After the third failure, mark the ticker `yfinance_rate_limited` and move to fallback — do not keep hammering |
-| Per-run volume cap | If holdings > ~30 tickers, split into batches of **≤ 25 tickers** with a **3s** gap between batches |
-| Reuse session | Reuse a single `requests.Session` across calls (`yf.Ticker(t, session=session)`) so cookies / crumbs are not re-negotiated each request |
+| Backoff on 429 / `YFRateLimitError` / empty `history()` | Exponential: 30s → 60s → 120s → 300s, **max 3 retries**. After the third failure, mark the ticker `yfinance_rate_limited` and move to the next tier — do not keep hammering |
+| Reuse session | Reuse a single `requests.Session` across calls (`yf.Ticker(t, session=session)`) so cookies / crumbs are not re-negotiated each request. The Yahoo v8 chart currency-verification probe also reuses the same session |
 | HTTP timeout | 10–15s per request. A hung connection still consumes a rate-limit slot |
-| Audit fields | Record per-ticker `yfinance_request_started_at`, `yfinance_request_latency_ms`, `yfinance_retry_count` in the source audit when retries fired |
+| Audit fields | Record per-ticker `yfinance_request_started_at`, `yfinance_request_latency_ms`, `yfinance_retry_count` in the source audit when yfinance was invoked |
 
 The pacing/backoff retries are part of the §8.4 three-attempt budget — a 429 retry counts as one correction attempt, not a free retry. If a run still trips the limiter, surface the incident in **Sources & data gaps** with offending request count and inter-request gap, and include a **建議更新 agent spec** note proposing a tighter pacing constant.
 
 ### 8.3.1 Rate-limit handling — tier-down, not stop (HARD REQUIREMENT)
 
-A 429 / `YFRateLimitError` / batch-empty-due-to-throttling is a **tier-down signal**, not a workflow stop. The chain in §8.1 is **mandatory continuation** for every affected ticker. The script handles part of it; the agent must finish the rest.
+A 429 / `YFRateLimitError` / empty `history()` from yfinance is a **tier-down signal**, not a workflow stop. The chain in §8.1 is **mandatory continuation** for every affected ticker. The script handles part of it; the agent must finish the rest. Note that under the current Stooq-primary policy, **most listed-equity rate-limit hits never appear** because yfinance only fires when Stooq has already missed; rate-limit triage is most relevant for FX (yfinance primary) and the rare listed-security ticker that Stooq cannot price.
 
 #### Decision tree on yfinance rate-limit failure
 
 ```
-yfinance batch returns 429 / YFRateLimitError / empty
-  └── apply §8.3 backoff (30 → 60 → 120 → 300s, max 3 retries) at the BATCH level
+yfinance per-ticker call returns 429 / YFRateLimitError / empty history
+  └── apply §8.3 backoff (30 → 60 → 120 → 300s, max 3 retries)
        ├── any retry succeeds → ticker accepted, record retry_count
-       └── all 3 retries fail → batch marked yfinance_rate_limited
-            └── for each ticker in the failed batch:
-                 ├── §8.4 auto-correction is SKIPPED (rate-limit is not a symbol problem)
-                 ├── tier 2: configured keyed APIs (§8.5) → if any key applies and works, accept
-                 ├── tier 3: AGENT web search / public quote pages (mandatory) → record source URL
-                 └── tier 4: no-token APIs (mandatory) → see §8.5 + endpoint registry below
-                      └── only after every tier above has been attempted
-                          may the ticker be marked price_source = "n/a"
+       └── all 3 retries fail → ticker marked yfinance_rate_limited
+            ├── §8.4 auto-correction is SKIPPED (rate-limit is not a symbol problem)
+            ├── tier 2: configured keyed APIs (§8.5) → if any key applies and works, accept
+            ├── tier 3: AGENT web search / public quote pages (mandatory) → record source URL
+            └── tier 4: no-token APIs (mandatory) → see §8.5 + endpoint registry below
+                 └── only after every tier above has been attempted
+                     may the ticker be marked price_source = "n/a"
 ```
 
 #### Concrete rules
@@ -115,7 +115,7 @@ yfinance batch returns 429 / YFRateLimitError / empty
    | LSE | Stooq JSON (`.UK`) | `https://stooq.com/q/l/?s=VWRA.UK&f=sd2t2ohlcv&h&e=json` |
    | FX | ECB daily reference rate | `https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml` |
 
-   > **Stooq currency rule (mandatory).** Stooq JSON responses do **not** include a currency field — the price comes back as a bare number. Before recording a Stooq quote, the agent **must** web-search the target ticker's main listing exchange to confirm its trading currency (e.g. `2330.TW` → TWD on TWSE; `7203.JP` → JPY on TSE; `VWRA.UK` → USD on LSE despite the `.UK` suffix; ADRs on `.US` → USD). Record the resolved currency in the ticker's `currency` field and cite the exchange-confirmation URL in `fallback_chain` (e.g. `tier4:stooq + currency_websearch:lse_official`). Never assume the currency from the Stooq suffix alone — `.UK` covers both GBP-denominated UK shares and USD-denominated UCITS ETFs, and `.US` covers ADRs whose underlying currencies vary.
+   > **Stooq currency rule (mandatory).** Stooq JSON responses do **not** include a currency field — the price comes back as a bare number. `scripts/fetch_prices.py` automatically calls Yahoo's v8 chart endpoint (`https://query1.finance.yahoo.com/v8/finance/chart/<symbol>`) after every Stooq hit and reads `chart.result[0].meta.currency` to resolve the canonical trading currency, with the result cached and recorded in `fallback_chain` as `currency_verify:yahoo_chart`. When the agent walks Stooq manually outside the script (e.g. tier 4 tooling), it **must** reproduce that lookup: query the v8 chart endpoint (or web-search the listing exchange) and confirm the trading currency before recording the quote (e.g. `2330.TW` → TWD on TWSE; `7203.JP` → JPY on TSE; `VWRA.UK` → USD on LSE despite the `.UK` suffix; ADRs on `.US` → USD). Cite the verification source in `fallback_chain` (e.g. `tier4:stooq + currency_verify:yahoo_chart` or `tier4:stooq + currency_websearch:lse_official`). Never assume the currency from the Stooq suffix alone — `.UK` covers both GBP-denominated UK shares and USD-denominated UCITS ETFs, and `.US` covers ADRs whose underlying currencies vary.
 5. **Audit every step.** Each tier the agent walks must add a row to the ticker's `fallback_chain` (e.g. `tier3:yahoo_quote_page`, `tier4:stooq_csv`) and update `price_source`, `price_as_of`, `price_freshness`. The **Sources & data gaps** table renders this trail.
 6. **Workflow gate before report rendering.** Before the agent calls `scripts/generate_report.py`, run a check: any ticker still at `price_source = "n/a"` with `fallback_chain` containing `agent_web_search:TODO` and **without** a tier 3 or tier 4 entry is a workflow violation. Fix it (or, if web/no-token sources genuinely all failed, replace the TODO with `tier3:exhausted` and `tier4:exhausted` so the audit shows real attempts).
 
@@ -149,15 +149,17 @@ If the `yfinance` subagent returns an exception, empty data, stale data, invalid
 
 | Asset / market | Latest-price fallback order |
 |---|---|
-| US equities / ETFs | **First:** `yfinance` subagent batch quote / history. **Keyed APIs:** Twelve Data → Finnhub → FMP → Tiingo → Alpha Vantage → Polygon. **Web search / pages:** Yahoo Finance → Google Finance → Nasdaq → MarketWatch / CNBC / TradingView / StockAnalysis → other credible quote pages. **No-token APIs:** Yahoo public quote/chart endpoints → Stooq JSON / other credible no-token endpoints |
+| US equities / ETFs | **First (primary):** Stooq JSON (`<ticker>.us`). **Second (secondary fallback):** `yfinance` per-ticker history. **Keyed APIs:** Twelve Data → Finnhub → FMP → Tiingo → Alpha Vantage → Polygon. **Web search / pages:** Yahoo Finance → Google Finance → Nasdaq → MarketWatch / CNBC / TradingView / StockAnalysis → other credible quote pages. **No-token APIs:** Yahoo public chart endpoint → other credible no-token endpoints. **Currency verification:** Yahoo v8 chart meta after every Stooq hit |
 | Crypto | **First:** Binance public spot ticker where the pair exists → CoinGecko Demo/public. **Keyed APIs:** CoinGecko Demo → Alpha Vantage / FMP if configured. **Web search / pages:** CoinGecko → CoinMarketCap → Binance → Coinbase → TradingView. **No-token APIs:** Binance public spot ticker → Coinbase Exchange ticker → CoinGecko public simple price |
-| Taiwan listed / OTC equities | **First:** `yfinance` subagent using exchange suffixes where available (`2330.TW`, OTC forms where supported). **Keyed APIs:** Twelve Data / Finnhub / FMP when coverage exists. **Web search / pages:** TWSE / TPEx quote pages → Yahoo Finance Taiwan → TradingView → other credible quote pages. **No-token APIs:** TWSE MIS public quote → TWSE OpenAPI daily / after-market data → TPEx official no-token data |
-| Japan equities | **First:** `yfinance` subagent using exchange suffixes where available. **Keyed APIs:** Twelve Data → Finnhub → J-Quants when token is present. **Web search / pages:** Yahoo Finance Japan / Yahoo Finance global → JPX / issuer pages where price is visible → Google Finance → TradingView. **No-token APIs:** Stooq JSON / other credible no-token endpoints |
-| FX / cash conversion | **First:** `yfinance` subagent using Yahoo FX symbols where available. **Keyed APIs:** Twelve Data FX → Alpha Vantage currency exchange rate. **Web search / pages:** Google Finance → Yahoo Finance → official central-bank / ECB / Fed reference pages. **No-token APIs:** official daily reference-rate feeds where available → other credible no-token FX endpoints |
+| Taiwan listed / OTC equities | **First (primary):** Stooq JSON (`<code>.tw`). **Second:** `yfinance` per-ticker (`<code>.TW` / `<code>.TWO`). **Third:** TWSE MIS public quote (`tse_<code>.tw` for listed, `otc_<code>.tw` for OTC). **Keyed APIs:** Twelve Data / Finnhub / FMP when coverage exists. **Web search / pages:** TWSE / TPEx quote pages → Yahoo Finance Taiwan → TradingView → other credible quote pages. **No-token APIs:** TWSE OpenAPI daily / after-market data → TPEx official no-token data. **Currency:** TWD (TW listings) — verified via Yahoo v8 chart |
+| Japan equities | **First (primary):** Stooq JSON (`<code>.jp`). **Second:** `yfinance` per-ticker (`<code>.T`). **Keyed APIs:** Twelve Data → Finnhub → J-Quants when token is present. **Web search / pages:** Yahoo Finance Japan / Yahoo Finance global → JPX / issuer pages where price is visible → Google Finance → TradingView. **No-token APIs:** other credible no-token endpoints. **Currency:** JPY — verified via Yahoo v8 chart |
+| Hong Kong equities | **First (primary):** Stooq JSON (`<code>.hk`). **Second:** `yfinance` per-ticker (`<code>.HK`). **Web search / pages:** HKEx → Yahoo Finance HK → TradingView. **Currency:** HKD — verified via Yahoo v8 chart |
+| London / LSE equities & UCITS ETFs | **First (primary):** Stooq JSON (`<code>.uk`). **Second:** `yfinance` per-ticker (`<code>.L`). **Web search / pages:** Yahoo Finance UK → Google Finance → London Stock Exchange site. **Currency:** **must** be verified via Yahoo v8 chart — `.UK` covers both GBP shares and USD UCITS ETFs (e.g. VWRA → USD) |
+| FX / cash conversion | **First:** `yfinance` subagent using Yahoo FX symbols (`<PAIR>=X`). **Keyed APIs:** Twelve Data FX → Alpha Vantage currency exchange rate. **No-token APIs:** Frankfurter (ECB-backed) → Open ExchangeRate-API → official daily reference-rate feeds. **Web search / pages:** Google Finance → Yahoo Finance → official central-bank / ECB / Fed reference pages |
 
 ### 8.6 Optional fallback API keys
 
-All market-data keys in `SETTINGS.md` are **optional fallback sources**. Never block a report because a key is missing. If a key is present, use that keyed API for tickers where `yfinance` is missing, stale, unsupported, or invalid before web search; if the key is missing, quota-limited, or unusable for the ticker, skip that provider and continue to the next fallback. **Do not put API keys, tokens, request URLs containing keys, or authenticated response payloads in the generated HTML.**
+All market-data keys in `SETTINGS.md` are **optional fallback sources**. Never block a report because a key is missing. If a key is present, use that keyed API for tickers where the **Stooq → yfinance** primary pair (or yfinance-primary FX) is missing, stale, unsupported, or invalid, before web search; if the key is missing, quota-limited, or unusable for the ticker, skip that provider and continue to the next fallback. **Do not put API keys, tokens, request URLs containing keys, or authenticated response payloads in the generated HTML.**
 
 | Setting key | Primary use | Notes |
 |---|---|---|
@@ -182,7 +184,7 @@ Before accepting any latest price, determine the ticker's market calendar, excha
 | Weekend / holiday / exchange closed all day | Most recent opened trading day's official / credible close | Reject older closes unless every source has been exhausted; if even that cannot be verified, render `n/a` |
 | 24/7 assets such as major crypto | Fresh spot price from a credible source, with retrieval time or source timestamp | Reject stale snapshots when another source can provide a fresher spot price |
 
-**Strict rule for opened markets:** Once a market's regular session has opened for the current exchange trading date, do **not** accept a prior-session close or stale delayed value until the `yfinance` subagent result, up to three yfinance auto-correction attempts, and every configured API, web-search/page source, and no-token fallback has been exhausted. If the market has not opened yet, the minimum acceptable price is the previous opened trading day's official / credible close.
+**Strict rule for opened markets:** Once a market's regular session has opened for the current exchange trading date, do **not** accept a prior-session close or stale delayed value until the **Stooq primary** result, the **`yfinance` per-ticker secondary** result, up to three yfinance auto-correction attempts, and every configured API, web-search/page source, and no-token fallback has been exhausted. If the market has not opened yet, the minimum acceptable price is the previous opened trading day's official / credible close.
 
 **Degraded fallback:** If the market has opened and all sources are exhausted without a same-date latest price, use the freshest credible value only as an explicit degraded fallback. Mark `price_freshness` as `stale_after_exhaustive_search`, list every attempted source category in **Sources & data gaps**, and make the stale-price condition visible in the report's data-gap / alert text. **Do not silently treat that fallback as current.** If even the previous opened trading day's close cannot be sourced, render the cell as `n/a`.
 

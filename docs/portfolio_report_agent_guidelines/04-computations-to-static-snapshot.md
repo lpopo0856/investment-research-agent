@@ -39,7 +39,7 @@ The remainder of this section uses **USD** in examples because it is the default
 }
 ```
 
-If a non-base currency appears in the book, `scripts/fetch_prices.py` must fetch a credible rate using §8 (yfinance `=X` symbols first, then keyed FX APIs, ECB / central-bank reference, or any §8.5 fallback tier) and:
+If a non-base currency appears in the book, `scripts/fetch_prices.py` must fetch a credible rate using §8 (FX path: `yfinance` `=X` symbols first, then keyed Twelve Data FX, then no-token Frankfurter (ECB) and Open ExchangeRate-API, or any §8.5 fallback tier) and:
 
 1. Add the rate to `prices.json["_fx"]["rates"]` for the run.
 2. Store the source, fallback chain, and `as_of` timestamp in `prices.json["_fx"]["details"]`.
@@ -338,11 +338,11 @@ The Price column is a **static snapshot** produced by the agent at report genera
 
 ### 12.1 Generation-time retrieval
 
-- First delegate latest-price retrieval to the market-native primary source: `yfinance` for listed securities / FX, Binance / CoinGecko-first routing for crypto (§8.2, §8.3).
-- If the `yfinance` subagent returns missing, stale, unsupported, or invalid data, run §8.4 (3-attempt auto-correction) before moving that ticker to fallback sources.
-- Use configured keyed APIs only for tickers where `yfinance` remains missing, stale, unsupported, or invalid after the allowed correction attempts.
-- Use agent web search and public quote pages **before** no-token API endpoints.
-- Use free no-token APIs only after `yfinance`, keyed APIs, and web search / quote pages fail or return stale / conflicting data.
+- First delegate latest-price retrieval to the market-native primary source: **Stooq JSON** for listed securities (with Yahoo v8 chart currency verification on every hit), then **`yfinance` per-ticker** as the secondary fallback; **`yfinance` `=X`** for FX; Binance / CoinGecko-first routing for crypto (§8.2, §8.3).
+- If the `yfinance` branch (secondary for listed securities, primary for FX) returns missing, stale, unsupported, or invalid data, run §8.4 (3-attempt auto-correction) before moving that ticker to further fallback sources.
+- Use configured keyed APIs only for tickers where the **Stooq → yfinance** primary pair (or yfinance-primary FX) remains missing, stale, unsupported, or invalid after the allowed correction attempts.
+- Use agent web search and public quote pages **before** any remaining no-token API endpoints (the script already fires Stooq, TWSE MIS, Binance, CoinGecko, Frankfurter, and Open ER as no-token tiers in their respective markets).
+- Use the remaining no-token APIs only after Stooq, `yfinance`, keyed APIs, and web search / quote pages fail or return stale / conflicting data.
 - Apply the **Freshness gate** to every candidate (§8.7). If the market has opened today, keep searching until a same-date latest / close value is found or the entire hierarchy is exhausted. If the market has not opened today, keep searching until at least the previous opened trading day's close is found.
 - Prefer the freshest credible value with a clear timestamp. If only delayed / EOD data is available after the market has opened, use it only after every source has been exhausted and label the freshness as degraded in the source audit.
 - Store, per ticker, the §8.8 fields. The generated HTML embeds only those static fields.

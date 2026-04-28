@@ -9,7 +9,7 @@ Every lot follows:
 ```
 
 - `on YYYY-MM-DD` is the **acquisition date** for that lot. It powers per-lot tooltips and hold-period analytics.
-- `[<MARKET>]` is the **market-type tag** — required for new lots. It tells the price agent which `yfinance` symbol convention to use and which fallback hierarchy applies. The tag is the *single source of truth* for routing; do **not** rely on the bare-ticker shape to guess the market.
+- `[<MARKET>]` is the **market-type tag** — required for new lots. It tells the price agent which Stooq suffix (`.us`, `.tw`, `.jp`, `.uk`, `.hk`) to use for the **primary** call, which `yfinance` symbol convention to use for the **secondary** fallback (`<code>.TW`, `<code>.T`, `<code>.HK`, `<code>.L`, `<PAIR>=X`), and which fallback hierarchy applies. The tag is the *single source of truth* for routing; do **not** rely on the bare-ticker shape to guess the market.
 - Crypto / FX use `<SYMBOL> <quantity> @ <cost> on <YYYY-MM-DD> [<MARKET>]` (no "shares").
 - Cash uses `<CURRENCY>: <amount> [cash]` (no "shares", no `@ cost`, no date).
 - `?` is allowed in place of cost or date when truly unknown — render the affected metric as `n/a` in the report (see §9.6). **Never invent a value.**

@@ -13,7 +13,7 @@ Before running the report, read these files. They are normative; this guidelines
 - `HOLDINGS.md` — current positions (auto-read every run).
 - `SETTINGS.md` — output language, tone, optional API keys, optional position-sizing rails.
 - `reports/_sample_redesign.html` — **canonical visual reference**. New reports must align color, typography, layout, and component styling with this file. If missing, rebuild from the tokens in §14.
-- `scripts/fetch_prices.py` — **canonical price-retrieval template** implementing §8 (market-aware primary-source routing, yfinance pacing for listed securities / FX, crypto-native Binance / CoinGecko first, auto-correction, fallback chain) and §9.0 auto-FX conversion-rate retrieval into `prices.json["_fx"]`. Run this rather than re-implementing the pipeline ad-hoc each report. Output: `prices.json`. **Before invoking it, the latest-price subagent must complete §8.0 (install `yfinance` and `requests`) for the yfinance branches.**
+- `scripts/fetch_prices.py` — **canonical price-retrieval template** implementing §8 (market-aware primary-source routing: **Stooq JSON primary for listed securities, `yfinance` per-ticker secondary**; **`yfinance` primary for FX**; Binance / CoinGecko first for crypto; Yahoo v8 chart used for ticker-currency verification after every Stooq hit; yfinance pacing for the secondary/FX branches; auto-correction; fallback chain) and §9.0 auto-FX conversion-rate retrieval into `prices.json["_fx"]`. Run this rather than re-implementing the pipeline ad-hoc each report. Output: `prices.json`. **Before invoking it, the latest-price subagent must complete §8.0 (install `yfinance` and `requests`) — `requests` powers the Stooq / Yahoo-chart / keyed-API branches; `yfinance` powers the secondary listed-equity fallback and the FX primary branch.**
 - `scripts/generate_report.py` — **canonical HTML rendering template** implementing §5/§10/§13/§14. Reads `HOLDINGS.md`, `prices.json`, and an editorial context JSON; emits the self-contained HTML. Reads CSS from `reports/_sample_redesign.html` so visual edits land in one place. Stable built-in UI dictionaries live as JSON files under `scripts/i18n/` for English / Traditional Chinese / Simplified Chinese.
 
 ---
@@ -39,8 +39,8 @@ Run these steps in order. Each step has a "see §X" pointer to the rules.
 |---|---|---|
 | 1 | Read `HOLDINGS.md`, `SETTINGS.md`, and `/docs/*`. Resolve output language and any position-sizing rails | §4, §5 |
 | 2 | Auto-classify each holding by asset class, sector, and theme based on current data | §4.3 |
-| 3 | Delegate latest-price retrieval to the `yfinance` subagent (batch where possible). Apply pacing rules | §8.2, §8.3 |
-| 4 | If `yfinance` fails for a ticker, run up to **3 auto-correction attempts** before fallback | §8.4 |
+| 3 | Delegate latest-price retrieval to the latest-price subagent: **Stooq JSON primary** for listed securities (with Yahoo v8 chart currency verification), **`yfinance` per-ticker secondary**; **`yfinance` primary** for FX; Binance / CoinGecko first for crypto. Apply pacing rules to every yfinance call | §8.2, §8.3 |
+| 4 | If `yfinance` fails for a ticker (secondary listed-equity or FX primary branch), run up to **3 auto-correction attempts** before further fallback | §8.4 |
 | 5 | For tickers still unresolved, walk the source hierarchy: keyed APIs → web search / public quote pages → no-token APIs | §8.1, §8.5, §8.6 |
 | 6 | Apply the **Freshness gate** to every candidate price; reject stale values until all sources are exhausted | §8.7 |
 | 7 | Compute all required metrics (totals, weights, P&L, hold period, book-wide pacing, etc.) | §9 |
@@ -60,7 +60,7 @@ Run these steps in order. Each step has a "see §X" pointer to the rules.
 | **Bucket** | One of `Long Term`, `Mid Term`, `Short Term`, `Cash Holdings` — the four risk-horizon groups in `HOLDINGS.md` |
 | **Hold period** | Duration since the *oldest* lot's acquisition date (per ticker) |
 | **Freshness gate** | The rule set that rejects stale prices based on current market state; see §8.7 |
-| **Source hierarchy** | The 4-tier fallback order for latest prices: `yfinance` → keyed APIs → web search / quote pages → no-token APIs |
+| **Source hierarchy** | The fallback order for latest prices. **Listed securities:** Stooq JSON → `yfinance` per-ticker → keyed APIs → web search / quote pages → other no-token APIs. **FX:** `yfinance` `=X` → keyed APIs → Frankfurter / Open ER / official central-bank reference. **Crypto:** Binance / CoinGecko → keyed APIs → web pages → other no-token APIs. After every Stooq hit, the ticker quote currency is verified via Yahoo's v8 chart endpoint |
 | **— (em-dash)** | Glyph for "Not applicable" (the metric never makes sense for this row) |
 | **n/a** | Glyph for "Missing" (the metric should exist but the input is `?` or could not be sourced) |
 | **price_source / price_as_of / price_freshness / market_state_basis** | Mandatory per-ticker provenance fields stored at generation time |

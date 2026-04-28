@@ -142,7 +142,7 @@ Not tracked in git:
 
 ## Third-party data
 
-This project does not own or guarantee any market-data or FX source. The price workflow may use public endpoints, optional API keys, and wrappers such as `yfinance`. You are responsible for provider terms, rate limits, attribution, and paid-access requirements.
+This project does not own or guarantee any market-data or FX source. The price workflow may use public endpoints (Stooq JSON, Yahoo's v8 chart endpoint, Binance, CoinGecko, Frankfurter / ECB, Open ExchangeRate-API, TWSE MIS), optional API keys (Twelve Data, Finnhub, Alpha Vantage, FMP, Tiingo, Polygon, J-Quants, CoinGecko Demo), and wrappers such as `yfinance`. You are responsible for provider terms, rate limits, attribution, and paid-access requirements.
 
 ## Disclaimer
 

@@ -240,8 +240,8 @@ Run every item before declaring the report complete. Each item maps back to its 
 
 - [ ] **Prerequisite check ran before any yfinance call**: `import yfinance, requests` succeeded (or install completed and re-detection succeeded) (§8.0).
 - [ ] `subagent_prerequisites` line recorded in **Sources & data gaps**: install outcome, resolved version, install command (§8.0).
-- [ ] Market-native primary source ran first: `yfinance` for listed securities / FX (batched where possible), Binance / CoinGecko for crypto (§8.2).
-- [ ] Pacing rules respected: `threads=False`, ≥ 1.5–2.0s gap, ≤ 25/batch, single session, 10–15s timeout (§8.3).
+- [ ] Market-native primary source ran first: **Stooq JSON** for listed securities (with Yahoo v8 chart currency verification on every hit) → `yfinance` per-ticker secondary; **`yfinance` `=X`** primary for FX; Binance / CoinGecko for crypto (§8.2).
+- [ ] Pacing rules respected for every yfinance call (per-ticker only, no batch): sequential, ≥ 1.5–2.0s gap, single shared session, 10–15s timeout (§8.3).
 - [ ] **Rate-limit handling: §8.3.1 tier-down rule honored** — on any 429 / `YFRateLimitError`, §8.4 auto-correction was **skipped** and the agent continued to keyed APIs → web search → no-token APIs.
 - [ ] **No `agent_web_search:TODO` left dangling.** Every ticker still at `price_source = "n/a"` after the script ran has a `fallback_chain` showing real tier 3 + tier 4 attempts (or explicit `tier3:exhausted` / `tier4:exhausted` markers) (§8.1 workflow gate, §8.3.1).
 - [ ] Symbol/format-style failures got up to 3 auto-corrections before fallback; rate-limit failures did **not** consume the auto-correction budget (§8.4).
