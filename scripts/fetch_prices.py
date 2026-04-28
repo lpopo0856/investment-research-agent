@@ -39,6 +39,21 @@ Output JSON shape (per ticker):
         "market":                 "US",
         "yfinance_symbol":        "NVDA"
       },
+      "_fx": {
+        "base": "USD",
+        "required_currencies": ["TWD", "JPY"],
+        "rates": {
+          "USD/TWD": 32.5
+        },
+        "details": {
+          "USD/TWD": {
+            "latest_price": 32.5,
+            "price_source": "yfinance",
+            "price_as_of": "2026-04-28T13:30:00+00:00",
+            "fallback_chain": ["yfinance_batch"]
+          }
+        }
+      },
       "_audit": { ... summary stats ... }
     }
 
@@ -122,6 +137,31 @@ class MarketType(str, Enum):
     FX = "FX"            # yfinance: <PAIR>=X
     CASH = "cash"        # bare currency holding — no price fetch
     UNKNOWN = "unknown"
+
+
+# §9.0 — base currency remains a SETTINGS.md preference, but user-supplied FX
+# rates do not. Conversion rates are auto-fetched into prices.json["_fx"].
+BASE_CURRENCY_PATTERN = r"Base currency:\s*([A-Za-z]{3})"
+DEFAULT_BASE_CURRENCY = "USD"
+
+# §9.0 — default trade currencies when the quote feed does not provide metadata.
+MARKET_DEFAULT_CCY: Dict[MarketType, str] = {
+    MarketType.US: "USD",
+    MarketType.TW: "TWD",
+    MarketType.TWO: "TWD",
+    MarketType.JP: "JPY",
+    MarketType.HK: "HKD",
+    MarketType.LSE: "GBP",
+    MarketType.CRYPTO: "USD",
+    MarketType.FX: "USD",
+    MarketType.UNKNOWN: "USD",
+    MarketType.CASH: "USD",
+}
+
+# USD stablecoin tickers held as cash are converted as USD exposure.
+CASH_STABLECOIN_USD = {
+    "USDC", "USDT", "DAI", "BUSD", "TUSD", "USDP",
+}
 
 
 # Heuristic fallback when no [market] tag is present (§4.1 backward compat)
@@ -405,7 +445,8 @@ def _resolve_market(market_str: Optional[str], ticker: str, bucket: str, *, is_s
 
 
 # ----------------------------------------------------------------------------- #
-# SETTINGS.md parser — only extracts optional API keys (§8.6)
+# SETTINGS.md parser — extracts base currency and optional API keys.
+# It intentionally ignores any stale user-supplied FX-rate lines.
 # ----------------------------------------------------------------------------- #
 
 API_KEY_NAMES = (
@@ -431,6 +472,17 @@ def parse_settings_keys(path: Optional[Path]) -> Dict[str, str]:
         if m and m.group("v") not in {"", "''", '""'}:
             keys[name] = m.group("v")
     return keys
+
+
+def parse_base_currency(path: Optional[Path]) -> str:
+    """Extract the report base currency. Missing or malformed values default to USD."""
+    if path is None or not path.exists():
+        return DEFAULT_BASE_CURRENCY
+    text = path.read_text(encoding="utf-8")
+    m = re.search(BASE_CURRENCY_PATTERN, text, re.IGNORECASE)
+    if not m:
+        return DEFAULT_BASE_CURRENCY
+    return m.group(1).upper()
 
 
 # ----------------------------------------------------------------------------- #
@@ -776,6 +828,78 @@ def _try_finnhub(symbol: str, key: str, session: Any) -> Optional[Dict[str, Any]
         return None
 
 
+def _split_fx_pair(symbol: str) -> Optional[Tuple[str, str]]:
+    """Return (base, quote) for symbols like USDTWD, USDTWD=X, or USD/TWD."""
+    s = symbol.upper().replace("=X", "").replace("/", "").replace("-", "").strip()
+    if len(s) != 6:
+        return None
+    base, quote = s[:3], s[3:]
+    if base not in KNOWN_FIAT_CODES or quote not in KNOWN_FIAT_CODES:
+        return None
+    return base, quote
+
+
+def _try_no_token_frankfurter_fx(symbol: str, session: Any) -> Optional[Dict[str, Any]]:
+    """Frankfurter daily FX endpoint backed by ECB reference data, no token."""
+    pair = _split_fx_pair(symbol)
+    if pair is None:
+        return None
+    base, quote = pair
+    try:
+        r = session.get(
+            "https://api.frankfurter.app/latest",
+            params={"from": base, "to": quote},
+            timeout=YF_HTTP_TIMEOUT_SEC,
+        )
+        if r.status_code != 200:
+            return None
+        data = r.json()
+        rates = data.get("rates") or {}
+        rate = rates.get(quote)
+        if rate in (None, 0):
+            return None
+        return {
+            "latest_price": float(rate),
+            "currency": quote,
+            "exchange": "Frankfurter/ECB",
+            "price_source": "no_token:frankfurter",
+            "price_as_of": data.get("date") or _utc_iso(),
+        }
+    except Exception:                                         # noqa: BLE001
+        return None
+
+
+def _try_no_token_open_er_fx(symbol: str, session: Any) -> Optional[Dict[str, Any]]:
+    """Open ExchangeRate-API endpoint, no token; used after ECB-backed fallback."""
+    pair = _split_fx_pair(symbol)
+    if pair is None:
+        return None
+    base, quote = pair
+    try:
+        r = session.get(
+            f"https://open.er-api.com/v6/latest/{base}",
+            timeout=YF_HTTP_TIMEOUT_SEC,
+        )
+        if r.status_code != 200:
+            return None
+        data = r.json()
+        if data.get("result") not in (None, "success"):
+            return None
+        rates = data.get("rates") or {}
+        rate = rates.get(quote)
+        if rate in (None, 0):
+            return None
+        return {
+            "latest_price": float(rate),
+            "currency": quote,
+            "exchange": "Open ER API",
+            "price_source": "no_token:open_er_api",
+            "price_as_of": data.get("time_last_update_utc") or _utc_iso(),
+        }
+    except Exception:                                         # noqa: BLE001
+        return None
+
+
 def _normalize_crypto_symbol(symbol: str) -> str:
     s = symbol.upper()
     if s.endswith("-USD"):
@@ -1041,6 +1165,8 @@ def _build_fallback_chain(
     elif market == MarketType.FX:
         if "TWELVE_DATA_API_KEY" in keys:
             chain.append(("twelve_data_fx", lambda: _try_twelve_data(s, keys["TWELVE_DATA_API_KEY"], session)))
+        chain.append(("no_token:frankfurter", lambda: _try_no_token_frankfurter_fx(s, session)))
+        chain.append(("no_token:open_er_api", lambda: _try_no_token_open_er_fx(s, session)))
     return chain
 
 
@@ -1195,6 +1321,89 @@ def fetch_all_prices(
     return results
 
 
+def required_fx_currencies(
+    lots: List[Lot],
+    results: Dict[str, PriceResult],
+    base_currency: str,
+) -> List[str]:
+    """Derive every non-base currency needing conversion from holdings + quote metadata."""
+    base = base_currency.upper()
+    needed = set()
+    for lot in lots:
+        if lot.market == MarketType.CASH:
+            ccy = "USD" if lot.ticker.upper() in CASH_STABLECOIN_USD else lot.ticker.upper()
+        else:
+            pr = results.get(lot.ticker)
+            ccy = (
+                (pr.currency if pr else None)
+                or MARKET_DEFAULT_CCY.get(lot.market, DEFAULT_BASE_CURRENCY)
+            ).upper()
+        if ccy != base:
+            needed.add(ccy)
+    return sorted(needed)
+
+
+def fetch_auto_fx_rates(
+    currencies: List[str],
+    base_currency: str,
+    settings_keys: Dict[str, str],
+    *,
+    skip_yfinance: bool = False,
+) -> Dict[str, Any]:
+    """Fetch base-quoted FX rates for prices.json["_fx"].
+
+    Rates are keyed "<BASE>/<CCY>" and mean "1 unit of base = N units of CCY",
+    matching the renderer's conversion formula.
+    """
+    base = base_currency.upper()
+    fx_lots: List[Lot] = []
+    pair_by_symbol: Dict[str, str] = {}
+    for ccy in sorted({c.upper() for c in currencies if c}):
+        if ccy == base:
+            continue
+        symbol = f"{base}{ccy}"
+        pair = f"{base}/{ccy}"
+        pair_by_symbol[symbol] = pair
+        fx_lots.append(
+            Lot(
+                raw_line=f"auto FX {pair}",
+                bucket="FX",
+                ticker=symbol,
+                quantity=1.0,
+                cost=None,
+                date=None,
+                market=MarketType.FX,
+                is_share=False,
+            )
+        )
+
+    if not fx_lots:
+        return {
+            "base": base,
+            "required_currencies": [],
+            "rates": {},
+            "details": {},
+        }
+
+    fx_results = fetch_all_prices(fx_lots, settings_keys, skip_yfinance=skip_yfinance)
+    rates: Dict[str, float] = {}
+    details: Dict[str, Any] = {}
+    for symbol, result in fx_results.items():
+        pair = pair_by_symbol.get(symbol)
+        if pair is None:
+            continue
+        if result.latest_price not in (None, 0):
+            rates[pair] = float(result.latest_price)
+        details[pair] = _serialize_result(result)
+
+    return {
+        "base": base,
+        "required_currencies": sorted({c.upper() for c in currencies if c and c.upper() != base}),
+        "rates": rates,
+        "details": details,
+    }
+
+
 def _chunked(items: List[str], size: int) -> Iterable[List[str]]:
     for i in range(0, len(items), size):
         yield items[i : i + size]
@@ -1216,7 +1425,8 @@ def _cli_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     p.add_argument("--holdings", default="HOLDINGS.md", type=Path,
                    help="Path to HOLDINGS.md (default: ./HOLDINGS.md)")
     p.add_argument("--settings", default="SETTINGS.md", type=Path,
-                   help="Path to SETTINGS.md for optional API keys (default: ./SETTINGS.md)")
+                   help="Path to SETTINGS.md for base currency and optional API keys "
+                        "(default: ./SETTINGS.md)")
     p.add_argument("--output", default=None, type=Path,
                    help="Write JSON output to this path; default: stdout")
     p.add_argument("--skip-yfinance", action="store_true",
@@ -1244,20 +1454,35 @@ def main(argv: Optional[List[str]] = None) -> int:
         print(f"ERROR: no lots parsed from {args.holdings}", file=sys.stderr)
         return 3
 
-    settings_keys = parse_settings_keys(args.settings if args.settings.exists() else None)
-    logging.info("Parsed %d lots, %d optional API keys", len(lots), len(settings_keys))
+    settings_path = args.settings if args.settings.exists() else None
+    settings_keys = parse_settings_keys(settings_path)
+    base_currency = parse_base_currency(settings_path)
+    logging.info(
+        "Parsed %d lots, %d optional API keys, base currency %s",
+        len(lots), len(settings_keys), base_currency,
+    )
 
     results = fetch_all_prices(lots, settings_keys, skip_yfinance=args.skip_yfinance)
+    required_ccys = required_fx_currencies(lots, results, base_currency)
+    fx_payload = fetch_auto_fx_rates(
+        required_ccys,
+        base_currency,
+        settings_keys,
+        skip_yfinance=args.skip_yfinance,
+    )
 
     payload: Dict[str, Any] = {
         ticker: _serialize_result(pr) for ticker, pr in results.items()
     }
+    payload["_fx"] = fx_payload
     payload["_audit"] = {
         "generated_at": _now_iso(),
         "holdings_file": str(args.holdings),
         "settings_file": str(args.settings) if args.settings.exists() else None,
+        "base_currency": base_currency,
         "lot_count": len(lots),
         "ticker_count": len(results),
+        "required_fx_currencies": required_ccys,
         "configured_api_keys": sorted(settings_keys.keys()),
         "yfinance_skipped": args.skip_yfinance,
         "spec_section_compliance": {

@@ -78,8 +78,8 @@ Run every item before declaring the report complete. Each item maps back to its 
 
 ### A.5 Computations
 
-- [ ] **USD basis enforced.** Every aggregate cell (KPI strip, `市值`, `損益`, P&L ranking, theme/sector, weights, period-pacing aggregates, popover footer) starts with `$`; native trade currency (`NT$` / `¥` / `£` / `HK$`) appears **only** inside the `最新價` cell, the per-lot popover `成本` rows, the cash-line popover, and the source audit (§9.0).
-- [ ] **FX rates resolved for every non-USD currency in the book.** Rates either came from `SETTINGS.md` or the editorial context JSON; or were fetched at generation time and recorded with their source + `as_of` in **Sources & data gaps**, plus listed in the masthead meta row (§9.0).
+- [ ] **Base-currency basis enforced.** Every aggregate cell (KPI strip, `市值`, `損益`, P&L ranking, theme/sector, weights, period-pacing aggregates, popover footer) uses the configured base-currency prefix; native trade currency (`NT$` / `¥` / `£` / `HK$`) appears **only** inside the `最新價` cell, the per-lot popover `成本` rows, the cash-line popover, and the source audit (§9.0).
+- [ ] **FX rates resolved for every non-base currency in the book.** Rates came from the automatic `scripts/fetch_prices.py` FX pipeline, are stored in `prices.json["_fx"]`, and are recorded with source + `as_of` in **Sources & data gaps**, plus listed in the masthead meta row (§9.0). No manual rates came from `SETTINGS.md` or `report_context.json`.
 - [ ] No silent parity assumption — the build did not treat any non-USD currency as if it were USD (§9.0).
 - [ ] Totals, weights, P&L, per-lot P&L, weighted-avg cost (§9.1).
 - [ ] Hold period rendered with `Xy Ym` / `Nm` / `Nd` / `n/a` rule (§9.2).

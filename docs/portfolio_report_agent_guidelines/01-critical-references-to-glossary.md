@@ -13,7 +13,7 @@ Before running the report, read these files. They are normative; this guidelines
 - `HOLDINGS.md` — current positions (auto-read every run).
 - `SETTINGS.md` — output language, tone, optional API keys, optional position-sizing rails.
 - `reports/_sample_redesign.html` — **canonical visual reference**. New reports must align color, typography, layout, and component styling with this file. If missing, rebuild from the tokens in §14.
-- `scripts/fetch_prices.py` — **canonical price-retrieval template** implementing §8 (market-aware primary-source routing, yfinance pacing for listed securities / FX, crypto-native Binance / CoinGecko first, auto-correction, fallback chain). Run this rather than re-implementing the pipeline ad-hoc each report. Output: `prices.json`. **Before invoking it, the latest-price subagent must complete §8.0 (install `yfinance` and `requests`) for the yfinance branches.**
+- `scripts/fetch_prices.py` — **canonical price-retrieval template** implementing §8 (market-aware primary-source routing, yfinance pacing for listed securities / FX, crypto-native Binance / CoinGecko first, auto-correction, fallback chain) and §9.0 auto-FX conversion-rate retrieval into `prices.json["_fx"]`. Run this rather than re-implementing the pipeline ad-hoc each report. Output: `prices.json`. **Before invoking it, the latest-price subagent must complete §8.0 (install `yfinance` and `requests`) for the yfinance branches.**
 - `scripts/generate_report.py` — **canonical HTML rendering template** implementing §5/§10/§13/§14. Reads `HOLDINGS.md`, `prices.json`, and an editorial context JSON; emits the self-contained HTML. Reads CSS from `reports/_sample_redesign.html` so visual edits land in one place. Stable built-in UI dictionaries live as JSON files under `scripts/i18n/` for English / Traditional Chinese / Simplified Chinese.
 
 ---
@@ -67,4 +67,3 @@ Run these steps in order. Each step has a "see §X" pointer to the rules.
 | **建議更新 agent spec** | Final-reply note proposing spec wording when a `yfinance` auto-correction or pacing tweak succeeded |
 
 ---
-

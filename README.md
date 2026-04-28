@@ -12,7 +12,7 @@ This repo is a personal workspace for an AI investment research agent. It contai
 4. A reference HTML design sample for the portfolio report.
 5. Two Python templates under `scripts/` that the agent runs as-is — no need to author price-fetching or HTML-rendering code per session.
 
-The agent runs inside an LLM client (e.g. Cowork / Claude). When you ask it to "produce a portfolio health check", it reads the specs and the personal data, runs `scripts/fetch_prices.py` to get the latest prices via market-aware sources (`yfinance` for listed securities / FX, Binance and CoinGecko first for crypto, with the spec-mandated pacing and fallback), and runs `scripts/generate_report.py` to assemble the self-contained HTML in `reports/`.
+The agent runs inside an LLM or coding-agent client (see **How to use the agent** for recommended models and tools). When you ask it to "produce a portfolio health check", it reads the specs and the personal data, runs `scripts/fetch_prices.py` to get the latest prices and auto-fetched FX conversion rates via market-aware sources (`yfinance` for listed securities / FX, Binance and CoinGecko first for crypto, with the spec-mandated pacing and fallback), and runs `scripts/generate_report.py` to assemble the self-contained HTML in `reports/`.
 
 ## Repo layout
 
@@ -21,17 +21,19 @@ The agent runs inside an LLM client (e.g. Cowork / Claude). When you ask it to "
 ├── README.md                              ← you are here (EN)
 ├── docs/l10n/                             ← non-English READMEs (same project overview)
 ├── AGENTS.md                              ← global agent spec (research style, output structure)
-├── /docs/portfolio_report_agent_guidelines.md   ← spec for the portfolio report HTML deliverable
-├── /docs/holdings_update_agent_guidelines.md    ← spec for natural-language holdings updates
+├── docs/
+│   ├── portfolio_report_agent_guidelines.md     ← index; links to numbered parts (read index + all parts)
+│   ├── portfolio_report_agent_guidelines/       ← split spec (§§0–17 across 00–07.md)
+│   └── holdings_update_agent_guidelines.md      ← natural-language holdings updates
 ├── SETTINGS.md                            ← your settings (git-ignored, copy from .example)
 ├── SETTINGS.example.md                    ← template for SETTINGS.md
 ├── HOLDINGS.md                            ← your holdings (git-ignored, copy from .example)
 ├── HOLDINGS.md.bak                        ← rolling backup written by the update agent (git-ignored)
 ├── HOLDINGS.example.md                    ← template for HOLDINGS.md
-├── /scripts/
+├── scripts/
 │   ├── fetch_prices.py                    ← canonical price-retrieval template (market-aware sources per spec §8)
 │   ├── generate_report.py                 ← canonical HTML rendering template (per spec §5/§10/§13/§14)
-│   └── /i18n/
+│   └── i18n/
 │       ├── report_ui.en.json              ← stable UI dictionary (EN)
 │       ├── report_ui.zh-Hant.json         ← stable UI dictionary (繁中)
 │       └── report_ui.zh-Hans.json         ← stable UI dictionary (簡中)
@@ -66,7 +68,11 @@ The agent runs inside an LLM client (e.g. Cowork / Claude). When you ask it to "
 
 ## How to use the agent
 
-Open this folder in your LLM client. There are three things you can ask it to do:
+**Model quality:** For strong analysis and portfolio reports, use **at least Claude Sonnet 4.6 (High), or an equivalent or stronger model**. Spec-following work, long holdings tables, and synthesis-heavy sections benefit from a capable reasoning tier—lighter models may truncate steps or miss checklist items.
+
+**Where to run it:** Open this folder in a coding agent or assistant that can read files and run commands—e.g. **Claude Code**, **OpenAI Codex** (CLI or IDE integration), **Google Gemini** (CLI or other clients), or similar tools. There is no single required product; any environment that can apply `AGENTS.md` and the docs under `docs/` to this repo works.
+
+There are three things you can ask the agent to do:
 
 ### 1. Research questions (any time)
 
@@ -81,12 +87,12 @@ The agent reads `SETTINGS.md` for tone and `HOLDINGS.md` for positions, then fol
 - "Produce today's portfolio health check."
 - "Run my pre-market battle report."
 
-The agent follows `/docs/portfolio_report_agent_guidelines.md` to produce a self-contained HTML report in `reports/`. The 11 sections (in order): today's summary, portfolio dashboard (KPIs), holdings table with P&L and per-lot popovers, holding period & pacing, theme/sector exposure, latest material news, forward-30-day event calendar, high-risk and high-opportunity list, recommended adjustments, today's action list, and sources & data gaps. A high-priority alerts banner sits above the 11 when any trigger fires.
+The agent follows `docs/portfolio_report_agent_guidelines.md` (and the numbered part files it links) to produce a self-contained HTML report in `reports/`. The 11 sections (in order): today's summary, portfolio dashboard (KPIs), holdings table with P&L and per-lot popovers, holding period & pacing, theme/sector exposure, latest material news, forward-30-day event calendar, high-risk and high-opportunity list, recommended adjustments, today's action list, and sources & data gaps. A high-priority alerts banner sits above the 11 when any trigger fires.
 
 Under the hood, the agent runs the two canonical Python templates rather than re-authoring the work each time:
 
 ```sh
-# 1. Latest prices via yfinance for listed securities / FX and Binance-CoinGecko-first routing for crypto
+# 1. Latest prices plus auto FX conversion rates via market-aware source routing
 python scripts/fetch_prices.py --holdings HOLDINGS.md --settings SETTINGS.md --output prices.json
 
 # 2. HTML render (reads CSS from reports/_sample_redesign.html and stable JSON UI dictionaries)
@@ -98,7 +104,7 @@ python scripts/generate_report.py \
 
 If `SETTINGS.md` requests a non-built-in language, the **executing agent** should translate `scripts/i18n/report_ui.en.json` into a temporary JSON overlay and pass it with `--ui-dict /tmp/report_ui.<locale>.json`. The renderer itself does not call external translation services.
 
-The `report_context.json` is the agent's editorial layer: today's verdict prose, news items it gathered via web search, recommended adjustments, and the action list. Numeric content (totals, weights, P&L, hold period, pacing distribution, sources audit) comes from the two scripts mechanically.
+The `report_context.json` is the agent's editorial layer: today's verdict prose, news items it gathered via web search, recommended adjustments, and the action list. It must not contain manual FX rates; FX conversion data is auto-fetched into `prices.json["_fx"]`. Numeric content (totals, weights, P&L, hold period, pacing distribution, sources audit) comes from the two scripts mechanically.
 
 ### 3. Update holdings via natural language
 
@@ -117,7 +123,7 @@ The agent will:
 3. Wait for an explicit `yes` from you in the same turn.
 4. Back up the existing file to `HOLDINGS.md.bak`, write the new file, re-read it to verify, then reply with the path.
 
-It will **never** silently overwrite. It will **never** invent missing fields. If something is ambiguous (no price currency, multiple matching cash lines, unknown bucket for a new ticker), it asks one specific question. Full rules live in `/docs/holdings_update_agent_guidelines.md`.
+It will **never** silently overwrite. It will **never** invent missing fields. If something is ambiguous (no price currency, multiple matching cash lines, unknown bucket for a new ticker), it asks one specific question. Full rules live in `docs/holdings_update_agent_guidelines.md`.
 
 ## Generated reports
 
@@ -129,13 +135,13 @@ reports/<YYYY-MM-DD>_<HHMM>_portfolio_report.html
 
 The HTML is a single self-contained file — no external CSS, JS, fonts, or chart libraries — so you can open it directly in a browser, share it, or archive it. There is **no Markdown summary or companion file** any more; the HTML is the single deliverable.
 
-`scripts/generate_report.py` loads stable built-in UI dictionaries from `scripts/i18n/report_ui.en.json`, `scripts/i18n/report_ui.zh-Hant.json`, and `scripts/i18n/report_ui.zh-Hans.json`. If `SETTINGS.md` requests another single language, the **executing agent** translates the English dictionary into a temporary JSON overlay and passes it to the renderer.
+`scripts/generate_report.py` loads stable built-in UI dictionaries from `scripts/i18n/report_ui.en.json`, `scripts/i18n/report_ui.zh-Hant.json`, and `scripts/i18n/report_ui.zh-Hans.json`. If `SETTINGS.md` requests another single language, the **executing agent** translates the English dictionary into a temporary JSON overlay and passes it with `--ui-dict` or as `context["ui_dictionary"]`.
 
-`reports/_sample_redesign.html` is the canonical visual reference. It uses fully fictional data and exists only to lock in the design language. Do not delete it; both the portfolio agent and `scripts/generate_report.py` read its CSS as the single source of styling.
+`reports/_sample_redesign.html` is the canonical visual reference. It uses fully fictional data and exists only to lock in the design language. Do not delete it; both the portfolio agent and `scripts/generate_report.py` read its CSS as the single source of styling (override path with `--sample` if needed).
 
 ## Editing the agent specs
 
-`AGENTS.md`, `/docs/portfolio_report_agent_guidelines.md`, and `/docs/holdings_update_agent_guidelines.md` are the contracts that shape every agent run. Treat them like prompts under version control:
+`AGENTS.md`, `docs/portfolio_report_agent_guidelines.md` (plus every numbered file it links under `docs/portfolio_report_agent_guidelines/`), and `docs/holdings_update_agent_guidelines.md` are the contracts that shape every agent run. Treat them like prompts under version control:
 
 - Change them when you want to change *how* the agent thinks or writes.
 - Don't put personal data in them — that belongs in `SETTINGS.md` or `HOLDINGS.md`.
@@ -143,9 +149,13 @@ The HTML is a single self-contained file — no external CSS, JS, fonts, or char
 
 ## Privacy
 
-- `HOLDINGS.md`, `HOLDINGS.md.bak`, `SETTINGS.md`, and any generated `*_portfolio_report.html` are git-ignored.
-- Only the agent specs, the example templates, the Python script templates under `/scripts/`, the README, and the visual reference sample are tracked.
+- `HOLDINGS.md`, `HOLDINGS.md.bak`, `SETTINGS.md`, any generated `*_portfolio_report.html`, and typical run artifacts `prices.json` and `report_context.json` are git-ignored.
+- Only the agent specs, the example templates, the Python script templates under `scripts/`, the README, and the visual reference sample are tracked.
 - If you fork or share this repo, only the templates and specs travel with it; your real positions, backups, and reports stay local.
+
+## Third-party data, APIs, and rate limits
+
+**This project does not own, operate, or guarantee** any market-data or FX API. `scripts/fetch_prices.py` and related flows may use public endpoints, optional API keys you configure in `SETTINGS.md`, and libraries such as `yfinance` that wrap third-party sources. **You must comply** with each provider’s **terms of service**, **acceptable use**, and **rate limits**. Heavy or abusive traffic can get API keys or IPs throttled or revoked. The spec encodes pacing and fallbacks, but **you** are responsible for lawful, policy-compliant use. If a source requires attribution, a contract, or paid access, follow that provider’s rules.
 
 ## Disclaimer
 

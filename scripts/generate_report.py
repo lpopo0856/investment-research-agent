@@ -33,7 +33,6 @@ CONTEXT FILE SHAPE  (report_context.json)
       "language":      "繁體中文",
       "title":         "投資組合健康檢查 · 2026-04-28",
       "subtitle":      "...",
-      "fx":            {"USD/TWD": 30.0},   # keyed "<base>/<ccy>" — base is from SETTINGS.md (default USD)
       "next_event":    "01-03 央行決議",
       "today_summary": ["paragraph 1", "paragraph 2"],
       "alerts":        ["bullet 1", "bullet 2"],
@@ -97,13 +96,14 @@ Top-level markup must match `_sample_redesign.html` lines 1267-1300:
 
 Bar color modifiers per §10.4.2 E: `bar warn` (concentration alert), `bar info`
 (cross-cutting), `bar pos` / `bar neg` (rare, thesis-aligned only). Weights are
-USD-based (§9.0). Bucket-note thresholds are configurable via SETTINGS.md.
+base-currency based (§9.0). Bucket-note thresholds are configurable via SETTINGS.md.
 
 Every other field is optional; missing fields render as `n/a` per §9.6 with no
 guesses.
 
-The "Sources & data gaps" audit table is built mechanically from `prices.json` —
-the agent does not need to author it.
+The "Sources & data gaps" audit table is built mechanically from `prices.json`,
+including auto-fetched FX conversion rates under `prices.json["_fx"]`. The agent
+does not author FX rates in SETTINGS.md or the editorial context.
 
 DEPENDENCIES
 ------------
@@ -408,8 +408,8 @@ class TickerAggregate:
     """Per-ticker rollup used by the holdings table and the popovers.
 
     Per spec §9.0 every aggregate (`market_value`, `pnl_amount`, `weighted_avg_cost_usd`,
-    cash totals) is in **USD**. Native trade currency is preserved for popover display
-    via the `*_native` fields and `trade_currency`.
+    cash totals) is in the configured base currency. Native trade currency is
+    preserved for popover display via the `*_native` fields and `trade_currency`.
     """
     ticker: str
     market: MarketType
@@ -420,16 +420,16 @@ class TickerAggregate:
     earliest_date: Optional[str]            # for hold period
     lots: List[Lot] = field(default_factory=list)
 
-    # Filled in after price merge — all USD unless suffixed _native
+    # Filled in after price merge — all base-currency unless suffixed _native.
     latest_price: Optional[float] = None             # native trade currency (display in §10.3)
     move_pct: Optional[float] = None
-    market_value: Optional[float] = None             # **USD** (post-FX)
-    pnl_amount: Optional[float] = None               # **USD**
+    market_value: Optional[float] = None             # base currency (post-FX)
+    pnl_amount: Optional[float] = None               # base currency
     pnl_pct: Optional[float] = None                  # ratio, currency-agnostic
-    weighted_avg_cost_usd: Optional[float] = None    # USD-converted avg cost (popover footer)
+    weighted_avg_cost_usd: Optional[float] = None    # base-converted avg cost (legacy name)
     is_cash: bool = False
     trade_currency: str = "USD"                      # market → currency (US/crypto/FX → USD)
-    fx_rate_used: Optional[float] = None             # 1 unit native = N USD; None when USD or n/a
+    fx_rate_used: Optional[float] = None             # 1 unit native = N base; None when n/a
 
 
 @dataclass
@@ -505,7 +505,7 @@ MARKET_DEFAULT_CCY: Dict[MarketType, str] = {
 
 # USD stablecoin tickers held as `[cash]` are pegged at $1.00 USD per unit. When the
 # report base currency is not USD, the cash-line conversion below applies the
-# configured fx rate to translate the peg into base units.
+# auto-fetched fx rate to translate the peg into base units.
 CASH_STABLECOIN_USD: Dict[str, float] = {
     "USDC": 1.0, "USDT": 1.0, "DAI": 1.0, "BUSD": 1.0, "TUSD": 1.0, "USDP": 1.0,
 }
@@ -519,8 +519,9 @@ def _fx_to_base(
 ) -> Tuple[Optional[float], Optional[float]]:
     """Convert `native_amount` in `currency` to the configured base currency.
 
-    `fx` is keyed `"<BASE>/<CCY>"` with the rate "1 unit of base = N units of CCY"
-    (matches the SETTINGS.example.md format). Returns (base_amount, fx_rate_used).
+    `fx` is keyed `"<BASE>/<CCY>"` with the rate "1 unit of base = N units of CCY".
+    The rates come from prices.json["_fx"], not SETTINGS.md. Returns
+    (base_amount, fx_rate_used).
     `fx_rate_used` is "1 unit of native = X units of base" (i.e. 1 / (base/ccy))
     so the caller can record what was applied.
     """
@@ -544,10 +545,9 @@ def merge_prices(
 ) -> None:
     """Merge prices and apply §9.0 base-currency canonicalization.
 
-    `fx` is the agent-supplied base-quoted rates. If a non-base currency is held
-    but no rate is configured, the affected aggregate is marked `n/a` (per §9.6) —
-    the agent must walk §9.0 fetch-rate flow before regenerating the report. We
-    never assume parity.
+    `fx` is the auto-fetched base-quoted rate map from prices.json["_fx"]. If a
+    non-base currency is held but no rate was fetched, the affected aggregate is
+    marked `n/a` (per §9.6). We never assume parity.
 
     `base` defaults to USD for backwards compatibility; pass a different ISO 4217
     code (e.g. "TWD") to denominate the report in another currency.
@@ -558,7 +558,7 @@ def merge_prices(
         if agg.is_cash:
             ccy = ticker.upper()
             agg.trade_currency = ccy
-            # USD stablecoins are pegged at $1; convert to base via the fx dict.
+            # USD stablecoins are pegged at $1; convert to base via the auto-FX map.
             if ccy in CASH_STABLECOIN_USD:
                 usd_value = agg.total_qty * CASH_STABLECOIN_USD[ccy]
                 base_value, base_rate = _fx_to_base(usd_value, "USD", fx, base)
@@ -619,9 +619,9 @@ def hold_period_label(earliest_date: Optional[str], today: _dt.date) -> str:
 
 
 def book_pacing(aggs: Dict[str, TickerAggregate], today: _dt.date) -> BookPacing:
-    """§9.5 — risk-asset only, cost-weighted in USD basis (per §9.0).
+    """§9.5 — risk-asset only, cost-weighted in base-currency basis (per §9.0).
 
-    The cost-weighted average hold MUST use USD-converted cost, not native cost.
+    The cost-weighted average hold MUST use base-converted cost, not native cost.
     Mixing native costs (e.g. NT$345,000 with $4,500) means a single TW lot
     appears 32× heavier than an equivalently-sized US lot just because of the
     currency unit, dragging the weighted average toward whatever lot happens to
@@ -639,11 +639,11 @@ def book_pacing(aggs: Dict[str, TickerAggregate], today: _dt.date) -> BookPacing
         if agg.is_cash or agg.market_value in (None, 0):
             continue
         risk_value += agg.market_value
-        # `fx_rate_used` is "1 unit native = X USD"; None when fx is missing for a
-        # non-USD position. In that case we cannot compare costs across the book,
+        # `fx_rate_used` is "1 unit native = X base"; None when fx is missing for a
+        # non-base position. In that case we cannot compare costs across the book,
         # so the lot is excluded from the cost-weighted aggregate (oldest/newest/
-        # bucket distribution still use USD market value, which the merge step has
-        # already filtered to USD-resolvable holdings via market_value).
+        # bucket distribution still use base market value, which the merge step has
+        # already filtered to FX-resolvable holdings via market_value).
         fx_rate = agg.fx_rate_used
         for lot in agg.lots:
             if not lot.date or lot.cost is None:
@@ -916,11 +916,25 @@ def _format_years(value: float) -> str:
 # `context`; numeric / structural content comes from `aggs`, `prices`, `config`.
 # ----------------------------------------------------------------------------- #
 
+def _format_fx_masthead(context: Dict[str, Any]) -> str:
+    rates = context.get("fx") or {}
+    details = context.get("fx_details") or {}
+    if not isinstance(rates, dict) or not rates:
+        return _ui("common.na")
+    parts = []
+    for pair, rate in sorted(rates.items()):
+        detail = details.get(pair, {}) if isinstance(details, dict) else {}
+        as_of = detail.get("price_as_of") if isinstance(detail, dict) else None
+        suffix = f" @ {as_of}" if as_of else ""
+        parts.append(f"{pair} {rate}{suffix}")
+    return " · ".join(parts)
+
+
 def render_masthead(context: Dict[str, Any]) -> str:
     lang = _esc(context.get("language", _ui("meta.language_name")))
     title = _esc(context.get("title", _ui("masthead.title")))
     subtitle = _esc(context.get("subtitle", ""))
-    fx_str = " · ".join(f"{k} {v}" for k, v in (context.get("fx") or {}).items()) or _ui("common.na")
+    fx_str = _format_fx_masthead(context)
     next_event = _esc(context.get("next_event", _ui("common.na")))
     generated = context.get("generated_at") or _dt.datetime.now().strftime("%Y-%m-%d %H:%M")
     return f"""\
@@ -976,7 +990,8 @@ def render_dashboard(
         return ""
     invested_pct = invested / total_assets * 100.0
     cash_pct = cash / total_assets * 100.0
-    pnl_html = (f'<div class="delta {"pos" if pnl >= 0 else "neg"}">{"+" if pnl >= 0 else "−"}${abs(pnl):,.0f}</div>'
+    bp = _base_prefix()
+    pnl_html = (f'<div class="delta {"pos" if pnl >= 0 else "neg"}">{"+" if pnl >= 0 else "−"}{bp}{abs(pnl):,.0f}</div>'
                 if pnl is not None else f'<div class="delta">{_ui("common.na")}</div>')
     return f"""\
   <section class="section">
@@ -985,9 +1000,9 @@ def render_dashboard(
       <span class="sub">{_esc(_ui("dashboard.subtitle", base=ACTIVE_BASE_CURRENCY))}</span>
     </div>
     <div class="kpis">
-      <div class="kpi"><div class="k">{_esc(_ui("dashboard.total_assets"))}</div><div class="v">${total_assets:,.0f}</div><div class="delta">{_esc(_ui("dashboard.total_assets_note"))}</div></div>
-      <div class="kpi"><div class="k">{_esc(_ui("dashboard.invested"))}</div><div class="v">${invested:,.0f}</div><div class="delta">{_esc(_ui("dashboard.invested_note", pct=invested_pct))}</div></div>
-      <div class="kpi"><div class="k">{_esc(_ui("dashboard.cash"))}</div><div class="v">${cash:,.0f}</div><div class="delta">{_esc(_ui("dashboard.cash_note", pct=cash_pct))}</div></div>
+      <div class="kpi"><div class="k">{_esc(_ui("dashboard.total_assets"))}</div><div class="v">{bp}{total_assets:,.0f}</div><div class="delta">{_esc(_ui("dashboard.total_assets_note"))}</div></div>
+      <div class="kpi"><div class="k">{_esc(_ui("dashboard.invested"))}</div><div class="v">{bp}{invested:,.0f}</div><div class="delta">{_esc(_ui("dashboard.invested_note", pct=invested_pct))}</div></div>
+      <div class="kpi"><div class="k">{_esc(_ui("dashboard.cash"))}</div><div class="v">{bp}{cash:,.0f}</div><div class="delta">{_esc(_ui("dashboard.cash_note", pct=cash_pct))}</div></div>
       <div class="kpi"><div class="k">{_esc(_ui("dashboard.known_pnl"))}</div><div class="v">{_fmt_money(pnl)}</div><div class="delta">{_esc(_ui("dashboard.pnl_note"))}</div>{pnl_html}</div>
     </div>
 
@@ -997,8 +1012,8 @@ def render_dashboard(
         <span class="seg cash" style="width:{cash_pct:.1f}%"></span>
       </div>
       <div class="cash-legend">
-        <span><i style="background:var(--ink)"></i>{_esc(_ui("dashboard.risk_legend", pct=invested_pct, value=invested))}</span>
-        <span><i style="background:var(--accent-warm)"></i>{_esc(_ui("dashboard.cash_legend", pct=cash_pct, value=cash))}</span>
+        <span><i style="background:var(--ink)"></i>{_esc(_ui("dashboard.risk_legend", pct=invested_pct, value=invested).replace("$", _base_prefix(), 1))}</span>
+        <span><i style="background:var(--accent-warm)"></i>{_esc(_ui("dashboard.cash_legend", pct=cash_pct, value=cash).replace("$", _base_prefix(), 1))}</span>
       </div>
     </div>
   </section>"""
@@ -1051,11 +1066,12 @@ def _allocation_category_key(agg: TickerAggregate) -> str:
 
 
 def _format_total_compact(value: float) -> str:
+    bp = _base_prefix()
     if value >= 1_000_000:
-        return f"${value/1_000_000:.1f}M"
+        return f"{bp}{value/1_000_000:.1f}M"
     if value >= 1_000:
-        return f"${value/1_000:.0f}k"
-    return f"${value:.0f}"
+        return f"{bp}{value/1_000:.0f}k"
+    return f"{bp}{value:.0f}"
 
 
 def render_allocation_and_weight(
@@ -1342,7 +1358,7 @@ def _price_popover(agg: TickerAggregate, prices: Dict[str, Any]) -> str:
     state = _esc(_translate_market_state(pr.get("market_state_basis", "n/a")))
     feed_ccy = _esc((pr.get("currency") or agg.trade_currency or _ui("common.na")).upper())
     exchange = _esc(pr.get("exchange") or _ui("common.na"))
-    # §9.0 — latest price displays in native trade currency; footer aggregates in USD.
+    # §9.0 — latest price displays in native trade currency; footer aggregates in base currency.
     ccy = agg.trade_currency
     price_str = _native_money(agg.latest_price, ccy)
     rows: List[str] = []
@@ -1355,7 +1371,7 @@ def _price_popover(agg: TickerAggregate, prices: Dict[str, Any]) -> str:
             cost = _native_money(lot.cost, ccy)
             if agg.latest_price is not None:
                 # Native-currency P&L per lot for the popover row (matches the user's
-                # original trade currency mental model). USD aggregates live in the footer.
+                # original trade currency mental model). Base-currency aggregates live in the footer.
                 p_native = (agg.latest_price - lot.cost) * lot.quantity
                 p_cls = "pop-pos" if p_native >= 0 else "pop-neg"
                 p_sign = "+" if p_native >= 0 else "−"
@@ -1414,7 +1430,7 @@ def render_pnl_ranking(aggs: Dict[str, TickerAggregate]) -> str:
         rows.append(
             f'<div class="bar-row"><div class="bar-label">{_esc(a.ticker)}</div>'
             f'<div class="bar-track"><div class="bar {cls}" style="width:{width:.1f}%"></div></div>'
-            f'<div class="bar-value {txt_cls}">{sign}${abs(a.pnl_amount):,.0f}</div></div>'
+            f'<div class="bar-value {txt_cls}">{sign}{_base_prefix()}{abs(a.pnl_amount):,.0f}</div></div>'
         )
     return f"""\
   <section class="section">
@@ -1852,6 +1868,30 @@ def render_sources(prices: Dict[str, Any], context: Dict[str, Any]) -> str:
             <td><span class="freshness {fresh_cls}">{_esc(fresh_label)}</span></td>
             <td>{_esc('; '.join(notes)) or _esc(_ui("common.dash"))}</td>
           </tr>""")
+    fx_payload = prices.get("_fx") if isinstance(prices.get("_fx"), dict) else {}
+    fx_details = fx_payload.get("details") if isinstance(fx_payload.get("details"), dict) else {}
+    for pair, detail in sorted(fx_details.items()):
+        if not isinstance(detail, dict):
+            continue
+        fresh = detail.get("price_freshness", "n/a")
+        fresh_cls = {"fresh": "fresh", "delayed": "delayed",
+                     "stale_after_exhaustive_search": "stale", "n/a": "stale"}.get(fresh, "stale")
+        fresh_label = _translate_freshness(fresh)
+        market_state_label = _translate_market_state(detail.get("market_state_basis", "n/a"))
+        notes = []
+        if detail.get("latest_price") not in (None, ""):
+            notes.append(f"rate={detail.get('latest_price')}")
+        if detail.get("yfinance_failure_reason"):
+            notes.append(_esc(detail.get("yfinance_failure_reason"))[:60])
+        rows.append(f"""\
+          <tr>
+            <td>FX {_esc(pair)}</td>
+            <td>{_esc(detail.get('price_source', _ui("common.na")))}</td>
+            <td>{_esc(market_state_label)}</td>
+            <td class="num">{_esc(detail.get('price_as_of') or _ui("common.na"))}</td>
+            <td><span class="freshness {fresh_cls}">{_esc(fresh_label)}</span></td>
+            <td>{_esc('; '.join(notes)) or _esc(_ui("common.dash"))}</td>
+          </tr>""")
     gaps = context.get("data_gaps") or []
     gap_html = "".join(f'<li><b>{_esc(g.get("summary", ""))}:</b> {_esc(g.get("detail", ""))}</li>' for g in gaps) \
         or f'<li>{_esc(_ui("sources.no_gaps"))}</li>'
@@ -1970,6 +2010,47 @@ def _cli(argv: Optional[List[str]] = None) -> argparse.Namespace:
     return p.parse_args(argv)
 
 
+def _auto_fx_from_prices(
+    prices: Dict[str, Any],
+    base_currency: str,
+) -> Tuple[Dict[str, float], Dict[str, Any]]:
+    """Return auto-fetched FX rates from prices.json["_fx"], scoped to the base."""
+    fx_payload = prices.get("_fx")
+    if not isinstance(fx_payload, dict):
+        logging.warning(
+            "prices.json has no `_fx` payload. Re-run scripts/fetch_prices.py so FX "
+            "conversion rates are auto-fetched."
+        )
+        return {}, {}
+
+    payload_base = str(fx_payload.get("base") or "").upper()
+    base = base_currency.upper()
+    if payload_base and payload_base != base:
+        logging.warning(
+            "prices.json `_fx` base %s does not match SETTINGS.md base %s; ignoring "
+            "stale FX payload. Re-run scripts/fetch_prices.py.",
+            payload_base, base,
+        )
+        return {}, {}
+
+    raw_rates = fx_payload.get("rates") if isinstance(fx_payload.get("rates"), dict) else {}
+    rates: Dict[str, float] = {}
+    for pair, raw_rate in raw_rates.items():
+        pair_str = str(pair).upper()
+        if not pair_str.startswith(f"{base}/"):
+            continue
+        try:
+            rate = float(raw_rate)
+        except (TypeError, ValueError):
+            continue
+        if rate > 0:
+            rates[pair_str] = rate
+
+    raw_details = fx_payload.get("details")
+    details = raw_details if isinstance(raw_details, dict) else {}
+    return rates, details
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     args = _cli(argv)
     logging.basicConfig(level=logging.INFO if args.verbose else logging.WARNING,
@@ -1984,8 +2065,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     aggs = aggregate(lots)
     prices = json.loads(args.prices.read_text(encoding="utf-8"))
 
-    # §9.0 — load editorial context BEFORE merging prices so we can apply the supplied
-    # USD FX rates to non-USD positions during the merge.
+    # §9.0 — editorial context must not supply FX rates. FX conversion rates are
+    # auto-fetched by scripts/fetch_prices.py and stored under prices.json["_fx"].
     context: Dict[str, Any] = {}
     if args.context and args.context.exists():
         context = json.loads(args.context.read_text(encoding="utf-8"))
@@ -2021,8 +2102,15 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     context["language"] = settings.display_name
 
-    fx = context.get("fx") or {}
     base_ccy = settings.base_currency
+    if "fx" in context:
+        logging.warning(
+            "Ignoring context['fx']; FX conversion rates are auto-fetched into "
+            "prices.json by scripts/fetch_prices.py."
+        )
+    fx, fx_details = _auto_fx_from_prices(prices, base_ccy)
+    context["fx"] = fx
+    context["fx_details"] = fx_details
     merge_prices(aggs, prices, fx=fx, base=base_ccy)
 
     # §9.0 audit — warn loudly for any non-base currency in the book that lacks
@@ -2041,8 +2129,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         logging.warning(
             "Non-%s currency in book without FX rate: %s. "
             "Affected aggregates will render as `n/a` per spec §9.0. "
-            "Add `\"fx\": {\"%s/%s\": <rate>, ...}` to the context JSON.",
-            base_ccy, ", ".join(missing_fx), base_ccy, missing_fx[0],
+            "Re-run scripts/fetch_prices.py so prices.json['_fx'] is populated.",
+            base_ccy, ", ".join(missing_fx),
         )
 
     css = load_canonical_css(args.sample)

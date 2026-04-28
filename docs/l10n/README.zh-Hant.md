@@ -12,25 +12,31 @@
 4. 作為持倉報表視覺參考的 HTML 範例。
 5. `scripts/` 內的兩個 Python 樣板，代理每回合直接執行，無需每次重寫抓價或產生 HTML 的邏輯。
 
-代理在 LLM 用戶端內執行（如 Cowork / Claude）。當你請它「產出持倉健檢」時，它會讀取規格與個人資料、執行 `scripts/fetch_prices.py` 透過 `yfinance` 取得最新價格（依規格之節流與備援），再執行 `scripts/generate_report.py` 在 `reports/` 組出單一自洽的 HTML。
+代理在 LLM 用戶端內執行（如 Cowork / Claude）。當你請它「產出持倉健檢」時，它會讀取規格與個人資料、執行 `scripts/fetch_prices.py` 透過市場對應來源取得最新價格並自動抓取 FX 轉換匯率（依規格之節流與備援），再執行 `scripts/generate_report.py` 在 `reports/` 組出單一自洽的 HTML。
 
 ## 倉庫結構
 
 ```
 .
 ├── README.md
-├── docs/l10n/                             ← 本檔等：非英文 README
+├── docs/
+│   ├── l10n/                              ← 本檔等：非英文 README
+│   ├── portfolio_report_agent_guidelines.md   ← 索引；連結至分章節檔（須讀索引＋全章）
+│   ├── portfolio_report_agent_guidelines/     ← 分章規格（§§0–17，00–07.md）
+│   └── holdings_update_agent_guidelines.md
 ├── AGENTS.md
-├── /docs/portfolio_report_agent_guidelines.md
-├── /docs/holdings_update_agent_guidelines.md
 ├── SETTINGS.md
 ├── SETTINGS.example.md
 ├── HOLDINGS.md
 ├── HOLDINGS.md.bak
 ├── HOLDINGS.example.md
-├── /scripts/
+├── scripts/
 │   ├── fetch_prices.py
-│   └── generate_report.py
+│   ├── generate_report.py
+│   └── i18n/
+│       ├── report_ui.en.json
+│       ├── report_ui.zh-Hant.json
+│       └── report_ui.zh-Hans.json
 ├── .gitignore
 └── reports/
     ├── _sample_redesign.html
@@ -62,7 +68,11 @@
 
 ## 如何使用代理
 
-在 LLM 用戶端中開啟本資料夾。大致有三類請求：
+**模型建議：**欲獲得較佳分析與報表品質，請使用**至少 Claude Sonnet 4.6（High），或同等以上推理能力的模型**。長持倉表、規格核對與綜合段落需要足夠推理深度——較輕量模型可能省略步驟或漏檢。
+
+**執行環境：**在可讀檔並執行指令的程式／編碼代理中開啟本資料夾即可，例如 **Claude Code**、**OpenAI Codex**（CLI 或 IDE）、**Google Gemini**（CLI 或其他客戶端）等類似工具。並無唯一指定產品；只要能對本倉庫套用 `AGENTS.md` 與 `docs/` 下規格即可。
+
+大致有三類請求：
 
 ### 1. 研究問題（隨時）
 
@@ -77,7 +87,7 @@
 - 「產出今天的持倉健檢。」
 - 「幫我跑盤前戰情。」
 
-代理依 `/docs/portfolio_report_agent_guidelines.md` 在 `reports/` 產生單一自洽 HTML。共 11 小節（依序）：今日摘要、持倉儀表板（KPI）、含損益與每筆彈層的持倉表、持倉期與建倉節奏、主題／產業曝險、最新重要新聞、未來 30 日事件曆、高風險與高機會清單、建議調整、今日行動清單、資料來源與缺漏。若有高優先警示，會在 11 小節之上顯示橫幅。
+代理依 `docs/portfolio_report_agent_guidelines.md`（及其索引所連結之分章檔）在 `reports/` 產生單一自洽 HTML。共 11 小節（依序）：今日摘要、持倉儀表板（KPI）、含損益與每筆彈層的持倉表、持倉期與建倉節奏、主題／產業曝險、最新重要新聞、未來 30 日事件曆、高風險與高機會清單、建議調整、今日行動清單、資料來源與缺漏。若有高優先警示，會在 11 小節之上顯示橫幅。
 
 實作上，代理執行兩個慣用 Python 樣板，而非每回合從零撰寫：
 
@@ -90,7 +100,9 @@ python scripts/generate_report.py \
     --output reports/2026-04-28_1330_portfolio_report.html
 ```
 
-`report_context.json` 是代理的編輯層：今日判讀、網路搜尋到的新聞、建議調整與行動清單。數字（合計、權重、損益、持倉期、節奏分佈、來源查核等）由兩支腳本機械產生。
+`report_context.json` 是代理的編輯層：今日判讀、網路搜尋到的新聞、建議調整與行動清單；不得放手動 FX 匯率。FX 轉換資料由 `scripts/fetch_prices.py` 自動寫入 `prices.json["_fx"]`。數字（合計、權重、損益、持倉期、節奏分佈、來源查核等）由兩支腳本機械產生。
+
+若 `SETTINGS.md` 要的語言不在內建字典（內建：`english`、`traditional chinese`、`simplified chinese`），**執行中的代理**應將 `scripts/i18n/report_ui.en.json` 譯成暫存 JSON overlay，並以 `--ui-dict`（或 context 內的 `ui_dictionary`）傳給 `scripts/generate_report.py`。渲染器本身不呼叫外部翻譯服務。
 
 ### 3. 以自然語言更新持倉
 
@@ -98,7 +110,7 @@ python scripts/generate_report.py \
 
 - 昨日以 $185 買 30 股 NVDA。
 
-代理會：解析交易並覆述假設、顯示 `HOLDINGS.md` 的 unified diff 與桶子合計、（若為賣出）每筆已實現損益、在同一輪內等你的明確 `yes`、先備份至 `HOLDINGS.md.bak` 再寫入、重讀驗證後回覆路徑。不靜默覆寫、不虛構欄位。規剀見 `/docs/holdings_update_agent_guidelines.md`。
+代理會：解析交易並覆述假設、顯示 `HOLDINGS.md` 的 unified diff 與桶子合計、（若為賣出）每筆已實現損益、在同一輪內等你的明確 `yes`、先備份至 `HOLDINGS.md.bak` 再寫入、重讀驗證後回覆路徑。不靜默覆寫、不虛構欄位。規則見 `docs/holdings_update_agent_guidelines.md`。
 
 ## 產生之報表
 
@@ -108,16 +120,20 @@ python scripts/generate_report.py \
 reports/<YYYY-MM-DD>_<HHMM>_portfolio_report.html
 ```
 
-HTML 為單一自含檔（無外連 CSS/JS/字型/圖表庫），可於瀏覽器直接開啟、分享或封存。不再附帶 Markdown 摘要。`reports/_sample_redesign.html` 為慣用視覺參考（去識別示範資料），勿刪；持倉代理與 `scripts/generate_report.py` 自該檔讀取 CSS 作為唯一樣式來源。
+HTML 為單一自含檔（無外連 CSS/JS/字型/圖表庫），可於瀏覽器直接開啟、分享或封存。不再附帶 Markdown 摘要。`scripts/generate_report.py` 自 `scripts/i18n/report_ui.en.json`、`report_ui.zh-Hant.json`、`report_ui.zh-Hans.json` 載入內建 UI 字典；其他單一語言時由執行代理以英文字典譯成 overlay 傳入（見上文 `--ui-dict`）。`reports/_sample_redesign.html` 為慣用視覺參考（去識別示範資料），勿刪；持倉代理與 `scripts/generate_report.py` 自該檔讀取 CSS 作為唯一樣式來源（預設路徑，亦可 `--sample` 覆寫）。
 
 ## 修改代理規格
 
-`AGENTS.md`、`/docs/portfolio_report_agent_guidelines.md`、`/docs/holdings_update_agent_guidelines.md` 形塑每次執行。作為版本化之「提示合約」：要改行為就改它們；不要放個人資料。重大修改後，請代理重產一則報表以驗證。
+`AGENTS.md`、`docs/portfolio_report_agent_guidelines.md`（及其 `docs/portfolio_report_agent_guidelines/` 下索引所連結之分章檔）、`docs/holdings_update_agent_guidelines.md` 形塑每次執行。作為版本化之「提示合約」：要改行為就改它們；不要放個人資料。重大修改後，請代理重產一則報表以驗證。
 
 ## 隱私
 
-- `HOLDINGS.md`、其備份、`SETTINGS.md`、產生之 `*_portfolio_report.html` 皆 git-ignored。
-- 追蹤於版本庫的僅有規格、範本、`/scripts/` 內的樣式與本 README 等參考檔。若 fork 或分享，實際部位、備份與報表仍只留在本機。
+- `HOLDINGS.md`、其備份、`SETTINGS.md`、產生之 `*_portfolio_report.html`，以及常見執行產物 `prices.json`、`report_context.json` 皆 git-ignored。
+- 追蹤於版本庫的僅有規格、範本、`scripts/` 內的樣式與本 README 等參考檔。若 fork 或分享，實際部位、備份與報表仍只留在本機。
+
+## 第三方資料、API 與速率限制
+
+**本專案並未擁有、營運或擔保**任何行情或外匯 API。`scripts/fetch_prices.py` 等流程可能使用公開端點、你在 `SETTINGS.md` 設定的選用 API 金鑰，以及包裝第三方來源的程式庫（如 `yfinance`）。**你必須遵守**各供應商的**服務條款**、**可接受使用政策**與**速率／頻率限制**。過度或違規請求可能導致金鑰或 IP 被限流或停用。規格內含節流與備援，但**合規、合法使用仍由你負責**。若來源要求署名、合約或付費，請依該供應商規定辦理。
 
 ## 免責聲明
 

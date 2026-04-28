@@ -44,23 +44,11 @@ The base currency every aggregate in the report is denominated in. Use a single 
 
 Choose this once and keep it stable — switching base mid-stream will make today's report incomparable to yesterday's. Pick whatever currency matches how you actually evaluate your portfolio (most TW-based users want `TWD`; most globally-diversified investors want `USD`).
 
-## FX Rates (base-currency basis — required for any non-base position)
-
-Per spec §9.0, **every aggregate metric in the report is denominated in the base currency above** — totals, weights, market values, P&L, KPI strip, P&L ranking, theme/sector exposure, holding-period pacing. Source-currency display is preserved only inside per-lot popovers and the source audit.
-
-For every non-base currency in your book, supply a base-quoted spot rate below. The format is `<BASE>/<CCY>: <rate>` where the rate is "1 unit of base = N units of CCY":
-
-- USD/TWD:
-- USD/JPY:
-- USD/HKD:
-- USD/GBP:
-- USD/EUR:
-
-Leave a line blank only if you do **not** hold any position in that currency. If `Base currency` above is set to something other than USD, replace the `USD/` prefix with your chosen base — e.g. `TWD/USD`, `TWD/JPY`. If you hold a non-base position and the corresponding rate is missing, the agent will fetch a live rate at generation time (yfinance `=X` symbols, ECB reference, or any §8.5 fallback) and record the source + as-of in the report's Sources audit. **Never assume parity** — that produces multi-thousand-percent weight errors in the dashboard.
-
 ## Market Data API Keys (optional fallback)
 
 Latest prices are fetched first by a market-aware latest-price subagent. Listed securities and FX use `yfinance` first; crypto should prefer Binance public spot and CoinGecko before any Yahoo-style fallback. These keys are optional fallback sources when the primary source is missing, stale, unsupported, or invalid for a ticker.
+
+This repo **does not operate or endorse** any third-party API. If you add keys, **you** must comply with each provider’s **terms of service**, **rate limits**, and billing rules. Do not assume unlimited quota.
 
 - TWELVE_DATA_API_KEY:
 - FINNHUB_API_KEY:

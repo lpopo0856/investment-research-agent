@@ -5,41 +5,47 @@
 
 This is a structural rule, not a stylistic one — totals, weights, P&L ranking, theme/sector exposure, holding-period pacing aggregates all collapse incorrectly when source currencies are summed naïvely. Treat any aggregate cell rendered in a currency other than the configured base as a defect.
 
-The remainder of this section uses **USD** in every example (the default base). When `SETTINGS.md` selects a different base currency, mentally substitute that code for `USD` everywhere below: prefixes (`$` → `NT$` for TWD, `¥` for JPY, etc.), FX dict keys (`USD/TWD` → `<BASE>/TWD`), and all aggregate units. The `scripts/generate_report.py` renderer handles the prefix and key swaps automatically once the SETTINGS line is set.
+The remainder of this section uses **USD** in examples because it is the default base. When `SETTINGS.md` selects a different base currency, mentally substitute that code for `USD` everywhere below: prefixes (`$` → `NT$` for TWD, `¥` for JPY, etc.), auto-FX keys (`USD/TWD` → `<BASE>/TWD`), and all aggregate units. `scripts/fetch_prices.py` derives and fetches the needed FX pairs; `scripts/generate_report.py` handles prefix and key swaps once the SETTINGS line is set.
 
-#### Where USD is mandatory (every aggregate, every chart axis)
+#### Where base currency is mandatory (every aggregate, every chart axis)
 
-- §10.1 #2 KPI strip: 總資產 / 投資部位 / 現金與類現金 / 已知損益 — all USD.
-- §10.1 #3 Holdings table — `市值` (Value) column, `損益` (P&L) column, all weights — all USD-derived. The `最新價` (Price) column shows the **native trade currency** (e.g. `NT$2,300`, `£123.45`) because that is the user-facing market price; everything that aggregates *with* that price is USD.
-- §10.4 P&L ranking bar chart, §10.1 #5 theme/sector exposure bars, §10.1 #8 risk heatmap weight rows, §10.1 #9 Recommended adjustments `目前` weight column — USD-derived.
-- §10.4 Holding period & pacing — the cost-weighted aggregates use USD cost basis, even when the original lot was acquired in a non-USD currency.
+- §10.1 #2 KPI strip: 總資產 / 投資部位 / 現金與類現金 / 已知損益 — all base-currency denominated.
+- §10.1 #3 Holdings table — `市值` (Value) column, `損益` (P&L) column, all weights — all base-currency derived. The `最新價` (Price) column shows the **native trade currency** (e.g. `NT$2,300`, `£123.45`) because that is the user-facing market price; everything that aggregates *with* that price is base-currency denominated.
+- §10.4 P&L ranking bar chart, §10.1 #5 theme/sector exposure bars, §10.1 #8 risk heatmap weight rows, §10.1 #9 Recommended adjustments `目前` weight column — base-currency derived.
+- §10.4 Holding period & pacing — the cost-weighted aggregates use base-currency cost basis, even when the original lot was acquired in a non-base currency.
 
 #### Where the **native trade currency** is preserved (display only — never re-aggregated)
 
 - Symbol popover: prose / metadata only, no native-currency math.
-- **Price popover** lot-detail rows: each lot's `成本` (cost) shows the **original** acquisition currency with its prefix (`NT$2,300`, `¥3,150`, `£12.34`) so the user can recognize the trade as they entered it. The popover footer (`平均成本 / 總成本 / 總損益`) is rendered in **USD** with `$` prefix.
+- **Price popover** lot-detail rows: each lot's `成本` (cost) shows the **original** acquisition currency with its prefix (`NT$2,300`, `¥3,150`, `£12.34`) so the user can recognize the trade as they entered it. The popover footer (`平均成本 / 總成本 / 總損益`) is rendered in the configured base currency.
 - The `最新價` cell in the Holdings table shows the live native price as quoted by the source (TWSE returns TWD, JPX returns JPY, etc.).
 - **Sources & data gaps** audit row may quote raw native-currency feed values when explaining a fallback.
 - Masthead meta row: list every active FX pair as `USD/TWD 32.5`, `USD/JPY 156.0`, etc.
 
-#### Required FX inputs
+#### Automatic FX rates
 
-The agent must supply USD-quoted rates for every non-USD currency in the book, via `SETTINGS.md` (or the editorial context JSON consumed by `scripts/generate_report.py`):
+`SETTINGS.md` must not contain user-supplied FX rates, and `report_context.json` must not override them. For every non-base currency in the book, `scripts/fetch_prices.py` must auto-fetch a base-quoted spot rate and write it to `prices.json["_fx"]["rates"]`:
 
 ```jsonc
-"fx": {
-  "USD/TWD": 32.5,    // 1 USD = 32.5 TWD  → divide TWD amount by 32.5
-  "USD/JPY": 156.0,
-  "USD/HKD": 7.85,
-  "USD/GBP": 0.78
+"_fx": {
+  "base": "USD",
+  "rates": {
+    "USD/TWD": 32.5,    // 1 USD = 32.5 TWD  → divide TWD amount by 32.5
+    "USD/JPY": 156.0,
+    "USD/HKD": 7.85,
+    "USD/GBP": 0.78
+  },
+  "details": { "...": "source/as_of/fallback audit fields" }
 }
 ```
 
-If a non-USD currency appears in the book and no FX rate is configured, the agent **must** fetch a credible rate at generation time using §8 (yfinance `=X` symbols, ECB / central-bank reference, or any §8.5 fallback tier) and:
+If a non-base currency appears in the book, `scripts/fetch_prices.py` must fetch a credible rate using §8 (yfinance `=X` symbols first, then keyed FX APIs, ECB / central-bank reference, or any §8.5 fallback tier) and:
 
-1. Add the rate to the working `fx` dict for the run.
-2. Surface every fetched rate in the masthead meta row alongside any user-supplied rates.
-3. Record the rate's source and `as_of` timestamp in **Sources & data gaps**.
+1. Add the rate to `prices.json["_fx"]["rates"]` for the run.
+2. Store the source, fallback chain, and `as_of` timestamp in `prices.json["_fx"]["details"]`.
+3. Surface every fetched rate in the masthead meta row and **Sources & data gaps**.
+
+If the auto-fetch pipeline cannot resolve a required pair, the affected aggregate renders as `n/a` and the report audit must identify the missing pair. Do **not** patch the gap by adding a manual FX line to `SETTINGS.md` or `report_context.json`.
 
 **Never silently assume parity** (treating TWD or JPY as if it were USD). That produces multi-thousand-percent weight errors in the dashboard.
 
@@ -47,21 +53,21 @@ If a non-USD currency appears in the book and no FX rate is configured, the agen
 
 | What | Conversion |
 |---|---|
-| Cash line in non-USD (`USD: 35600 [cash]`, `TWD: 1200000 [cash]`) | `USD_value = native_amount / FX(USD/native)`. The Price popover may show the original cash amount; the aggregate cash KPI is USD. |
-| Latest price × quantity | `USD_market_value = latest_price × quantity × FX(trade_currency → USD)`. The trade currency is determined by the `[<MARKET>]` tag (`TW` → TWD, `JP` → JPY, `LSE` → GBP, `HK` → HKD, `US` / `crypto` / `FX` → USD). |
-| Cost basis (per lot) | Same as price-side conversion. **Use the lot's acquisition-date FX rate** when the agent has it; otherwise fall back to the current rate and add a `cost_fx_approximation` note to the audit. The popover shows the per-lot original-currency cost as captured in `HOLDINGS.md`; the popover footer is USD-converted. |
-| Per-holding P&L | `USD_pnl = USD_market_value − Σ_lots(USD_cost)`. FX-swing P&L is implicit in this calculation; the spec does not separately decompose it. |
+| Cash line in non-base currency (`USD: 35600 [cash]`, `TWD: 1200000 [cash]`) | `base_value = native_amount / FX(base/native)`. The Price popover may show the original cash amount; the aggregate cash KPI is base-currency denominated. |
+| Latest price × quantity | `base_market_value = latest_price × quantity × FX(trade_currency → base)`. The trade currency is determined by quote metadata first, then the `[<MARKET>]` fallback (`TW` → TWD, `JP` → JPY, `LSE` → GBP, `HK` → HKD, `US` / `crypto` / `FX` → USD). |
+| Cost basis (per lot) | Same as price-side conversion. **Use the lot's acquisition-date FX rate** when the agent has it; otherwise fall back to the current rate and add a `cost_fx_approximation` note to the audit. The popover shows the per-lot original-currency cost as captured in `HOLDINGS.md`; the popover footer is base-currency converted. |
+| Per-holding P&L | `base_pnl = base_market_value − Σ_lots(base_cost)`. FX-swing P&L is implicit in this calculation; the spec does not separately decompose it. |
 | Move % / day move % | Pure ratios — no FX conversion needed. Stays in the native price's currency-relative terms. |
 
 #### Self-check items (run as part of Appendix A.5)
 
-- Every cell in the `市值` (Value) column starts with `$`.
-- Every cell in the `損益` (P&L) column starts with `+$` / `−$` (or `—` for cash, `n/a` for missing cost).
-- KPI strip's four big numbers all start with `$`.
-- Price popover footer (`總成本 / 總損益`) starts with `$`.
+- Every cell in the `市值` (Value) column uses the configured base-currency prefix.
+- Every cell in the `損益` (P&L) column uses the configured base-currency prefix with `+` / `−` (or `—` for cash, `n/a` for missing cost).
+- KPI strip's four big numbers all use the configured base-currency prefix.
+- Price popover footer (`總成本 / 總損益`) uses the configured base-currency prefix.
 - Price popover lot rows show **native currency** prefixes for `成本` (e.g. `NT$2,300` for a `[TW]` lot bought via `2330` at `NT$2300`).
-- Masthead meta row enumerates every FX pair used; each pair has a value and an `as_of` (or `(SETTINGS)` if user-supplied).
-- Source audit lists each FX rate's source for any rate not user-supplied.
+- Masthead meta row enumerates every FX pair used; each pair has a value and an `as_of`.
+- Source audit lists each FX rate's source and fallback status from `prices.json["_fx"]["details"]`.
 
 ### 9.1 Required metrics
 
@@ -145,8 +151,8 @@ Section 3 of the HTML uses these columns, left to right. **Default to scan-light
 | 2 | **Category** | Asset class plus a single tag chip (`High vol`, `Long`, `Mid`, `Short`, `Rich val`, `Overheated`, `High risk`, `Cash`, etc.). Translate to SETTINGS language |
 | 3 | **Price** | Latest static snapshot price, large; small day / 24h move % subline below when available. The whole cell is the popover trigger (§13.5). No runtime refresh target and no session-state badge |
 | 4 | **Weight** (num) | % of total assets |
-| 5 | **Value** (num) | Current market value (USD basis) |
-| 6 | **P&L** (num) | `±$X / ±Y%`. Cash → `—`. Cost missing → `n/a`. (Detail per lot lives in the Price popover; this column is the at-a-glance aggregate) |
+| 5 | **Value** (num) | Current market value (base-currency basis) |
+| 6 | **P&L** (num) | `±<base-prefix>X / ±Y%`. Cash → `—`. Cost missing → `n/a`. (Detail per lot lives in the Price popover; this column is the at-a-glance aggregate) |
 | 7 | **Action** | Recommendation with action verb, price band, and trigger |
 
 The `Held` and `Move` columns from earlier specs are **removed**. Hold period stays available in the Symbol popover and aggregated in **Holding period & pacing**.

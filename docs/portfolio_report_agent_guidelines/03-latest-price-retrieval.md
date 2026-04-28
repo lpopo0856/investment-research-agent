@@ -204,6 +204,8 @@ Persist these fields for every ticker at generation time. The HTML embeds only t
 - If `yfinance` auto-correction was attempted: failure reason, attempts, applied fix when successful, final outcome
 - If pacing retries fired: `yfinance_request_started_at`, `yfinance_request_latency_ms`, `yfinance_retry_count`
 
+Persist automatic FX conversion data under `prices.json["_fx"]`: `base`, `required_currencies`, `rates` keyed `<BASE>/<CCY>`, and `details` containing the same source / freshness / fallback audit fields for each FX pair. Do not source FX conversion from `SETTINGS.md` or `report_context.json`.
+
 ---
 
 ## 9. Computations & missing-value glyphs
