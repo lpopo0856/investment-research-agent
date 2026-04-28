@@ -30,7 +30,7 @@
   },
   "dashboard": {
     "title": "投资组合仪表板",
-    "subtitle": "总体 KPI · USD 基准",
+    "subtitle": "总体 KPI · {base} 基准",
     "total_assets": "总资产",
     "invested": "投资仓位",
     "cash": "现金与类现金",
@@ -45,7 +45,7 @@
   },
   "allocation": {
     "title": "配置与持仓权重",
-    "subtitle": "USD 基准, {date}",
+    "subtitle": "{base} 基准, {date}",
     "donut_label": "资产配置",
     "total_label": "总计",
     "cat_us": "个股 / ETF",
@@ -141,7 +141,7 @@
   },
   "pnl_ranking": {
     "title": "持仓损益排序",
-    "subtitle": "已实现＋未实现损益（USD）"
+    "subtitle": "已实现＋未实现损益（{base}）"
   },
   "holding_period": {
     "title": "持有期间与节奏",
@@ -162,7 +162,7 @@
   },
   "theme_sector": {
     "title": "主题与行业暴露",
-    "subtitle": "USD 基准 · 含 ETF 穿透分配",
+    "subtitle": "{base} 基准 · 含 ETF 穿透分配",
     "placeholder": "（主题与行业暴露待补 — 由 agent 在执行时依 §4.3 自动分类后，将预先渲染的 HTML 通过 context.theme_sector_html 注入）"
   },
   "news": {

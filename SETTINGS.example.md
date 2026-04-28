@@ -36,11 +36,19 @@ Describe how you want the agent to talk to you about risk and conviction. Exampl
 - Cash floor: 10% (warn below this).
 - Single-day move alert: ±8%.
 
-## FX Rates (USD basis — required for any non-USD position)
+## Base currency (optional, default USD)
 
-Per spec §9.0, **every aggregate metric in the report is denominated in USD** — totals, weights, market values, P&L, KPI strip, P&L ranking, theme/sector exposure, holding-period pacing. Source-currency display is preserved only inside per-lot popovers and the source audit.
+The base currency every aggregate in the report is denominated in. Use a single ISO 4217 code (e.g. `USD`, `TWD`, `JPY`, `HKD`, `GBP`, `EUR`). When omitted, the agent defaults to `USD` (the historical hard-coded basis).
 
-For every non-USD currency in your book, supply a USD-quoted spot rate below. The format is `USD/<CCY>: <rate>` where the rate is "1 USD = N units of CCY":
+- Base currency: USD
+
+Choose this once and keep it stable — switching base mid-stream will make today's report incomparable to yesterday's. Pick whatever currency matches how you actually evaluate your portfolio (most TW-based users want `TWD`; most globally-diversified investors want `USD`).
+
+## FX Rates (base-currency basis — required for any non-base position)
+
+Per spec §9.0, **every aggregate metric in the report is denominated in the base currency above** — totals, weights, market values, P&L, KPI strip, P&L ranking, theme/sector exposure, holding-period pacing. Source-currency display is preserved only inside per-lot popovers and the source audit.
+
+For every non-base currency in your book, supply a base-quoted spot rate below. The format is `<BASE>/<CCY>: <rate>` where the rate is "1 unit of base = N units of CCY":
 
 - USD/TWD:
 - USD/JPY:
@@ -48,7 +56,7 @@ For every non-USD currency in your book, supply a USD-quoted spot rate below. Th
 - USD/GBP:
 - USD/EUR:
 
-Leave a line blank only if you do **not** hold any position in that currency. If you hold a non-USD position and the corresponding rate is missing, the agent will fetch a live rate at generation time (yfinance `=X` symbols, ECB reference, or any §8.5 fallback) and record the source + as-of in the report's Sources audit. **Never assume parity** — that produces multi-thousand-percent weight errors in the dashboard.
+Leave a line blank only if you do **not** hold any position in that currency. If `Base currency` above is set to something other than USD, replace the `USD/` prefix with your chosen base — e.g. `TWD/USD`, `TWD/JPY`. If you hold a non-base position and the corresponding rate is missing, the agent will fetch a live rate at generation time (yfinance `=X` symbols, ECB reference, or any §8.5 fallback) and record the source + as-of in the report's Sources audit. **Never assume parity** — that produces multi-thousand-percent weight errors in the dashboard.
 
 ## Market Data API Keys (optional fallback)
 

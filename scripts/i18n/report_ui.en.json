@@ -30,7 +30,7 @@
   },
   "dashboard": {
     "title": "Portfolio Dashboard",
-    "subtitle": "Core KPIs · USD Basis",
+    "subtitle": "Core KPIs · {base} basis",
     "total_assets": "Total Assets",
     "invested": "Invested Positions",
     "cash": "Cash & Cash-Like",
@@ -45,7 +45,7 @@
   },
   "allocation": {
     "title": "Allocation & Weights",
-    "subtitle": "USD basis, {date}",
+    "subtitle": "{base} basis, {date}",
     "donut_label": "Asset allocation",
     "total_label": "TOTAL",
     "cat_us": "Stocks / ETFs",
@@ -141,7 +141,7 @@
   },
   "pnl_ranking": {
     "title": "P&L Ranking",
-    "subtitle": "Realized + unrealized P&L (USD)"
+    "subtitle": "Realized + unrealized P&L ({base})"
   },
   "holding_period": {
     "title": "Holding Period and Pacing",
@@ -162,7 +162,7 @@
   },
   "theme_sector": {
     "title": "Theme and Sector Exposure",
-    "subtitle": "USD basis · ETF look-through where applicable",
+    "subtitle": "{base} basis · ETF look-through where applicable",
     "placeholder": "(Theme / sector exposure pending — the agent must auto-classify per spec §4.3 and inject the pre-rendered bars as context.theme_sector_html)"
   },
   "news": {

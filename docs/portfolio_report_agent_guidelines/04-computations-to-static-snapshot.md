@@ -1,9 +1,11 @@
 
-### 9.0 Currency canonicalization — USD basis (HARD REQUIREMENT)
+### 9.0 Currency canonicalization — base-currency basis (HARD REQUIREMENT)
 
-**Every numeric value rendered in the report is in USD.** No bilingual currency mixing in aggregate cells, no implicit currency parity, no "well, the user knows it's TWD". A 2330.TW lot bought at NT$2,300 and an NVDA lot bought at $185 must contribute to the same USD-denominated `Σ` before any aggregation.
+**Every numeric value rendered in the report is denominated in the configured base currency.** The base currency is chosen once via `SETTINGS.md`'s `Base currency:` line — default `USD` when the line is omitted. Whatever value is set there is the canonical unit for every aggregate: a 2330.TW lot bought at NT$2,300 and an NVDA lot bought at $185 must contribute to the same base-denominated `Σ` before any aggregation.
 
-This is a structural rule, not a stylistic one — totals, weights, P&L ranking, theme/sector exposure, holding-period pacing aggregates all collapse incorrectly when source currencies are summed naïvely. Treat any aggregate cell containing a non-USD number as a defect.
+This is a structural rule, not a stylistic one — totals, weights, P&L ranking, theme/sector exposure, holding-period pacing aggregates all collapse incorrectly when source currencies are summed naïvely. Treat any aggregate cell rendered in a currency other than the configured base as a defect.
+
+The remainder of this section uses **USD** in every example (the default base). When `SETTINGS.md` selects a different base currency, mentally substitute that code for `USD` everywhere below: prefixes (`$` → `NT$` for TWD, `¥` for JPY, etc.), FX dict keys (`USD/TWD` → `<BASE>/TWD`), and all aggregate units. The `scripts/generate_report.py` renderer handles the prefix and key swaps automatically once the SETTINGS line is set.
 
 #### Where USD is mandatory (every aggregate, every chart axis)
 
@@ -123,7 +125,7 @@ The semantic split lets the user scan the table once: every `—` is expected, e
 2. Portfolio dashboard (KPIs)
 3. Holdings P&L and weights (table) — see §10.2
 4. Holding period & pacing — see §10.3
-5. Theme / sector exposure — **agent-authored**. The renderer does not classify themes; the agent must auto-classify each holding by sector / theme each run (per §4.3) and pre-render the bar chart as a string of HTML, then pass it via `context["theme_sector_html"]` in `report_context.json`. Markup contract is documented in `scripts/generate_report.py` (CONTEXT FILE SHAPE) and matches `_sample_redesign.html` lines 1234-1268: `<div class="bars">` with `bar warn` / `bar info` / `bar pos` / `bar neg` modifiers, optional `<div class="bucket-note">` callouts. If the field is missing, the section renders a placeholder — it is NOT computed automatically.
+5. Theme / sector exposure — **agent-authored, deterministic**. See **§10.4.2** for the full authoring contract: closed-list sectors, fixed-order theme master list, ETF look-through, bar color rules, bucket-note thresholds, and self-check items. The agent injects pre-rendered HTML via `context["theme_sector_html"]`. Following §10.4.2 produces identical output across runs given the same `HOLDINGS.md` + `prices.json`. If the field is missing, the section renders a placeholder — it is NOT computed automatically.
 6. Latest material news
 7. Forward 30-day event calendar
 8. High-risk and high-opportunity list
@@ -198,6 +200,91 @@ Rules:
 - Sort by `score desc`, then `weight desc`, then ticker.
 - Show the rubric version in the section subtitle or eyebrow (for example `Stable rubric v1` / `固定規則 v1`) so the scoring standard remains explicit across runs.
 - If no position has enough data to compute a score, render an explicit placeholder rather than leaving the grid blank.
+
+### 10.4.2 Theme & Sector exposure — deterministic authoring contract (HARD REQUIREMENT)
+
+The renderer does not classify holdings — the agent authors this section's HTML and injects it as `context["theme_sector_html"]`. To produce identical output across runs given the same `HOLDINGS.md` + `prices.json`, follow these rules **literally**, no free-form judgment.
+
+#### A. Two parallel taxonomies (left + right column)
+
+Render exactly two `.bars` lists side by side inside `<div class="cols-2">`:
+
+| Column | Label (eyebrow) | Domain |
+|---|---|---|
+| Left | `主題` / `Themes` | Cross-cutting narrative buckets (e.g. AI 算力, 雲端 / 資料中心, 新能源 / 核能, 半導體設備, 加密資產, 防禦資產). May overlap — one ticker can belong to multiple themes |
+| Right | `行業` / `Sectors` | Mutually exclusive primary industry per holding. Each ticker maps to exactly one sector |
+
+Each column must be a `<div class="bars">` block with one `<div class="bar-row">` per bucket. Match the markup at `_sample_redesign.html` lines 1267-1300 exactly.
+
+#### B. Sector taxonomy (closed list — pick from these only)
+
+Sectors are deterministic. Map every non-cash, non-FX holding to **exactly one** of the following buckets using the issuer's most recent GICS or equivalent self-disclosure (Wikipedia / Reuters company page / 10-K / annual report):
+
+`半導體` · `軟體 / 雲端` · `通信 / 光電` · `硬體 / 網通` · `汽車 / 電動車` · `能源 / 資源` · `航太 / 國防` · `金融` · `醫療 / 生技` · `消費` · `工業` · `公用事業` · `房地產` · `加密資產` · `多元 ETF / 指數` · `其他`
+
+Rules:
+- A holding's sector is its **primary** industry — never split a single stock across two sectors.
+- Pure index ETFs (VWRA, QQQ, SPY, etc.) go to `多元 ETF / 指數`. Sector ETFs (XLF, SMH) go to the corresponding sector.
+- Cash and FX positions are excluded from this column entirely (they have no sector).
+- Tickers without a clear classification go to `其他`. Document the reason in **Sources & data gaps**.
+
+#### C. Theme taxonomy (open list — derived per portfolio, but stable)
+
+Themes are agent-derived but must be deterministic given the holdings. Apply this algorithm:
+
+1. **Seed candidates** from a fixed master list: `AI 算力` · `雲端 / 資料中心` · `半導體設備` · `先進封裝` · `新能源 / 核能` · `光電 / OCS` · `航太 / 國防` · `加密資產` · `去美元化 / 黃金` · `防禦資產 / 現金代理` · `通膨保護` · `Mega-cap Tech`.
+2. **Drop themes with zero exposure** (no holding maps to them this run).
+3. **Merge near-duplicates** before rendering (e.g. `光電` ⊃ `OCS` if both apply to the same set of tickers). Document the merge rule once in the bucket-note.
+4. **Cap the visible list at 7 buckets**. If more themes are non-zero, fold the smallest into `其他`.
+5. **Theme order is fixed by the master list above**, then sorted by % within sequential clusters — meaning the same portfolio always produces the same theme order across runs.
+
+A holding may belong to multiple themes. Compute a holding's contribution to a theme as `holding_weight_pct × theme_membership_share`, where `theme_membership_share ∈ {0, 0.25, 0.5, 0.75, 1.0}` is documented per ticker in the run's source-audit notes.
+
+#### D. ETF look-through (mandatory)
+
+Index ETFs (VWRA, QQQ, etc.) must be allocated through to their underlying sector / theme weights using the most recent published index composition (issuer fact sheet or index provider). Document the as-of date in the bucket-note. If the look-through data is unavailable for an ETF, allocate 100% of its weight to `多元 ETF / 指數` (sectors) and to the most-applicable single theme (themes) and flag in Sources & data gaps.
+
+#### E. Bar color rules (HARD REQUIREMENT)
+
+Each bar gets exactly **one** modifier class. Apply in this order — first match wins:
+
+| Class | Trigger | Meaning |
+|---|---|---|
+| `bar warn` | `pct >= theme_concentration_warn` (default 25%, see SETTINGS.md) **OR** any bucket in the top-3 with `pct >= 12.5%` | Concentration alert |
+| `bar info` | The bucket cuts across multiple sectors AND `pct >= 7.5%` (themes column only — sectors never use `info`) | Cross-cutting / notable |
+| `bar pos` | Reserved for explicit "thesis-aligned" callouts (rare) | Used only when noted in editorial commentary |
+| `bar neg` | Reserved for explicit "thesis-broken" callouts (rare) | Used only when noted in editorial commentary |
+| (no modifier) | Everything else | Default |
+
+#### F. Sort, precision, bar widths
+
+- Within each column, sort by `pct desc` (themes obey the master-list cluster order from C.5 first, then `pct desc` inside each cluster).
+- Weights to **1 decimal place**.
+- Bar width is **relative to the largest bucket in the same column** — the largest renders at `100%`, others scale proportionally. This matches the holdings-weight chart in `§10.4 #2` and the sample's lines 1277-1294.
+
+#### G. Bucket-note callouts (concentration warnings)
+
+Render a `<div class="bucket-note" style="margin-top:18px">` immediately after the `cols-2` block when **any** of these fire:
+
+- **Top-3 correlated themes** sum > `theme_concentration_warn` (default 30%) → `<b>集中度警示：</b>{theme_a} {pct}% ＋ {theme_b} {pct}% ＋ {theme_c} {pct}% ＝ <b>{sum}%</b>，超過 {threshold}% 相關性主題上限。`
+- **Single sector** > `sector_concentration_warn` (default 30%, separate from theme threshold) → `<b>行業集中：</b>{sector} 佔 {pct}%，超過 {threshold}% 單一行業上限。`
+- **ETF look-through fallback** used → `<b>ETF 穿透不可得：</b>{ticker} ({pct}%) 暫以「多元 ETF / 指數」整塊計入；待補底層權重後重算。`
+
+If multiple conditions fire, render multiple `bucket-note` divs back-to-back. If none fire, omit the note entirely.
+
+#### H. Self-check (per run, before generating the report)
+
+The agent must verify:
+
+1. Sectors sum to **exactly 100%** (cash/FX excluded).
+2. Every non-cash, non-FX ticker appears in **exactly one** sector.
+3. Top theme `pct` ≤ 100%.
+4. Visible theme count ≤ 7.
+5. Bar order matches the rules in F.
+6. Bar colors match the order rules in E.
+7. Bucket-notes follow G's exact wording template (token-for-token).
+
+A failure on any of items 1-3 is a hard error — fix the classification, do not generate the report. Items 4-7 are softer (the report still renders) but should be flagged in **Sources & data gaps**.
 
 ### 10.5 News & event coverage
 

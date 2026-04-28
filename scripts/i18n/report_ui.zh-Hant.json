@@ -30,7 +30,7 @@
   },
   "dashboard": {
     "title": "投資組合儀表板",
-    "subtitle": "總體 KPI · USD 基準",
+    "subtitle": "總體 KPI · {base} 基準",
     "total_assets": "總資產",
     "invested": "投資部位",
     "cash": "現金與類現金",
@@ -45,7 +45,7 @@
   },
   "allocation": {
     "title": "配置與持股權重",
-    "subtitle": "USD 基準, {date}",
+    "subtitle": "{base} 基準, {date}",
     "donut_label": "資產配置",
     "total_label": "總計",
     "cat_us": "個股 / ETF",
@@ -141,7 +141,7 @@
   },
   "pnl_ranking": {
     "title": "持股損益排序",
-    "subtitle": "已實現＋未實現損益（USD）"
+    "subtitle": "已實現＋未實現損益（{base}）"
   },
   "holding_period": {
     "title": "持有期間與節奏",
@@ -162,7 +162,7 @@
   },
   "theme_sector": {
     "title": "主題與行業暴險",
-    "subtitle": "USD 基準 · 含 ETF 穿透分配",
+    "subtitle": "{base} 基準 · 含 ETF 穿透分配",
     "placeholder": "（主題與行業暴險待補 — 由 agent 在執行時依 §4.3 自動分類後，將預先渲染的 HTML 透過 context.theme_sector_html 注入）"
   },
   "news": {
