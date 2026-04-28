@@ -46,14 +46,45 @@ CONTEXT FILE SHAPE  (report_context.json)
       "adjustments":   [{"ticker": "KAPA", "current_pct": 4.5, "action": "trim",
                           "action_label": "減碼 20%", "why": "...", "trigger": "..."},
                          ...],
+      "holdings_actions": {"BTC": "長線續抱；50–55k 分批加碼", ...},
       "actions":       {"must_do": ["..."], "may_do": ["..."],
                          "avoid": ["..."],  "need_data": ["..."]},
       "data_gaps":     [{"summary": "ALPH 成本基礎缺失",
                           "detail": "<HOLDINGS.md → Long Term> 內 ALPH 1 @ ? on ..."}, ...],
-      "spec_update_note": "..."
+      "spec_update_note": "...",
+
+      "theme_sector_html": "<div class=\"bars\">...</div>"
     }
 
-Every field is optional; missing fields render as `n/a` per §9.6 with no guesses.
+REQUIRED EDITORIAL HTML — `theme_sector_html` (spec §4.3, §10.1 #5)
+-------------------------------------------------------------------
+The agent **must** auto-classify each holding by sector / theme each run (e.g.
+半導體 / AI / 雲端 / 大型科技 / 醫療 / 能源 / 金融 / 消費 …) and pre-render the bar
+chart as a string of HTML. The script does NOT compute this for you because the
+classification is editorial — it depends on current public-data context, not
+just the ticker. If `theme_sector_html` is missing, the section renders a
+placeholder telling the user the agent skipped this step.
+
+Markup contract — match `_sample_redesign.html` lines ~1234-1268. Use:
+
+    <div class="bars">
+      <div class="bar-row">
+        <div class="bar-label">主題 A</div>
+        <div class="bar-track"><div class="bar warn" style="width:100%"></div></div>
+        <div class="bar-value">15.5%</div>
+      </div>
+      ... (one bar-row per theme/sector)
+    </div>
+    <div class="bucket-note" style="margin-top:14px">
+      <b>解讀：</b>主題 A 過度集中 ...
+    </div>
+
+Bar color modifiers: `bar warn` (orange — concentration alert), `bar info` (blue —
+default theme), `bar pos` (green), `bar neg` (red). All weights are USD-based
+(spec §9.0). Optional `bucket-note` callouts surface concentration breaches.
+
+Every other field is optional; missing fields render as `n/a` per §9.6 with no
+guesses.
 
 The "Sources & data gaps" audit table is built mechanically from `prices.json` —
 the agent does not need to author it.
@@ -165,12 +196,20 @@ def _extract_settings_section_bullets(text: str, heading: str) -> List[str]:
     in_section = False
     for raw_line in text.splitlines():
         line = raw_line.rstrip()
+        # Match both `## Language` and `Language:` heading formats.
         if line.startswith("## "):
             current = line[3:].strip().lower()
             in_section = current == heading.lower()
             continue
+        stripped = line.strip()
+        if stripped.lower() == heading.lower() + ":":
+            in_section = True
+            continue
         if not in_section:
             continue
+        # A new plain heading (no leading `-`) that ends with `:` terminates the section.
+        if stripped and not stripped.startswith("-") and stripped.endswith(":"):
+            break
         if line.startswith("### "):
             break
         if line.lstrip().startswith("-"):
@@ -761,12 +800,30 @@ def _fmt_pct(value: Optional[float]) -> str:
 
 
 def _fmt_signed(value: Optional[float], pct: Optional[float]) -> str:
+    """Return signed P&L wrapped in a <span> — used by callers that style at span level.
+
+    For table cells where the canonical sample applies the color class directly to
+    `<td class="num pos-txt">`, prefer `_fmt_signed_parts()` instead.
+    """
     if value is None:
         return f'<span class="na">{_ui("common.na")}</span>'
     cls = "pos-txt" if value >= 0 else "neg-txt"
     sign = "+" if value >= 0 else "−"
     pct_str = f" / {sign}{abs(pct):.1f}%" if pct is not None else ""
     return f'<span class="{cls}">{sign}${abs(value):,.0f}{pct_str}</span>'
+
+
+def _fmt_signed_parts(value: Optional[float], pct: Optional[float]) -> Tuple[str, str]:
+    """Return (extra_td_class, inner_html) so callers can apply pos-txt/neg-txt to the <td>.
+
+    Matches the canonical sample's `<td class="num pos-txt">+$12,993 / +43.3%</td>` shape.
+    """
+    if value is None:
+        return "", f'<span class="na">{_ui("common.na")}</span>'
+    cls = "pos-txt" if value >= 0 else "neg-txt"
+    sign = "+" if value >= 0 else "−"
+    pct_str = f" / {sign}{abs(pct):.1f}%" if pct is not None else ""
+    return cls, f"{sign}${abs(value):,.0f}{pct_str}"
 
 
 def _format_years(value: float) -> str:
@@ -872,23 +929,224 @@ def render_dashboard(
   </section>"""
 
 
+_ALLOCATION_PALETTE = [
+    "#1f2937",  # ink
+    "#15703d",  # pos
+    "#8a5a1c",  # accent-warm
+    "#1d4690",  # info
+    "#b15309",  # warn
+    "#b42318",  # neg
+    "#8a8f99",  # muted-2
+    "#6b7280",  # muted
+]
+
+_ALLOCATION_CATEGORIES = (
+    # (key, ui_label_key)
+    ("us",     "allocation.cat_us"),
+    ("crypto", "allocation.cat_crypto"),
+    ("cash",   "allocation.cat_cash"),
+    ("tw",     "allocation.cat_tw"),
+    ("jp",     "allocation.cat_jp"),
+    ("hk",     "allocation.cat_hk"),
+    ("lse",    "allocation.cat_lse"),
+    ("fx",     "allocation.cat_fx"),
+    ("other",  "allocation.cat_other"),
+)
+
+
+def _allocation_category_key(agg: TickerAggregate) -> str:
+    if agg.is_cash:
+        return "cash"
+    m = agg.market
+    if m == MarketType.US:
+        return "us"
+    if m == MarketType.CRYPTO:
+        return "crypto"
+    if m in (MarketType.TW, MarketType.TWO):
+        return "tw"
+    if m == MarketType.JP:
+        return "jp"
+    if m == MarketType.HK:
+        return "hk"
+    if m == MarketType.LSE:
+        return "lse"
+    if m == MarketType.FX:
+        return "fx"
+    return "other"
+
+
+def _format_total_compact(value: float) -> str:
+    if value >= 1_000_000:
+        return f"${value/1_000_000:.1f}M"
+    if value >= 1_000:
+        return f"${value/1_000:.0f}k"
+    return f"${value:.0f}"
+
+
+def render_allocation_and_weight(
+    aggs: Dict[str, TickerAggregate],
+    total_assets: float,
+    today: _dt.date,
+) -> str:
+    """§10.1 — Allocation donut + top-N weight bars (matches sample lines 807-858)."""
+    if total_assets <= 0:
+        return ""
+
+    # 1) Aggregate market values per category, drop empty buckets, sort by value desc.
+    sums: Dict[str, float] = {}
+    for agg in aggs.values():
+        if agg.market_value is None or agg.market_value <= 0:
+            continue
+        sums[_allocation_category_key(agg)] = sums.get(
+            _allocation_category_key(agg), 0.0
+        ) + agg.market_value
+
+    cats: List[Tuple[str, str, float, float]] = []  # (label, color, value, pct)
+    for key, ui_key in _ALLOCATION_CATEGORIES:
+        v = sums.get(key, 0.0)
+        if v <= 0:
+            continue
+        cats.append((_ui(ui_key), "", v, v / total_assets * 100.0))
+    cats.sort(key=lambda c: -c[2])
+    cats = [
+        (label, _ALLOCATION_PALETTE[i % len(_ALLOCATION_PALETTE)], v, pct)
+        for i, (label, _, v, pct) in enumerate(cats)
+    ]
+
+    # 2) Donut SVG arcs — circumference at r=42 ≈ 263.89 (matches sample numbers).
+    import math
+    circumference = 2 * math.pi * 42
+    offset = 0.0
+    arcs: List[str] = []
+    for label, color, _v, pct in cats:
+        seg_len = pct / 100.0 * circumference
+        arcs.append(
+            f'<circle cx="60" cy="60" r="42" stroke="{color}"\n'
+            f'                      stroke-dasharray="{seg_len:.2f} {circumference:.2f}" '
+            f'stroke-dashoffset="{-offset:.2f}"/>'
+        )
+        offset += seg_len
+    arcs_html = "\n              ".join(arcs)
+
+    legend_rows = "\n            ".join(
+        f'<div class="row"><span class="sw" style="background:{color}"></span>'
+        f'<span>{_esc(label)}</span><span class="pct">{pct:.1f}%</span></div>'
+        for label, color, _v, pct in cats
+    )
+
+    total_label = _format_total_compact(total_assets)
+
+    # 3) Top-N bars (max 10) — width relative to the largest weight, like the sample.
+    holdings = sorted(
+        (a for a in aggs.values() if a.market_value is not None and a.market_value > 0),
+        key=lambda a: -(a.market_value or 0),
+    )[:10]
+    bar_rows: List[str] = []
+    if holdings:
+        max_pct = max(h.market_value / total_assets * 100.0 for h in holdings) or 1.0
+        for h in holdings:
+            pct = h.market_value / total_assets * 100.0
+            width = pct / max_pct * 100.0
+            bar_rows.append(
+                f'<div class="bar-row">'
+                f'<div class="bar-label">{_esc(h.ticker)}</div>'
+                f'<div class="bar-track"><div class="bar" style="width:{width:.1f}%"></div></div>'
+                f'<div class="bar-value">{pct:.1f}%</div>'
+                f'</div>'
+            )
+    bars_html = "\n          ".join(bar_rows)
+
+    return f"""\
+  <section class="section">
+    <div class="section-head">
+      <h2>{_esc(_ui("allocation.title"))}</h2>
+      <span class="sub">{_esc(_ui("allocation.subtitle", date=today.isoformat()))}</span>
+    </div>
+    <div class="cols-2">
+      <div>
+        <div class="donut-wrap">
+          <svg viewBox="0 0 120 120" aria-label="{_esc(_ui("allocation.donut_label"))}">
+            <circle cx="60" cy="60" r="52" fill="#f0ece0"/>
+            <g transform="rotate(-90 60 60)" fill="none" stroke-width="20">
+              {arcs_html}
+            </g>
+            <text x="60" y="56" text-anchor="middle"
+                  font-size="8" fill="#6b7280" letter-spacing=".15em">{_esc(_ui("allocation.total_label"))}</text>
+            <text x="60" y="72" text-anchor="middle"
+                  font-size="14" font-weight="650" fill="#15191f">{_esc(total_label)}</text>
+          </svg>
+          <div class="legend">
+            {legend_rows}
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="bars">
+          {bars_html}
+        </div>
+      </div>
+    </div>
+  </section>"""
+
+
+def _build_holdings_action_map(context: Dict[str, Any]) -> Dict[str, str]:
+    """Build ticker → action text map for the holdings-table action column.
+
+    Priority:
+      1. `context["holdings_actions"]` — explicit per-ticker override `{ticker: text}`.
+      2. `context["adjustments"]` — derive `"<action_label>；<trigger>"` per ticker.
+
+    Both sources may coexist; the explicit map wins on conflict.
+    """
+    explicit = context.get("holdings_actions") or {}
+    out: Dict[str, str] = {}
+    for adj in context.get("adjustments") or []:
+        ticker = (adj.get("ticker") or "").strip()
+        if not ticker:
+            continue
+        label = (adj.get("action_label") or "").strip()
+        trigger = (adj.get("trigger") or "").strip()
+        text = "；".join(p for p in (label, trigger) if p)
+        if text:
+            out[ticker] = text
+    if isinstance(explicit, dict):
+        for k, v in explicit.items():
+            if isinstance(v, str) and v.strip():
+                out[k] = v.strip()
+    return out
+
+
 def render_holdings_table(
     aggs: Dict[str, TickerAggregate],
     total_assets: float,
     prices: Dict[str, Any],
     today: _dt.date,
+    context: Optional[Dict[str, Any]] = None,
 ) -> str:
+    """Render the holdings table — emits one row per ticker, no truncation.
+
+    The wrap intentionally does NOT use `.scroll-y` because cells contain popovers
+    that must escape the wrap on desktop. Section height grows naturally with the
+    number of holdings; the user accepts this trade-off in exchange for popover
+    interactivity.
+    """
     rows: List[str] = []
     sorted_aggs = sorted(aggs.values(), key=lambda a: -(a.market_value or 0))
+    action_by_ticker = _build_holdings_action_map(context or {})
     for agg in sorted_aggs:
         weight_pct = (agg.market_value / total_assets * 100.0) if (agg.market_value and total_assets) else None
         weight_html = f"{weight_pct:.1f}%" if weight_pct is not None else f'<span class="na">{_ui("common.na")}</span>'
         value_html = _fmt_money(agg.market_value)
-        pnl_html = _ui("common.dash") if agg.is_cash else _fmt_signed(agg.pnl_amount, agg.pnl_pct)
+        if agg.is_cash:
+            pnl_td_class, pnl_html = "", _ui("common.dash")
+        else:
+            pnl_td_class, pnl_html = _fmt_signed_parts(agg.pnl_amount, agg.pnl_pct)
+        pnl_td_class_attr = f" {pnl_td_class}" if pnl_td_class else ""
         price_html, price_sub_html = _price_cell_pieces(agg, prices)
         sym_pop = _symbol_popover(agg, today)
         price_pop = _price_popover(agg, prices)
-        action = _ui("common.dash")  # editorial; agent-authored adjustments live in §9
+        action_text = action_by_ticker.get(agg.ticker)
+        action = _esc(action_text) if action_text else _ui("common.dash")
         rows.append(f"""\
           <tr>
             <td><div class="sym-trigger" tabindex="0" role="button">{_esc(agg.ticker)}{sym_pop}</div></td>
@@ -896,18 +1154,27 @@ def render_holdings_table(
             <td class="num price-cell"><div class="price-trigger" tabindex="0" role="button">{price_html}{price_sub_html}{price_pop}</div></td>
             <td class="num">{weight_html}</td>
             <td class="num">{value_html}</td>
-            <td class="num">{pnl_html}</td>
-            <td>{action}</td>
+            <td class="num{pnl_td_class_attr}">{pnl_html}</td>
+            <td class="col-action">{action}</td>
           </tr>""")
     body = "\n".join(rows)
     return f"""\
   <section class="section">
     <div class="section-head">
       <h2>{_esc(_ui("holdings.title"))}</h2>
-      <span class="sub">{_esc(_ui("holdings.subtitle"))}</span>
+      <span class="sub">{_esc(_ui("holdings.subtitle", count=len(sorted_aggs)))}</span>
     </div>
     <div class="tbl-wrap">
-      <table>
+      <table class="holdings-tbl">
+        <colgroup>
+          <col style="width:7%">
+          <col style="width:12%">
+          <col style="width:14%">
+          <col style="width:7%">
+          <col style="width:11%">
+          <col style="width:19%">
+          <col style="width:30%">
+        </colgroup>
         <thead>
           <tr>
             <th>{_esc(_ui("holdings.symbol"))}</th>
@@ -916,7 +1183,7 @@ def render_holdings_table(
             <th class="num">{_esc(_ui("holdings.weight"))}</th>
             <th class="num">{_esc(_ui("holdings.value"))}</th>
             <th class="num">{_esc(_ui("holdings.pnl"))}</th>
-            <th>{_esc(_ui("holdings.action"))}</th>
+            <th class="col-action">{_esc(_ui("holdings.action"))}</th>
           </tr>
         </thead>
         <tbody>
@@ -1122,10 +1389,13 @@ def render_holding_period(pacing: BookPacing) -> str:
 def render_theme_sector(context: Dict[str, Any]) -> str:
     """§10.1 #5 — Theme / sector exposure.
 
-    Theme/sector classification is editorial (spec §4.3 — auto-classify each run); the
-    agent computes it from current data and passes pre-rendered HTML via
-    `context["theme_sector_html"]`. If absent, we still emit the section header so the
-    11-section ordering contract holds (per spec §10.1) and surface a TODO.
+    Theme/sector classification is editorial (spec §4.3 — agent auto-classifies each
+    holding by sector / theme each run; buckets are not fixed). The agent must
+    pre-render the bar chart and pass it as `context["theme_sector_html"]`.
+
+    See the CONTEXT FILE SHAPE section at the top of this module for the markup
+    contract. If the field is missing, the section renders a placeholder so the
+    omission is visible — never a guess.
     """
     body = context.get("theme_sector_html") or (
         f'<div class="prose"><p>{_esc(_ui("theme_sector.placeholder"))}</p></div>'
@@ -1174,8 +1444,71 @@ def render_news(context: Dict[str, Any]) -> str:
   </section>"""
 
 
+_PIN_CLASS_BY_IMPACT = {"warn": "warn", "neg": "neg", "pos": "pos", "info": "info"}
+
+
+def _events_timeline_html(events: List[Dict[str, Any]], today: _dt.date) -> str:
+    """Render the 30-day event-calendar visualization (matches sample lines 1324-1338)."""
+    if not events:
+        return ""
+
+    window_days = 30
+    end = today + _dt.timedelta(days=window_days)
+
+    def parse_date(raw: str) -> Optional[_dt.date]:
+        s = (raw or "").strip()
+        if not s:
+            return None
+        for fmt in ("%Y-%m-%d", "%m-%d", "%m/%d"):
+            try:
+                d = _dt.datetime.strptime(s, fmt).date()
+                # MM-DD: assume the year that keeps the date inside [today, end].
+                if fmt != "%Y-%m-%d":
+                    d = d.replace(year=today.year)
+                    if d < today:
+                        d = d.replace(year=today.year + 1)
+                return d
+            except ValueError:
+                continue
+        return None
+
+    # Tick marks at 0/25/50/75/100% — labelled with the corresponding date.
+    ticks: List[str] = []
+    for pct in (0, 25, 50, 75, 100):
+        d = today + _dt.timedelta(days=int(window_days * pct / 100))
+        ticks.append(
+            f'<span class="tick" style="left:{pct}%"></span>'
+            f'<span class="tick-label" style="left:{pct}%">{d.strftime("%m-%d")}</span>'
+        )
+
+    pins: List[str] = []
+    for e in events:
+        d = parse_date(str(e.get("date", "")))
+        if d is None:
+            continue
+        delta = (d - today).days
+        if delta < 0 or delta > window_days:
+            continue
+        pct = delta / window_days * 100.0
+        impact_class = _PIN_CLASS_BY_IMPACT.get(str(e.get("impact_class", "")).strip(), "")
+        pin_cls = f"pin {impact_class}".rstrip()
+        title = f"{d.strftime('%m-%d')} {e.get('topic', '')} {e.get('event', '')}".strip()
+        pins.append(f'<span class="{pin_cls}" style="left:{pct:.1f}%" title="{_esc(title)}"></span>')
+        if e.get("show_label", True):
+            label = f"{e.get('topic', '')} {d.strftime('%m-%d')}".strip()
+            pins.append(f'<span class="pin-label" style="left:{pct:.1f}%">{_esc(label)}</span>')
+
+    return f"""    <div class="timeline" aria-label="{_esc(_ui("events.timeline_label"))}">
+      <div class="axis"></div>
+      {"".join(ticks)}
+      {"".join(pins)}
+    </div>
+"""
+
+
 def render_events(context: Dict[str, Any]) -> str:
     events = context.get("events") or []
+    today = _dt.date.today()
     rows = []
     for e in events:
         rows.append(f"""\
@@ -1189,13 +1522,15 @@ def render_events(context: Dict[str, Any]) -> str:
     body = "\n".join(rows) if rows else (
         f'<tr><td colspan="5" class="na" style="text-align:center;padding:14px">{_esc(_ui("events.empty"))}</td></tr>'
     )
+    timeline_html = _events_timeline_html(events, today)
+    table_style = ' style="margin-top:14px"' if timeline_html else ""
     return f"""\
   <section class="section">
     <div class="section-head">
       <h2>{_esc(_ui("events.title"))}</h2>
       <span class="sub">{_esc(_ui("events.subtitle"))}</span>
     </div>
-    <div class="tbl-wrap">
+{timeline_html}    <div class="tbl-wrap scroll-y"{table_style}>
       <table>
         <thead>
           <tr><th>{_esc(_ui("events.date"))}</th><th>{_esc(_ui("events.topic"))}</th><th>{_esc(_ui("events.event"))}</th><th>{_esc(_ui("events.impact"))}</th><th>{_esc(_ui("events.watch"))}</th></tr>
@@ -1372,7 +1707,14 @@ def render_adjustments(context: Dict[str, Any]) -> str:
     </div>
     <div class="tbl-wrap">
       <table class="adj-tbl">
-        <thead><tr><th>{_esc(_ui("adjustments.ticker"))}</th><th>{_esc(_ui("adjustments.current"))}</th><th>{_esc(_ui("adjustments.recommendation"))}</th><th>{_esc(_ui("adjustments.why"))}</th><th>{_esc(_ui("adjustments.trigger"))}</th></tr></thead>
+        <colgroup>
+          <col style="width:12%">
+          <col style="width:8%">
+          <col style="width:14%">
+          <col style="width:38%">
+          <col style="width:28%">
+        </colgroup>
+        <thead><tr><th>{_esc(_ui("adjustments.ticker"))}</th><th class="num">{_esc(_ui("adjustments.current"))}</th><th>{_esc(_ui("adjustments.recommendation"))}</th><th>{_esc(_ui("adjustments.why"))}</th><th>{_esc(_ui("adjustments.trigger"))}</th></tr></thead>
         <tbody>{''.join(rows)}</tbody>
       </table>
     </div>
@@ -1444,7 +1786,7 @@ def render_sources(prices: Dict[str, Any], context: Dict[str, Any]) -> str:
       <span class="sub">{_esc(_ui("sources.subtitle"))}</span>
     </div>
     <div class="eyebrow" style="margin-bottom:10px">{_esc(_ui("sources.audit_heading"))}</div>
-    <div class="tbl-wrap">
+    <div class="tbl-wrap scroll-y">
       <table class="src-tbl">
         <thead>
           <tr><th>{_esc(_ui("sources.ticker"))}</th><th>{_esc(_ui("sources.price_source"))}</th><th>{_esc(_ui("sources.market_state"))}</th><th>{_esc(_ui("sources.as_of"))}</th><th>{_esc(_ui("sources.freshness"))}</th><th>{_esc(_ui("sources.notes"))}</th></tr>
@@ -1487,7 +1829,8 @@ def render_html(
         render_alerts(context),
         render_today_summary(context),                                     # §10.1 #1
         render_dashboard(aggs, total_assets, invested, cash, pnl),         # §10.1 #2
-        render_holdings_table(aggs, total_assets, prices, today),          # §10.1 #3
+        render_allocation_and_weight(aggs, total_assets, today),           # §10.1 allocation + weight
+        render_holdings_table(aggs, total_assets, prices, today, context), # §10.1 #3
         render_pnl_ranking(aggs),                                          # §10.4 chart
         render_holding_period(pacing),                                     # §10.1 #4
         render_theme_sector(context),                                      # §10.1 #5

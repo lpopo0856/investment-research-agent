@@ -43,9 +43,24 @@
     "risk_legend": "Risk assets {pct:.1f}% · ${value:,.0f}",
     "cash_legend": "Cash & cash-like {pct:.1f}% · ${value:,.0f}"
   },
+  "allocation": {
+    "title": "Allocation & Weights",
+    "subtitle": "USD basis, {date}",
+    "donut_label": "Asset allocation",
+    "total_label": "TOTAL",
+    "cat_us": "Stocks / ETFs",
+    "cat_crypto": "Crypto",
+    "cat_cash": "Cash",
+    "cat_tw": "Taiwan",
+    "cat_jp": "Japan",
+    "cat_hk": "Hong Kong",
+    "cat_lse": "London",
+    "cat_fx": "FX",
+    "cat_other": "Other"
+  },
   "holdings": {
     "title": "Holdings P&L and Weights",
-    "subtitle": "Static snapshot at generation time · hover or tap Symbol / Price for detail",
+    "subtitle": "Top {count} positions · static snapshot at generation time · hover or tap Symbol / Price for detail",
     "symbol": "Symbol",
     "category": "Category",
     "latest_price": "Price",
@@ -148,7 +163,7 @@
   "theme_sector": {
     "title": "Theme and Sector Exposure",
     "subtitle": "USD basis · ETF look-through where applicable",
-    "placeholder": "(Theme / sector exposure pending agent classification per spec §4.3)"
+    "placeholder": "(Theme / sector exposure pending — the agent must auto-classify per spec §4.3 and inject the pre-rendered bars as context.theme_sector_html)"
   },
   "news": {
     "title": "Latest Material News",
@@ -167,7 +182,8 @@
     "event": "Event",
     "impact": "Impact",
     "watch": "Watch Item",
-    "empty": "(No known events within 30 days)"
+    "empty": "(No known events within 30 days)",
+    "timeline_label": "Forward 30-day event timeline"
   },
   "risk": {
     "title": "High Risk and High Opportunity",

@@ -43,9 +43,24 @@
     "risk_legend": "风险资产 {pct:.1f}% · ${value:,.0f}",
     "cash_legend": "现金与类现金 {pct:.1f}% · ${value:,.0f}"
   },
+  "allocation": {
+    "title": "配置与持仓权重",
+    "subtitle": "USD 基准, {date}",
+    "donut_label": "资产配置",
+    "total_label": "总计",
+    "cat_us": "个股 / ETF",
+    "cat_crypto": "加密资产",
+    "cat_cash": "现金",
+    "cat_tw": "台股",
+    "cat_jp": "日股",
+    "cat_hk": "港股",
+    "cat_lse": "英股",
+    "cat_fx": "外汇",
+    "cat_other": "其他"
+  },
   "holdings": {
     "title": "持仓损益与权重",
-    "subtitle": "生成时静态快照 · 鼠标移到代码或价格可看细节",
+    "subtitle": "前 {count} 大仓位 · 价格为生成时静态快照 · 鼠标移到代码或价格可看细节",
     "symbol": "代码",
     "category": "类别",
     "latest_price": "最新价",
@@ -148,7 +163,7 @@
   "theme_sector": {
     "title": "主题与行业暴露",
     "subtitle": "USD 基准 · 含 ETF 穿透分配",
-    "placeholder": "（主题与行业暴露待补 — 由 agent 在执行时依 §4.3 自动分类后注入）"
+    "placeholder": "（主题与行业暴露待补 — 由 agent 在执行时依 §4.3 自动分类后，将预先渲染的 HTML 通过 context.theme_sector_html 注入）"
   },
   "news": {
     "title": "最新重大新闻",
@@ -167,7 +182,8 @@
     "event": "事件",
     "impact": "影响",
     "watch": "关注重点",
-    "empty": "（30 天内无已知事件）"
+    "empty": "（30 天内无已知事件）",
+    "timeline_label": "未来 30 天事件时间轴"
   },
   "risk": {
     "title": "高风险与高机会",

@@ -123,7 +123,7 @@ The semantic split lets the user scan the table once: every `—` is expected, e
 2. Portfolio dashboard (KPIs)
 3. Holdings P&L and weights (table) — see §10.2
 4. Holding period & pacing — see §10.3
-5. Theme / sector exposure
+5. Theme / sector exposure — **agent-authored**. The renderer does not classify themes; the agent must auto-classify each holding by sector / theme each run (per §4.3) and pre-render the bar chart as a string of HTML, then pass it via `context["theme_sector_html"]` in `report_context.json`. Markup contract is documented in `scripts/generate_report.py` (CONTEXT FILE SHAPE) and matches `_sample_redesign.html` lines 1234-1268: `<div class="bars">` with `bar warn` / `bar info` / `bar pos` / `bar neg` modifiers, optional `<div class="bucket-note">` callouts. If the field is missing, the section renders a placeholder — it is NOT computed automatically.
 6. Latest material news
 7. Forward 30-day event calendar
 8. High-risk and high-opportunity list

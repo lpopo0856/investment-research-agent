@@ -232,6 +232,33 @@ body{
      so overflow-x:auto is enabled only at the tablet/phone breakpoints (where popovers
      also switch to fixed bottom-sheet, escaping the wrap entirely). */
 }
+/* Scrollable variant — opt-in for tables that have NO popovers (events, sources).
+   The holdings table must NOT use this modifier because overflow:auto would clip
+   its desktop popovers. Sticky header still works inside the scroll container. */
+.tbl-wrap.scroll-y{
+  max-height: clamp(360px, 60vh, 640px);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+/* Holdings table — fixed column widths so the long, free-form Action cell never
+   squeezes the price / weight / value columns. Action wraps onto multiple lines
+   instead of monopolising the row. Numeric columns stay tabular and tight. */
+.tbl-wrap table.holdings-tbl{table-layout:fixed;min-width:880px}
+.tbl-wrap table.holdings-tbl td.col-action,
+.tbl-wrap table.holdings-tbl th.col-action{
+  white-space:normal;
+  overflow-wrap:anywhere;
+  word-break:break-word;
+  line-height:1.5;
+}
+/* Signed P&L cells — never break on the slash separator (e.g. "+$11,792 / +29.1%").
+   The signed amount + percentage is read as one atomic value; mid-token wrapping
+   is harder to scan than a wider column. */
+.tbl-wrap table.holdings-tbl td.num.pos-txt,
+.tbl-wrap table.holdings-tbl td.num.neg-txt{
+  white-space:nowrap;
+}
 .tbl-wrap table{min-width:760px}
 table{
   width:100%;border-collapse:collapse;
@@ -498,9 +525,9 @@ tbody td:has(.price-trigger:is(:hover,:focus-within)){
 .risk.r-low:before {background:#9bb6d6}
 .risk.r-mid:before {background:var(--warn)}
 .risk.r-high:before{background:var(--neg)}
-.risk .t{font-weight:700;color:var(--ink);font-size:14px}
-.risk .s{font-size:11px;color:var(--muted);letter-spacing:.04em}
-.risk .m{font-size:12.5px;color:var(--ink-soft);font-variant-numeric:tabular-nums;margin-top:auto}
+.risk .t{font-weight:700;color:var(--ink);font-size:14px;overflow-wrap:anywhere}
+.risk .s{font-size:11px;color:var(--muted);letter-spacing:.04em;overflow-wrap:anywhere;word-break:break-word;line-height:1.45}
+.risk .m{font-size:12.5px;color:var(--ink-soft);font-variant-numeric:tabular-nums;margin-top:auto;overflow-wrap:anywhere}
 
 /* ---------- Action list ---------- */
 .actions{margin:0;padding:0;list-style:none}
@@ -589,25 +616,40 @@ tbody td:has(.price-trigger:is(:hover,:focus-within)){
 /* ---------- Two-column high-risk vs high-opportunity ---------- */
 .opp-list{display:flex;flex-direction:column;gap:0}
 .opp-list .item{
-  display:grid;grid-template-columns:70px 1fr auto;
+  display:grid;
+  /* Use fr units for both why and trig so a long trig string can't squeeze why
+     to nothing. minmax(0,_) prevents the column from refusing to shrink below
+     its longest unbreakable token. */
+  grid-template-columns:64px minmax(0,1.4fr) minmax(0,1fr);
   gap:14px;
   padding:11px 0;border-bottom:1px solid var(--hairline);
   align-items:start;
 }
 .opp-list .item:last-child{border-bottom:0}
-.opp-list .tk{font-weight:680;color:var(--ink);font-size:13.5px}
-.opp-list .why{font-size:13px;color:var(--ink-soft);line-height:1.5}
+.opp-list .tk{font-weight:680;color:var(--ink);font-size:13.5px;overflow-wrap:anywhere}
+.opp-list .why{font-size:13px;color:var(--ink-soft);line-height:1.5;overflow-wrap:anywhere;word-break:break-word;min-width:0}
 .opp-list .trig{
   font-size:11.5px;color:var(--info);font-weight:600;
-  font-variant-numeric:tabular-nums;white-space:nowrap;
+  font-variant-numeric:tabular-nums;
+  /* Wrap long trigger sentences instead of forcing the row wider — keeps the
+     why column readable when triggers are paragraph-length. */
+  white-space:normal;line-height:1.5;
+  overflow-wrap:anywhere;word-break:break-word;min-width:0;
 }
 
 /* ---------- Recommended adjustments ---------- */
 .adj-tbl thead th{font-size:10.5px}
-.adj-tbl .why{color:var(--ink-soft);font-size:12.5px;line-height:1.5}
+.adj-tbl{table-layout:fixed}
+.adj-tbl .why{
+  color:var(--ink-soft);font-size:12.5px;line-height:1.5;
+  overflow-wrap:anywhere;word-break:break-word;
+}
 .adj-tbl .trig{
   font-size:11.5px;color:var(--info);font-weight:600;
-  font-variant-numeric:tabular-nums;white-space:nowrap;
+  font-variant-numeric:tabular-nums;
+  /* Allow wrap so a long trigger sentence doesn't squeeze adjacent columns. */
+  white-space:normal;line-height:1.5;
+  overflow-wrap:anywhere;word-break:break-word;
 }
 .adj-action{
   display:inline-block;font-weight:700;font-size:11.5px;letter-spacing:.04em;
@@ -859,304 +901,296 @@ tbody td:has(.price-trigger:is(:hover,:focus-within)){
 
   <!-- ============ HOLDINGS TABLE ============ -->
   <section class="section">
-    <div class="section-head">
-      <h2>持股損益與權重</h2>
-      <span class="sub">
+<div class="section-head">
+<h2>持股損益與權重</h2>
+<span class="sub">
         前 8 大部位 · 價格為產出時靜態快照 · 滑鼠移到代號或價格可看細節
       </span>
-    </div>
-
-    <div class="tbl-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>代號</th>
-            <th>類別</th>
-            <th class="num">最新價</th>
-            <th class="num">比重</th>
-            <th class="num">市值</th>
-            <th class="num">損益</th>
-            <th>行動</th>
-          </tr>
-        </thead>
-        <tbody>
-          <!-- ALPH -->
-          <tr>
-            <td>
-              <div class="sym-trigger" tabindex="0" role="button">ALPH<div class="pop pop-sym" role="tooltip">
-                <h4>ALPH · Alpha Asset（虛構）</h4>
-                <div class="pop-sub">加密資產 · 高波動</div>
-                <div class="pop-row"><span class="k">建倉時間</span><span class="v">2095-03 · 3y 10m</span></div>
-                <div class="pop-row"><span class="k">批次數</span><span class="v">1 批</span></div>
-                <div class="pop-row"><span class="k">分類緣由</span><span class="v">長線核心、不主動加減</span></div>
-              </div></div>
-            </td>
-            <td>加密資產<span class="tag warn">高波動</span></td>
-            <td class="num price-cell">
-              <div class="price-trigger" tabindex="0" role="button">
-                <span class="price-num">$50,000</span>
-                <span class="price-sub pos">較前收 +0.30%</span>
-              <div class="pop pop-px" role="tooltip">
-                <h4>ALPH · 每批損益</h4>
-                <div class="pop-sub">最新價 $50,000.00 · 來源：yfinance 子代理（優先示範）· 已開盤最新 · 2099-01-01 09:00</div>
-                <table>
-                  <thead><tr><th>取得日</th><th class="num">成本</th><th class="num">數量</th><th class="num">損益</th></tr></thead>
-                  <tbody>
-                    <tr><td>2095-03-12</td><td class="num"><span class="pop-neg">n/a</span></td><td class="num">1.000</td><td class="num"><span class="pop-neg">n/a</span></td></tr>
-                  </tbody>
-                  <tfoot class="summary">
-                    <tr><td>合計</td><td class="num"><span class="pop-neg">n/a</span></td><td class="num">1.000</td><td class="num"><span class="pop-neg">n/a</span></td></tr>
-                  </tfoot>
-                </table>
-              </div></div>
-            </td>
-            <td class="num">16.5%</td>
-            <td class="num">$82,500</td>
-            <td class="num"><span class="na">n/a</span></td>
-            <td>長線續抱；50–55k 分批加碼，跌破 45k 降槓桿</td>
-          </tr>
-
-          <!-- BETA -->
-          <tr>
-            <td>
-              <div class="sym-trigger" tabindex="0" role="button">BETA<div class="pop pop-sym" role="tooltip">
-                <h4>BETA · Beta Global Index（虛構）</h4>
-                <div class="pop-sub">ETF · 全球股票</div>
-                <div class="pop-row"><span class="k">建倉時間</span><span class="v">2096-08 · 2y 5m</span></div>
-                <div class="pop-row"><span class="k">批次數</span><span class="v">1 批</span></div>
-                <div class="pop-row"><span class="k">分類緣由</span><span class="v">全球底倉</span></div>
-              </div></div>
-            </td>
-            <td>ETF<span class="tag pos">長線</span></td>
-            <td class="num price-cell">
-              <div class="price-trigger" tabindex="0" role="button">
-                <span class="price-num">$200.00</span>
-                <span class="price-sub pos">較前收 +0.81%</span>
-              <div class="pop pop-px" role="tooltip">
-                <h4>BETA · 每批損益</h4>
-                <div class="pop-sub">最新價 $200.00 · 來源：yfinance 子代理（優先示範）· 已開盤最新 · 2099-01-01 09:00</div>
-                <table>
-                  <thead><tr><th>取得日</th><th class="num">成本</th><th class="num">數量</th><th class="num">損益</th></tr></thead>
-                  <tbody>
-                    <tr><td>2096-08-04</td><td class="num">$139.52</td><td class="num">215</td><td class="num"><span class="pop-pos">+$12,993</span></td></tr>
-                  </tbody>
-                  <tfoot class="summary">
-                    <tr><td>平均成本 $139.52</td><td class="num">$29,997</td><td class="num">215</td><td class="num"><span class="pop-pos">+$12,993</span></td></tr>
-                  </tfoot>
-                </table>
-              </div></div>
-            </td>
-            <td class="num">10.2%</td>
-            <td class="num">$43,000</td>
-            <td class="num pos-txt">+$12,993 / +43.3%</td>
-            <td>核心續抱；逢回補</td>
-          </tr>
-
-          <!-- GAMA -->
-          <tr>
-            <td>
-              <div class="sym-trigger" tabindex="0" role="button">GAMA<div class="pop pop-sym" role="tooltip">
-                <h4>GAMA · Gamma Tech Trust（虛構）</h4>
-                <div class="pop-sub">ETF · 大型科技</div>
-                <div class="pop-row"><span class="k">建倉時間</span><span class="v">2097-11 · 1y 1m</span></div>
-                <div class="pop-row"><span class="k">批次數</span><span class="v">3 批</span></div>
-                <div class="pop-row"><span class="k">分類緣由</span><span class="v">科技 beta 核心 ETF</span></div>
-              </div></div>
-            </td>
-            <td>ETF<span class="tag pos">長線</span></td>
-            <td class="num price-cell">
-              <div class="price-trigger" tabindex="0" role="button">
-                <span class="price-num">$700.00</span>
-                <span class="price-sub pos">較前收 +1.13%</span>
-              <div class="pop pop-px" role="tooltip">
-                <h4>GAMA · 每批損益</h4>
-                <div class="pop-sub">最新價 $700.00 · 來源：yfinance 子代理（優先示範）· 已開盤最新 · 2099-01-01 09:00</div>
-                <table>
-                  <thead><tr><th>取得日</th><th class="num">成本</th><th class="num">數量</th><th class="num">損益</th></tr></thead>
-                  <tbody>
-                    <tr><td>2097-11-20</td><td class="num">$609.65</td><td class="num">17</td><td class="num"><span class="pop-pos">+$1,536</span></td></tr>
-                    <tr><td>2098-02-14</td><td class="num">$487.81</td><td class="num">10</td><td class="num"><span class="pop-pos">+$2,122</span></td></tr>
-                    <tr><td>2098-05-30</td><td class="num">$475.39</td><td class="num">23</td><td class="num"><span class="pop-pos">+$5,164</span></td></tr>
-                  </tbody>
-                  <tfoot class="summary">
-                    <tr><td>平均成本 $523.52</td><td class="num">$26,176</td><td class="num">50</td><td class="num"><span class="pop-pos">+$8,824</span></td></tr>
-                  </tfoot>
-                </table>
-              </div></div>
-            </td>
-            <td class="num">7.0%</td>
-            <td class="num">$35,000</td>
-            <td class="num pos-txt">+$8,824 / +33.7%</td>
-            <td>核心續抱；事件前不追，回測 660–680 加碼</td>
-          </tr>
-
-          <!-- DELT -->
-          <tr>
-            <td>
-              <div class="sym-trigger" tabindex="0" role="button">DELT<div class="pop pop-sym" role="tooltip">
-                <h4>DELT · Delta Holdings（虛構）</h4>
-                <div class="pop-sub">個股 · 主題 A</div>
-                <div class="pop-row"><span class="k">建倉時間</span><span class="v">2097-02 · 1y 11m</span></div>
-                <div class="pop-row"><span class="k">批次數</span><span class="v">3 批</span></div>
-              </div></div>
-            </td>
-            <td>個股<span class="tag">主題 A</span></td>
-            <td class="num price-cell">
-              <div class="price-trigger" tabindex="0" role="button">
-                <span class="price-num">$400.00</span>
-                <span class="price-sub neg">較前收 −0.30%</span>
-              <div class="pop pop-px" role="tooltip">
-                <h4>DELT · 每批損益</h4>
-                <div class="pop-sub">最新價 $400.00 · 來源：yfinance 子代理失敗；Yahoo Finance 網頁備援（示範）· 已開盤最新 · 2099-01-01 09:00</div>
-                <table>
-                  <thead><tr><th>取得日</th><th class="num">成本</th><th class="num">數量</th><th class="num">損益</th></tr></thead>
-                  <tbody>
-                    <tr><td>2098-06-15</td><td class="num">$390.97</td><td class="num">6</td><td class="num"><span class="pop-pos">+$54</span></td></tr>
-                    <tr><td>2098-09-22</td><td class="num">$433.62</td><td class="num">10</td><td class="num"><span class="pop-neg">−$336</span></td></tr>
-                    <tr><td>2097-02-08</td><td class="num">$222.16</td><td class="num">15</td><td class="num"><span class="pop-pos">+$2,668</span></td></tr>
-                  </tbody>
-                  <tfoot class="summary">
-                    <tr><td>平均成本 $322.94</td><td class="num">$10,014</td><td class="num">31</td><td class="num"><span class="pop-pos">+$2,386</span></td></tr>
-                  </tfoot>
-                </table>
-              </div></div>
-            </td>
-            <td class="num">6.5%</td>
-            <td class="num">$32,500</td>
-            <td class="num pos-txt">+$2,386 / +23.8%</td>
-            <td>財報前不加碼；370 承接、突破 425 加碼</td>
-          </tr>
-
-          <!-- ZETA -->
-          <tr>
-            <td>
-              <div class="sym-trigger" tabindex="0" role="button">ZETA<div class="pop pop-sym" role="tooltip">
-                <h4>ZETA · Zeta Industries（虛構）</h4>
-                <div class="pop-sub">個股 · 主題 B</div>
-                <div class="pop-row"><span class="k">建倉時間</span><span class="v">2096-02 · 2y 11m</span></div>
-                <div class="pop-row"><span class="k">批次數</span><span class="v">2 批</span></div>
-              </div></div>
-            </td>
-            <td>個股<span class="tag">主題 B</span></td>
-            <td class="num price-cell">
-              <div class="price-trigger" tabindex="0" role="button">
-                <span class="price-num">$250.00</span>
-                <span class="price-sub">較前收 +0.00%</span>
-              <div class="pop pop-px" role="tooltip">
-                <h4>ZETA · 每批損益</h4>
-                <div class="pop-sub">最新價 $250.00 · 來源：yfinance 子代理失敗；TWSE MIS 免 token API（示範）· 已開盤最新 · 2099-01-01 09:00</div>
-                <table>
-                  <thead><tr><th>取得日</th><th class="num">成本</th><th class="num">數量</th><th class="num">損益</th></tr></thead>
-                  <tbody>
-                    <tr><td>2096-02-09</td><td class="num">$95.22</td><td class="num">53</td><td class="num"><span class="pop-pos">+$8,201</span></td></tr>
-                    <tr><td>2096-12-01</td><td class="num">$105.30</td><td class="num">35</td><td class="num"><span class="pop-pos">+$5,065</span></td></tr>
-                  </tbody>
-                  <tfoot class="summary">
-                    <tr><td>平均成本 $99.23</td><td class="num">$8,733</td><td class="num">88</td><td class="num"><span class="pop-pos">+$13,267</span></td></tr>
-                  </tfoot>
-                </table>
-              </div></div>
-            </td>
-            <td class="num">5.8%</td>
-            <td class="num">$29,000</td>
-            <td class="num pos-txt">+$13,267 / +151.9%</td>
-            <td>長線核心續抱；260 上方不追，220–235 再加</td>
-          </tr>
-
-          <!-- THTA -->
-          <tr>
-            <td>
-              <div class="sym-trigger" tabindex="0" role="button">THTA<div class="pop pop-sym" role="tooltip">
-                <h4>THTA · Theta Labs（虛構）</h4>
-                <div class="pop-sub">個股 · 估值偏高</div>
-                <div class="pop-row"><span class="k">建倉時間</span><span class="v">2098-08 · 4m</span></div>
-                <div class="pop-row"><span class="k">批次數</span><span class="v">2 批</span></div>
-              </div></div>
-            </td>
-            <td>個股<span class="tag warn">估值偏高</span></td>
-            <td class="num price-cell">
-              <div class="price-trigger" tabindex="0" role="button">
-                <span class="price-num">$350.00</span>
-                <span class="price-sub neg">較前收 −3.20%</span>
-              <div class="pop pop-px" role="tooltip">
-                <h4>THTA · 每批損益</h4>
-                <div class="pop-sub">最新價 $350.00 · 來源：yfinance 子代理失敗；Google Finance 網頁備援（示範）· 未開盤：前一開盤日收盤 · 2099-01-01 09:00</div>
-                <table>
-                  <thead><tr><th>取得日</th><th class="num">成本</th><th class="num">數量</th><th class="num">損益</th></tr></thead>
-                  <tbody>
-                    <tr><td>2098-08-22</td><td class="num">$651.25</td><td class="num">3</td><td class="num"><span class="pop-neg">−$904</span></td></tr>
-                    <tr><td>2098-10-05</td><td class="num">$701.35</td><td class="num">10</td><td class="num"><span class="pop-neg">−$3,514</span></td></tr>
-                  </tbody>
-                  <tfoot class="summary">
-                    <tr><td>平均成本 $689.78</td><td class="num">$8,967</td><td class="num">13</td><td class="num"><span class="pop-neg">−$4,418</span></td></tr>
-                  </tfoot>
-                </table>
-              </div></div>
-            </td>
-            <td class="num">5.0%</td>
-            <td class="num">$25,000</td>
-            <td class="num neg-txt">−$4,418 / −49.3%</td>
-            <td>財報前不加碼；跌破 320 減碼</td>
-          </tr>
-
-          <!-- KAPA -->
-          <tr>
-            <td>
-              <div class="sym-trigger" tabindex="0" role="button">KAPA<div class="pop pop-sym" role="tooltip">
-                <h4>KAPA · Kappa Resources（虛構）</h4>
-                <div class="pop-sub">個股 · 短線過熱</div>
-                <div class="pop-row"><span class="k">建倉時間</span><span class="v">2098-10 · 2m</span></div>
-                <div class="pop-row"><span class="k">批次數</span><span class="v">2 批</span></div>
-              </div></div>
-            </td>
-            <td>個股<span class="tag warn">短線過熱</span></td>
-            <td class="num price-cell">
-              <div class="price-trigger" tabindex="0" role="button">
-                <span class="price-num">$90.00</span>
-                <span class="price-sub pos">較前收 +22.50%</span>
-              <div class="pop pop-px" role="tooltip">
-                <h4>KAPA · 每批損益</h4>
-                <div class="pop-sub">最新價 $90.00 · 來源：yfinance 子代理失敗；Binance 免 token API（示範）· 已開盤最新 · 2099-01-01 09:00</div>
-                <table>
-                  <thead><tr><th>取得日</th><th class="num">成本</th><th class="num">數量</th><th class="num">損益</th></tr></thead>
-                  <tbody>
-                    <tr><td>2098-10-30</td><td class="num">$43.88</td><td class="num">60</td><td class="num"><span class="pop-pos">+$2,767</span></td></tr>
-                    <tr><td>2098-11-15</td><td class="num">$48.07</td><td class="num">50</td><td class="num"><span class="pop-pos">+$2,097</span></td></tr>
-                  </tbody>
-                  <tfoot class="summary">
-                    <tr><td>平均成本 $45.78</td><td class="num">$5,037</td><td class="num">110</td><td class="num"><span class="pop-pos">+$4,863</span></td></tr>
-                  </tfoot>
-                </table>
-              </div></div>
-            </td>
-            <td class="num">4.5%</td>
-            <td class="num">$9,900</td>
-            <td class="num pos-txt">+$4,863 / +96.5%</td>
-            <td>移動停利；跌破 80 出，站穩 95 留小倉</td>
-          </tr>
-
-          <!-- USD (cash demo) -->
-          <tr>
-            <td>
-              <div class="sym-trigger" tabindex="0" role="button">USD<div class="pop pop-sym" role="tooltip">
-                <h4>USD · 美元現金</h4>
-                <div class="pop-sub">現金</div>
-                <div class="pop-row"><span class="k">用途</span><span class="v">事件後折價承接彈藥</span></div>
-              </div></div>
-            </td>
-            <td>現金<span class="tag">現金</span></td>
-            <td class="num price-cell">
-              <span class="na">—</span>
-            </td>
-            <td class="num">8.0%</td>
-            <td class="num">$40,000</td>
-            <td class="num na">—</td>
-            <td>保留現金，等 FOMC/PCE 後折價承接</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-  </section>
+</div>
+<div class="tbl-wrap">
+<table class="holdings-tbl"><colgroup><col style="width:7%"/><col style="width:12%"/><col style="width:14%"/><col style="width:7%"/><col style="width:11%"/><col style="width:19%"/><col style="width:30%"/></colgroup>
+<thead>
+<tr>
+<th>代號</th>
+<th>類別</th>
+<th class="num">最新價</th>
+<th class="num">比重</th>
+<th class="num">市值</th>
+<th class="num">損益</th>
+<th class="col-action">行動</th>
+</tr>
+</thead>
+<tbody>
+<!-- ALPH -->
+<tr>
+<td>
+<div class="sym-trigger" role="button" tabindex="0">ALPH<div class="pop pop-sym" role="tooltip">
+<h4>ALPH · Alpha Asset（虛構）</h4>
+<div class="pop-sub">加密資產 · 高波動</div>
+<div class="pop-row"><span class="k">建倉時間</span><span class="v">2095-03 · 3y 10m</span></div>
+<div class="pop-row"><span class="k">批次數</span><span class="v">1 批</span></div>
+<div class="pop-row"><span class="k">分類緣由</span><span class="v">長線核心、不主動加減</span></div>
+</div></div>
+</td>
+<td>加密資產<span class="tag warn">高波動</span></td>
+<td class="num price-cell">
+<div class="price-trigger" role="button" tabindex="0">
+<span class="price-num">$50,000</span>
+<span class="price-sub pos">較前收 +0.30%</span>
+<div class="pop pop-px" role="tooltip">
+<h4>ALPH · 每批損益</h4>
+<div class="pop-sub">最新價 $50,000.00 · 來源：yfinance 子代理（優先示範）· 已開盤最新 · 2099-01-01 09:00</div>
+<table>
+<thead><tr><th>取得日</th><th class="num">成本</th><th class="num">數量</th><th class="num">損益</th></tr></thead>
+<tbody>
+<tr><td>2095-03-12</td><td class="num"><span class="pop-neg">n/a</span></td><td class="num">1.000</td><td class="num"><span class="pop-neg">n/a</span></td></tr>
+</tbody>
+<tfoot class="summary">
+<tr><td>合計</td><td class="num"><span class="pop-neg">n/a</span></td><td class="num">1.000</td><td class="num"><span class="pop-neg">n/a</span></td></tr>
+</tfoot>
+</table>
+</div></div>
+</td>
+<td class="num">16.5%</td>
+<td class="num">$82,500</td>
+<td class="num"><span class="na">n/a</span></td>
+<td class="col-action">長線續抱；50–55k 分批加碼，跌破 45k 降槓桿</td>
+</tr>
+<!-- BETA -->
+<tr>
+<td>
+<div class="sym-trigger" role="button" tabindex="0">BETA<div class="pop pop-sym" role="tooltip">
+<h4>BETA · Beta Global Index（虛構）</h4>
+<div class="pop-sub">ETF · 全球股票</div>
+<div class="pop-row"><span class="k">建倉時間</span><span class="v">2096-08 · 2y 5m</span></div>
+<div class="pop-row"><span class="k">批次數</span><span class="v">1 批</span></div>
+<div class="pop-row"><span class="k">分類緣由</span><span class="v">全球底倉</span></div>
+</div></div>
+</td>
+<td>ETF<span class="tag pos">長線</span></td>
+<td class="num price-cell">
+<div class="price-trigger" role="button" tabindex="0">
+<span class="price-num">$200.00</span>
+<span class="price-sub pos">較前收 +0.81%</span>
+<div class="pop pop-px" role="tooltip">
+<h4>BETA · 每批損益</h4>
+<div class="pop-sub">最新價 $200.00 · 來源：yfinance 子代理（優先示範）· 已開盤最新 · 2099-01-01 09:00</div>
+<table>
+<thead><tr><th>取得日</th><th class="num">成本</th><th class="num">數量</th><th class="num">損益</th></tr></thead>
+<tbody>
+<tr><td>2096-08-04</td><td class="num">$139.52</td><td class="num">215</td><td class="num"><span class="pop-pos">+$12,993</span></td></tr>
+</tbody>
+<tfoot class="summary">
+<tr><td>平均成本 $139.52</td><td class="num">$29,997</td><td class="num">215</td><td class="num"><span class="pop-pos">+$12,993</span></td></tr>
+</tfoot>
+</table>
+</div></div>
+</td>
+<td class="num">10.2%</td>
+<td class="num">$43,000</td>
+<td class="num pos-txt">+$12,993 / +43.3%</td>
+<td class="col-action">核心續抱；逢回補</td>
+</tr>
+<!-- GAMA -->
+<tr>
+<td>
+<div class="sym-trigger" role="button" tabindex="0">GAMA<div class="pop pop-sym" role="tooltip">
+<h4>GAMA · Gamma Tech Trust（虛構）</h4>
+<div class="pop-sub">ETF · 大型科技</div>
+<div class="pop-row"><span class="k">建倉時間</span><span class="v">2097-11 · 1y 1m</span></div>
+<div class="pop-row"><span class="k">批次數</span><span class="v">3 批</span></div>
+<div class="pop-row"><span class="k">分類緣由</span><span class="v">科技 beta 核心 ETF</span></div>
+</div></div>
+</td>
+<td>ETF<span class="tag pos">長線</span></td>
+<td class="num price-cell">
+<div class="price-trigger" role="button" tabindex="0">
+<span class="price-num">$700.00</span>
+<span class="price-sub pos">較前收 +1.13%</span>
+<div class="pop pop-px" role="tooltip">
+<h4>GAMA · 每批損益</h4>
+<div class="pop-sub">最新價 $700.00 · 來源：yfinance 子代理（優先示範）· 已開盤最新 · 2099-01-01 09:00</div>
+<table>
+<thead><tr><th>取得日</th><th class="num">成本</th><th class="num">數量</th><th class="num">損益</th></tr></thead>
+<tbody>
+<tr><td>2097-11-20</td><td class="num">$609.65</td><td class="num">17</td><td class="num"><span class="pop-pos">+$1,536</span></td></tr>
+<tr><td>2098-02-14</td><td class="num">$487.81</td><td class="num">10</td><td class="num"><span class="pop-pos">+$2,122</span></td></tr>
+<tr><td>2098-05-30</td><td class="num">$475.39</td><td class="num">23</td><td class="num"><span class="pop-pos">+$5,164</span></td></tr>
+</tbody>
+<tfoot class="summary">
+<tr><td>平均成本 $523.52</td><td class="num">$26,176</td><td class="num">50</td><td class="num"><span class="pop-pos">+$8,824</span></td></tr>
+</tfoot>
+</table>
+</div></div>
+</td>
+<td class="num">7.0%</td>
+<td class="num">$35,000</td>
+<td class="num pos-txt">+$8,824 / +33.7%</td>
+<td class="col-action">核心續抱；事件前不追，回測 660–680 加碼</td>
+</tr>
+<!-- DELT -->
+<tr>
+<td>
+<div class="sym-trigger" role="button" tabindex="0">DELT<div class="pop pop-sym" role="tooltip">
+<h4>DELT · Delta Holdings（虛構）</h4>
+<div class="pop-sub">個股 · 主題 A</div>
+<div class="pop-row"><span class="k">建倉時間</span><span class="v">2097-02 · 1y 11m</span></div>
+<div class="pop-row"><span class="k">批次數</span><span class="v">3 批</span></div>
+</div></div>
+</td>
+<td>個股<span class="tag">主題 A</span></td>
+<td class="num price-cell">
+<div class="price-trigger" role="button" tabindex="0">
+<span class="price-num">$400.00</span>
+<span class="price-sub neg">較前收 −0.30%</span>
+<div class="pop pop-px" role="tooltip">
+<h4>DELT · 每批損益</h4>
+<div class="pop-sub">最新價 $400.00 · 來源：yfinance 子代理失敗；Yahoo Finance 網頁備援（示範）· 已開盤最新 · 2099-01-01 09:00</div>
+<table>
+<thead><tr><th>取得日</th><th class="num">成本</th><th class="num">數量</th><th class="num">損益</th></tr></thead>
+<tbody>
+<tr><td>2098-06-15</td><td class="num">$390.97</td><td class="num">6</td><td class="num"><span class="pop-pos">+$54</span></td></tr>
+<tr><td>2098-09-22</td><td class="num">$433.62</td><td class="num">10</td><td class="num"><span class="pop-neg">−$336</span></td></tr>
+<tr><td>2097-02-08</td><td class="num">$222.16</td><td class="num">15</td><td class="num"><span class="pop-pos">+$2,668</span></td></tr>
+</tbody>
+<tfoot class="summary">
+<tr><td>平均成本 $322.94</td><td class="num">$10,014</td><td class="num">31</td><td class="num"><span class="pop-pos">+$2,386</span></td></tr>
+</tfoot>
+</table>
+</div></div>
+</td>
+<td class="num">6.5%</td>
+<td class="num">$32,500</td>
+<td class="num pos-txt">+$2,386 / +23.8%</td>
+<td class="col-action">財報前不加碼；370 承接、突破 425 加碼</td>
+</tr>
+<!-- ZETA -->
+<tr>
+<td>
+<div class="sym-trigger" role="button" tabindex="0">ZETA<div class="pop pop-sym" role="tooltip">
+<h4>ZETA · Zeta Industries（虛構）</h4>
+<div class="pop-sub">個股 · 主題 B</div>
+<div class="pop-row"><span class="k">建倉時間</span><span class="v">2096-02 · 2y 11m</span></div>
+<div class="pop-row"><span class="k">批次數</span><span class="v">2 批</span></div>
+</div></div>
+</td>
+<td>個股<span class="tag">主題 B</span></td>
+<td class="num price-cell">
+<div class="price-trigger" role="button" tabindex="0">
+<span class="price-num">$250.00</span>
+<span class="price-sub">較前收 +0.00%</span>
+<div class="pop pop-px" role="tooltip">
+<h4>ZETA · 每批損益</h4>
+<div class="pop-sub">最新價 $250.00 · 來源：yfinance 子代理失敗；TWSE MIS 免 token API（示範）· 已開盤最新 · 2099-01-01 09:00</div>
+<table>
+<thead><tr><th>取得日</th><th class="num">成本</th><th class="num">數量</th><th class="num">損益</th></tr></thead>
+<tbody>
+<tr><td>2096-02-09</td><td class="num">$95.22</td><td class="num">53</td><td class="num"><span class="pop-pos">+$8,201</span></td></tr>
+<tr><td>2096-12-01</td><td class="num">$105.30</td><td class="num">35</td><td class="num"><span class="pop-pos">+$5,065</span></td></tr>
+</tbody>
+<tfoot class="summary">
+<tr><td>平均成本 $99.23</td><td class="num">$8,733</td><td class="num">88</td><td class="num"><span class="pop-pos">+$13,267</span></td></tr>
+</tfoot>
+</table>
+</div></div>
+</td>
+<td class="num">5.8%</td>
+<td class="num">$29,000</td>
+<td class="num pos-txt">+$13,267 / +151.9%</td>
+<td class="col-action">長線核心續抱；260 上方不追，220–235 再加</td>
+</tr>
+<!-- THTA -->
+<tr>
+<td>
+<div class="sym-trigger" role="button" tabindex="0">THTA<div class="pop pop-sym" role="tooltip">
+<h4>THTA · Theta Labs（虛構）</h4>
+<div class="pop-sub">個股 · 估值偏高</div>
+<div class="pop-row"><span class="k">建倉時間</span><span class="v">2098-08 · 4m</span></div>
+<div class="pop-row"><span class="k">批次數</span><span class="v">2 批</span></div>
+</div></div>
+</td>
+<td>個股<span class="tag warn">估值偏高</span></td>
+<td class="num price-cell">
+<div class="price-trigger" role="button" tabindex="0">
+<span class="price-num">$350.00</span>
+<span class="price-sub neg">較前收 −3.20%</span>
+<div class="pop pop-px" role="tooltip">
+<h4>THTA · 每批損益</h4>
+<div class="pop-sub">最新價 $350.00 · 來源：yfinance 子代理失敗；Google Finance 網頁備援（示範）· 未開盤：前一開盤日收盤 · 2099-01-01 09:00</div>
+<table>
+<thead><tr><th>取得日</th><th class="num">成本</th><th class="num">數量</th><th class="num">損益</th></tr></thead>
+<tbody>
+<tr><td>2098-08-22</td><td class="num">$651.25</td><td class="num">3</td><td class="num"><span class="pop-neg">−$904</span></td></tr>
+<tr><td>2098-10-05</td><td class="num">$701.35</td><td class="num">10</td><td class="num"><span class="pop-neg">−$3,514</span></td></tr>
+</tbody>
+<tfoot class="summary">
+<tr><td>平均成本 $689.78</td><td class="num">$8,967</td><td class="num">13</td><td class="num"><span class="pop-neg">−$4,418</span></td></tr>
+</tfoot>
+</table>
+</div></div>
+</td>
+<td class="num">5.0%</td>
+<td class="num">$25,000</td>
+<td class="num neg-txt">−$4,418 / −49.3%</td>
+<td class="col-action">財報前不加碼；跌破 320 減碼</td>
+</tr>
+<!-- KAPA -->
+<tr>
+<td>
+<div class="sym-trigger" role="button" tabindex="0">KAPA<div class="pop pop-sym" role="tooltip">
+<h4>KAPA · Kappa Resources（虛構）</h4>
+<div class="pop-sub">個股 · 短線過熱</div>
+<div class="pop-row"><span class="k">建倉時間</span><span class="v">2098-10 · 2m</span></div>
+<div class="pop-row"><span class="k">批次數</span><span class="v">2 批</span></div>
+</div></div>
+</td>
+<td>個股<span class="tag warn">短線過熱</span></td>
+<td class="num price-cell">
+<div class="price-trigger" role="button" tabindex="0">
+<span class="price-num">$90.00</span>
+<span class="price-sub pos">較前收 +22.50%</span>
+<div class="pop pop-px" role="tooltip">
+<h4>KAPA · 每批損益</h4>
+<div class="pop-sub">最新價 $90.00 · 來源：yfinance 子代理失敗；Binance 免 token API（示範）· 已開盤最新 · 2099-01-01 09:00</div>
+<table>
+<thead><tr><th>取得日</th><th class="num">成本</th><th class="num">數量</th><th class="num">損益</th></tr></thead>
+<tbody>
+<tr><td>2098-10-30</td><td class="num">$43.88</td><td class="num">60</td><td class="num"><span class="pop-pos">+$2,767</span></td></tr>
+<tr><td>2098-11-15</td><td class="num">$48.07</td><td class="num">50</td><td class="num"><span class="pop-pos">+$2,097</span></td></tr>
+</tbody>
+<tfoot class="summary">
+<tr><td>平均成本 $45.78</td><td class="num">$5,037</td><td class="num">110</td><td class="num"><span class="pop-pos">+$4,863</span></td></tr>
+</tfoot>
+</table>
+</div></div>
+</td>
+<td class="num">4.5%</td>
+<td class="num">$9,900</td>
+<td class="num pos-txt">+$4,863 / +96.5%</td>
+<td class="col-action">移動停利；跌破 80 出，站穩 95 留小倉</td>
+</tr>
+<!-- USD (cash demo) -->
+<tr>
+<td>
+<div class="sym-trigger" role="button" tabindex="0">USD<div class="pop pop-sym" role="tooltip">
+<h4>USD · 美元現金</h4>
+<div class="pop-sub">現金</div>
+<div class="pop-row"><span class="k">用途</span><span class="v">事件後折價承接彈藥</span></div>
+</div></div>
+</td>
+<td>現金<span class="tag">現金</span></td>
+<td class="num price-cell">
+<span class="na">—</span>
+</td>
+<td class="num">8.0%</td>
+<td class="num">$40,000</td>
+<td class="num na">—</td>
+<td class="col-action">保留現金，等 FOMC/PCE 後折價承接</td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
 
   <!-- ============ §3 P&L RANKING ============ -->
   <section class="section">
@@ -1412,68 +1446,68 @@ tbody td:has(.price-trigger:is(:hover,:focus-within)){
 
   <!-- ============ §9 RECOMMENDED ADJUSTMENTS ============ -->
   <section class="section">
-    <div class="section-head">
-      <h2>建議調整</h2>
-      <span class="sub">具體標的 · 動作 · 價格區間 · 觸發</span>
-    </div>
-    <div class="tbl-wrap">
-      <table class="adj-tbl">
-        <thead>
-          <tr>
-            <th>標的</th>
-            <th>目前</th>
-            <th>建議</th>
-            <th>理由</th>
-            <th>觸發</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td><span class="sym-trigger" tabindex="0" role="button">KAPA</span></td>
-            <td class="num">4.5%</td>
-            <td><span class="adj-action trim">減碼 20%</span></td>
-            <td class="why">短線單日 +22.5% 過熱；先賣 2098-11 高成本批次（成本 $48.07）。</td>
-            <td class="trig">站穩 95 留小倉、跌破 80 全出</td>
-          </tr>
-          <tr>
-            <td><span class="sym-trigger" tabindex="0" role="button">THTA</span></td>
-            <td class="num">5.0%</td>
-            <td><span class="adj-action watch">財報前不動</span></td>
-            <td class="why">兩個批次平均成本 $689.78，目前帳面 −49.3%；財報前不再加碼。</td>
-            <td class="trig">跌破 320 減碼</td>
-          </tr>
-          <tr>
-            <td><span class="sym-trigger" tabindex="0" role="button">DELT</span></td>
-            <td class="num">6.5%</td>
-            <td><span class="adj-action hold">續抱</span></td>
-            <td class="why">權重已超過單一 5% 警示；財報前不再加碼。</td>
-            <td class="trig">370 承接、425 加碼</td>
-          </tr>
-          <tr>
-            <td><span class="sym-trigger" tabindex="0" role="button">ZETA</span></td>
-            <td class="num">5.8%</td>
-            <td><span class="adj-action add">突破加碼</span></td>
-            <td class="why">監管核可後負面壓力解除；技術面突破。</td>
-            <td class="trig">站穩 260 加碼 1%</td>
-          </tr>
-          <tr>
-            <td><span class="sym-trigger" tabindex="0" role="button">ALPH</span></td>
-            <td class="num">16.5%</td>
-            <td><span class="adj-action add">回測加碼</span></td>
-            <td class="why">長線核心；資金流向未轉弱前可在支撐區分批。</td>
-            <td class="trig">50–55k 分批</td>
-          </tr>
-          <tr>
-            <td><span class="sym-trigger" tabindex="0" role="button">USD</span></td>
-            <td class="num">8.0%</td>
-            <td><span class="adj-action hold">維持</span></td>
-            <td class="why">事件後折價承接彈藥；現金佔 22% 仍在合理區間。</td>
-            <td class="trig">FOMC 後評估</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-  </section>
+<div class="section-head">
+<h2>建議調整</h2>
+<span class="sub">具體標的 · 動作 · 價格區間 · 觸發</span>
+</div>
+<div class="tbl-wrap">
+<table class="adj-tbl"><colgroup><col style="width:12%"/><col style="width:8%"/><col style="width:14%"/><col style="width:38%"/><col style="width:28%"/></colgroup>
+<thead>
+<tr>
+<th>標的</th>
+<th class="num">目前</th>
+<th>建議</th>
+<th>理由</th>
+<th>觸發</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><span class="sym-trigger" role="button" tabindex="0">KAPA</span></td>
+<td class="num">4.5%</td>
+<td><span class="adj-action trim">減碼 20%</span></td>
+<td class="why">短線單日 +22.5% 過熱；先賣 2098-11 高成本批次（成本 $48.07）。</td>
+<td class="trig">站穩 95 留小倉、跌破 80 全出</td>
+</tr>
+<tr>
+<td><span class="sym-trigger" role="button" tabindex="0">THTA</span></td>
+<td class="num">5.0%</td>
+<td><span class="adj-action watch">財報前不動</span></td>
+<td class="why">兩個批次平均成本 $689.78，目前帳面 −49.3%；財報前不再加碼。</td>
+<td class="trig">跌破 320 減碼</td>
+</tr>
+<tr>
+<td><span class="sym-trigger" role="button" tabindex="0">DELT</span></td>
+<td class="num">6.5%</td>
+<td><span class="adj-action hold">續抱</span></td>
+<td class="why">權重已超過單一 5% 警示；財報前不再加碼。</td>
+<td class="trig">370 承接、425 加碼</td>
+</tr>
+<tr>
+<td><span class="sym-trigger" role="button" tabindex="0">ZETA</span></td>
+<td class="num">5.8%</td>
+<td><span class="adj-action add">突破加碼</span></td>
+<td class="why">監管核可後負面壓力解除；技術面突破。</td>
+<td class="trig">站穩 260 加碼 1%</td>
+</tr>
+<tr>
+<td><span class="sym-trigger" role="button" tabindex="0">ALPH</span></td>
+<td class="num">16.5%</td>
+<td><span class="adj-action add">回測加碼</span></td>
+<td class="why">長線核心；資金流向未轉弱前可在支撐區分批。</td>
+<td class="trig">50–55k 分批</td>
+</tr>
+<tr>
+<td><span class="sym-trigger" role="button" tabindex="0">USD</span></td>
+<td class="num">8.0%</td>
+<td><span class="adj-action hold">維持</span></td>
+<td class="why">事件後折價承接彈藥；現金佔 22% 仍在合理區間。</td>
+<td class="trig">FOMC 後評估</td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
 
   <!-- ============ §10 ACTIONS ============ -->
   <section class="section">

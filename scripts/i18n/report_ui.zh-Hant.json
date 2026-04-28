@@ -43,9 +43,24 @@
     "risk_legend": "風險資產 {pct:.1f}% · ${value:,.0f}",
     "cash_legend": "現金與類現金 {pct:.1f}% · ${value:,.0f}"
   },
+  "allocation": {
+    "title": "配置與持股權重",
+    "subtitle": "USD 基準, {date}",
+    "donut_label": "資產配置",
+    "total_label": "總計",
+    "cat_us": "個股 / ETF",
+    "cat_crypto": "加密資產",
+    "cat_cash": "現金",
+    "cat_tw": "台股",
+    "cat_jp": "日股",
+    "cat_hk": "港股",
+    "cat_lse": "英股",
+    "cat_fx": "外匯",
+    "cat_other": "其他"
+  },
   "holdings": {
     "title": "持股損益與權重",
-    "subtitle": "產出時靜態快照 · 滑鼠移到代號或價格可看細節",
+    "subtitle": "前 {count} 大部位 · 價格為產出時靜態快照 · 滑鼠移到代號或價格可看細節",
     "symbol": "代號",
     "category": "類別",
     "latest_price": "最新價",
@@ -148,7 +163,7 @@
   "theme_sector": {
     "title": "主題與行業暴險",
     "subtitle": "USD 基準 · 含 ETF 穿透分配",
-    "placeholder": "（主題與行業暴險待補 — 由 agent 在執行時依 §4.3 自動分類後注入）"
+    "placeholder": "（主題與行業暴險待補 — 由 agent 在執行時依 §4.3 自動分類後，將預先渲染的 HTML 透過 context.theme_sector_html 注入）"
   },
   "news": {
     "title": "最新重大新聞",
@@ -167,7 +182,8 @@
     "event": "事件",
     "impact": "影響",
     "watch": "關注重點",
-    "empty": "（30 天內無已知事件）"
+    "empty": "（30 天內無已知事件）",
+    "timeline_label": "未來 30 天事件時間軸"
   },
   "risk": {
     "title": "高風險與高機會",
