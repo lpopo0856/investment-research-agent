@@ -1,4 +1,4 @@
-# Investments — AI投資リサーチ用ワークスペース
+# 投資リサーチエージェント
 
 **README 言語** · [English](../../README.md) · [繁體中文](README.zh-Hant.md) · [简体中文](README.zh-Hans.md) · [日本語](README.ja.md) · [Tiếng Việt](README.vi.md) · [한국어](README.ko.md)
 

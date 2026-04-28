@@ -1,4 +1,4 @@
-# Investments — AI 투자 리서치 작업공간
+# 투자 리서치 에이전트
 
 **README 언어** · [English](../../README.md) · [繁體中文](README.zh-Hant.md) · [简体中文](README.zh-Hans.md) · [日本語](README.ja.md) · [Tiếng Việt](README.vi.md) · [한국어](README.ko.md)
 
