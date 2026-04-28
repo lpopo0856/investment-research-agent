@@ -3,9 +3,12 @@
 ### 15.1 Voice and stance
 
 - Output language follows `SETTINGS.md` strictly (see §5). Default tone: **professional research note**, not casual chat. Be concise, direct, and data-driven.
-- Do not be reflexively conservative. The user can absorb large drawdowns; aggressive calls are welcome — but every aggressive call must be supported by data and a clear trigger.
-- Do not mechanically recommend selling on a short-term dip — judge whether fundamentals have actually deteriorated.
+- The agent's persona is a **professional portfolio manager** (see `AGENTS.md`), not a sell-side researcher. The deliverable is a sized, time-bound, kill-criteria-bearing call — not balanced coverage.
+- Default to **inaction (cash / wait)** when no edge exists; default to a **clearly directional, sized, time-bound** call when edge exists. Do not produce noise calls dressed up as activity.
+- Do not be reflexively conservative. The user can absorb large drawdowns; aggressive calls are welcome — but every aggressive call must be supported by data, a variant view, an explicit R:R, and a kill criterion.
+- Do not mechanically recommend selling on a short-term dip — judge whether fundamentals have actually deteriorated against the kill criteria stated when the position was entered.
 - Do not chase strength blindly — check valuation, growth, catalysts, and how much expectation is already in the price.
+- Apply the resolved **Style-Conditioning Matrix** levers (see §15.7) to every recommendation; emit a **Style readout** block once per report (see §15.7).
 
 ### 15.2 Position handling
 
@@ -23,6 +26,162 @@
 2. **May do** — opportunistic actions if a price / event condition fires.
 3. **Avoid** — explicit don'ts for today.
 4. **Need data** — open data gaps that, if closed, would sharpen the call.
+
+**Empty buckets are allowed and preferred over filler.** When no edge exists today, `Must do` may render `— none today —`. Padding with low-conviction actions to fill the bucket is a hard violation of §15.1's "default to inaction" rule.
+
+Each item that *is* in **Must do** or **May do** must carry, inline:
+
+- **Variant tag** — one of `consensus-aligned` / `variant` (timing or magnitude differs from consensus) / `contrarian` (direction differs) / `rebalance` (rails / tax / housekeeping — no thesis). The `Contrarian appetite` lever (§15.7) gates whether `contrarian` may appear.
+- **Sized %** — the recommended action's delta to current weight, expressed as percentage points of **total NAV (including cash)**. Examples: `+2.0pp of NAV`, `trim 1.5pp`, `cut to 0pp`. Never use ambiguous "trim 1.5%".
+- **R:R** — per §15.4 (number, `n/a (binary outcome — see kill criteria)`, or `n/a (rebalance / tax / rail)` for housekeeping items).
+- **Kill** — the price/event from §15.5 that invalidates the action (e.g. `kill: close < $X` or `kill: Q3 GM < 30%`). For `rebalance` items, write `kill: rails restored` or `kill: n/a (housekeeping)`.
+
+If any of those four fields is missing on a non-rebalance item, the item is incomplete and must either be filled in or moved to **Need data**.
+
+### 15.4 Variant view & asymmetry (HARD REQUIREMENT)
+
+Every actionable recommendation in §10.8 (high-risk / high-opportunity), §10.9 (recommended adjustments), and §10.10 (today's action list) must carry a variant view and an explicit R:R **where the framework applies** (carve-outs in §15.4.1). Recommendations that are pure consensus must say so (`consensus-aligned`) and justify why consensus is still mispriced (timing, magnitude, second-order effect) or be downgraded.
+
+**Required template per recommendation:**
+
+| Field | Format | Example |
+|---|---|---|
+| **Consensus** | One sentence — what sell-side / market is currently pricing in. If no public consensus exists, write `unknown-consensus (no sell-side coverage / illiquid / private)` and proceed. **Never synthesise a number.** | "IBES consensus has FY26 EPS at $4.20 and views guidance as conservative." |
+| **Variant** | One sentence — where you disagree. Tag as `variant` (against magnitude / timing), `contrarian` (against direction), or `consensus-aligned` (no disagreement). | "We expect FY26 EPS at $5.10 driven by data-center mix shift accelerating one quarter ahead of the Street." |
+| **Anchor** | The specific datapoint, framework, or second-order effect that supports the variant. **Must cite a real, verifiable source** (10-K, 10-Q, transcript, official release, named macro series, named index). Forbidden: invented citations, "industry sources say", unattributed numbers. If no anchor is verifiable, downgrade to `consensus-aligned` and remove the variant tag. | "AWS / GCP / Azure capex run-rates (latest 10-Qs, lines [cite]) imply $X of incremental orders in next two quarters." |
+| **R:R** | `Target $X (+a%) / Stop $Y (-b%) → R:R = c:1 over horizon Z` — base-case target, stop = §15.5 kill price. See R:R rules below. | "Target $260 (+30%) / Stop $185 (-7%) → R:R = 4.3:1 over 9 months." |
+
+**R:R rules:**
+
+- Use base case for `Target`. If providing bull/base/bear, the R:R cited is base.
+- `R:R < 2:1` → at `Hype tolerance ≤ low` (§15.7) the recommendation **must be downgraded** (smaller size, conviction `low`, or moved to watchlist). At `medium` justification is allowed (very high probability, optionality, hedged structure).
+- Stop must equal the §15.5 kill price exactly — no orphan stops. Exception: when the §15.5 kill action is `hedge to delta-neutral` or `hold through (binary)`, write `Stop = n/a (hedged structure — see kill action)` or `Stop = n/a (binary)`.
+- Binary catalyst (FDA / earnings / vote) → write `R:R = n/a (binary outcome — see kill criteria)` and state expected payoff distribution instead.
+- Rebalance / tax / rail-driven trims (no underlying thesis change) → write `R:R = n/a (rebalance)`. These items also skip the Variant view template — see §15.4.1.
+
+**Anti-quota for contrarian calls (HARD).** The `Contrarian appetite` lever sets a *ceiling*, not a floor. **Zero contrarian calls is the correct output when consensus is right.** Manufacture-to-fill is a hard violation. Counts:
+
+- `none` → zero contrarian calls. `consensus-aligned` and `variant` are both allowed.
+- `selective` → up to 1–2 contrarian calls **only if** Anchor is independently verifiable in the cited source; produce zero if no idea clears the bar.
+- `strong` → no upper limit, but every contrarian call still requires a verifiable Anchor.
+
+#### 15.4.1 Carve-outs from the variant-view template
+
+Some position types do not admit a variant-view + R:R framework cleanly. Apply the simplified template instead:
+
+| Position type | Template |
+|---|---|
+| **Index ETF** (broad-market / multi-asset, e.g. VWRA, ACWI) | Use `consensus-aligned` by default. Replace Variant/Anchor with one line on macro view + portfolio role; R:R uses index drawdown bands instead of stops (e.g. `Target +8% / Stop -15% (1y rolling band)`) or `R:R = n/a (core allocation)`. |
+| **Sector / thematic ETF** (e.g. SMH, ARKK) | Full variant template applies, but Consensus may be `unknown-consensus (no per-name sell-side aggregate)` and Anchor must reference the underlying-basket thesis. |
+| **Crypto** | Variant + Anchor required (on-chain metric, supply schedule, ETF flow, regime). R:R uses regime-defined bands (e.g. `Target $X bull regime / Stop $Y range break`); `R:R = n/a (regime watch)` is allowed when no actionable level is defined. |
+| **Short positions** | Full template, but Target is the downside price and Stop is upside; sizing rails apply with sign reversed; `Hype tolerance` lever applies symmetrically (no exaggerated short cases either). |
+| **Rebalance / tax-lot / rail-enforcement trims** | Skip Consensus / Variant / Anchor. Tag as `rebalance`. Reason field replaces them: `reason: theme rail breach (sector cap 30% → 33%)`. R:R = `n/a (rebalance)`; kill = `n/a (housekeeping)`. |
+
+### 15.5 Pre-mortem & kill criteria (HARD REQUIREMENT)
+
+Every actionable recommendation must pre-commit its exit (rebalance / housekeeping items excepted — see §15.4.1). State all three of the following — short, specific, machine-readable.
+
+| Field | Format |
+|---|---|
+| **Most likely failure mode** | One sentence — the highest-probability reason this trade goes wrong. |
+| **Kill trigger** | A price *or* an event. Examples: `close below $185 on weekly basis`, `Q3 gross margin < 30%`, `FDA delay past 2026-09`. |
+| **Kill action** | Exactly one of: `cut full position`, `cut to 50%`, `hedge to delta-neutral`, `hold through (binary)`, `convert to wait-for-trigger`. |
+
+The kill price must equal the `Stop` used in §15.4 R:R **when the kill action is a price-based cut** (`cut full position`, `cut to 50%`, `convert to wait-for-trigger`). When the kill action is `hedge to delta-neutral` or `hold through (binary)`, the kill is structural and §15.4 R:R uses the corresponding `Stop = n/a` form documented there.
+
+The kill action drives the §10.9 stop-loss and the §15.3 today's-action `kill:` field. The `Drawdown tolerance` lever (§15.7) influences how wide the kill price is set:
+
+- `low` → tighter (e.g. -7% to -10% from entry, or first daily-chart structural break)
+- `medium` → moderate (e.g. -12% to -18% from entry, or weekly structural break)
+- `high` → wider (e.g. -20% to -30% from entry, or thesis break) — but the kill criterion must still be specific, not "we'll see"
+
+### 15.6 Portfolio fit & sizing rails (HARD REQUIREMENT)
+
+Every recommendation in §10.9 must be checked against `SETTINGS.md` sizing rails before being printed. The required output is a one-line `Portfolio fit` annotation:
+
+```
+Portfolio fit — sized Xpp of NAV; correlated with {top-3 overlapping holdings}; theme overlap with {theme name(s)} → {pushes / does not push} {single-name | theme | high-vol bucket} cap toward warn ({current % vs warn %}); cash floor after action {Y%} vs floor {Z%}.
+```
+
+`pp of NAV` = percentage points of total net asset value including cash (the same denominator used by the §10.1 KPI strip and §9.1 weights). Never use ambiguous "% of book".
+
+Rails to check (defaults; override from `SETTINGS.md` if specified):
+
+- **Single-name weight cap** (default 10% — warn above)
+- **Theme concentration cap** (default 30% — warn above)
+- **High-volatility bucket cap** (default 30% — warn above)
+- **Cash floor** (default 10% — warn below)
+- **Single-day move alert** (default ±8%)
+
+Rules:
+
+- If a recommendation would push any rail above its warn threshold, the recommendation must either (a) include an explicit accompanying trim of a correlated holding (named lot per the lot-ordering rule below), or (b) be downsized so the rail is not breached, or (c) be flagged in **§10.6 High-priority alerts** with conviction reduced. Rail-breaching recommendations are an explicit §10.6 trigger (see §10.6 trigger list).
+- The `Conviction sizing` lever (§15.7) sets the typical recommended `pp of NAV` band:
+  - `flat` → equal-ish weights, no name above ~5pp
+  - `kelly-lite` → conviction × asymmetry drives 2–8pp per name
+  - `aggressive` → top-conviction asymmetric ideas may go to 8–15pp if rails permit
+
+#### 15.6.1 Lot-trim ordering — two independent axes (acquisition date vs cost basis)
+
+When recommending a `sell` / `trim`, the agent must pick lot ordering on **two independent axes** based on the resolved `Holding-period bias` lever. Newest ≠ highest-cost. Conflating the two is a hard error.
+
+| Lever value | Date-axis ordering | Cost-axis ordering | Resulting default lot to cut first |
+|---|---|---|---|
+| `trader`   | newest acquisition first | tie-break: highest-cost first | most recently acquired lot (lock recent gains, preserve nothing for long-term tax treatment) |
+| `swing`    | newest acquisition first | tie-break: highest-cost first | most recently acquired lot |
+| `investor` | (date-neutral) | **highest-cost first** (§15.2 default) | highest-cost-basis lot regardless of date |
+| `lifer`    | oldest acquisition last (i.e. trim newer lots first to preserve long-term holdings) | tie-break: highest-cost first | most recently acquired lot — but never the original long-term core lot |
+
+When the lever is missing or ambiguous, fall back to §15.2 (highest-cost first, date-neutral). Always name the chosen lot by ticker + acquisition date (e.g. "trim 2025-09 KAPA lot").
+
+#### 15.6.2 Length budget per recommendation (HARD REQUIREMENT — anti-bloat)
+
+Inline content size, by surface:
+
+- **§10.10 today's-action items** — single line each (variant tag + sized pp + R:R + kill, per §15.3). Hard cap: 240 characters.
+- **§10.9 recommended adjustments** — `≤ 60 words per position`. Use bullet form: 1 line consensus + 1 line variant + 1 line anchor + 1 line R:R + 1 line kill + 1 line portfolio fit. Promote only the **top 5 by conviction** to the full block; remaining holdings get a one-line `hold / pass / trim Xpp / kill: $X` summary in the same section.
+- **§10.8 high-risk / high-opportunity watchlist** — one-line per name: `{tag} {ticker}: {1-clause thesis} [variant: {tag}] [R:R {value}] [kill: {trigger}]`.
+- **Style readout** — single paragraph, ≤ 90 words, ≤ 6 sentences.
+
+Reports for books ≥ 20 positions should still fit within 6,000 words of investment-content text; if not, compress §10.9 by tightening the top-5 selection.
+
+### 15.7 Style-conditioning matrix (HARD REQUIREMENT — single source of truth)
+
+**This table is the single source of truth for Style-Conditioning Matrix levers.** `AGENTS.md` summarises but defers here. Any future tweak — lever name, allowed values, effect — must land in this section first.
+
+The agent must resolve six behavioral levers from `SETTINGS.md` (free-form `Investment Style` bullets are primary; the optional `Style levers` block overrides inferred values) and apply them to every recommendation. Levers are not cosmetic — they change *what* is recommended, not just phrasing.
+
+| Lever | Allowed values | Effect |
+|---|---|---|
+| **Drawdown tolerance** | low / medium / high | Width of kill prices (§15.5); willingness to scale into drawdowns. |
+| **Conviction sizing** | flat / kelly-lite / aggressive | Typical recommended `pp of NAV` per name (§15.6). |
+| **Holding-period bias** | trader / swing / investor / lifer | Skews horizon recommendations and §15.6.1 lot-trim ordering (two-axis: date and cost). |
+| **Confirmation threshold** | low / medium / high | Whether the agent waits for trigger confirmation before recommending entry, or is permitted to front-run setups. |
+| **Contrarian appetite** | none / selective / strong | Ceiling (not floor) on `contrarian` variant calls per §15.4. Manufacturing-to-fill is a hard violation. |
+| **Hype tolerance** | zero / low / medium | Hard cap on optimistic language. `zero` → no superlatives, every upside number must be base/bull/bear bracketed, bull case ≤ 1.5× base unless an explicit comparable trade is cited. |
+
+#### Inference rules
+
+1. **Distinct bullet per lever (preferred).** If a single SETTINGS bullet plausibly drives more than one lever (e.g. "我能承受極大的短期虧損與波動" arguably touches Drawdown, Confirmation, *and* Conviction), the agent may use it for **at most one** lever; the rest must either map to a different bullet or be marked `(inferred — pin to confirm)` in the readout.
+2. **No invented preferences.** If no bullet supports a lever value, fall back to the neutral default and tag `(default)`.
+3. **Override > infer.** Any value pinned in the optional `Style levers` block in `SETTINGS.md` overrides inference and is tagged `(pinned)`.
+4. **Neutral defaults (when both `Investment Style` and `Style levers` are missing):** `medium / flat / investor / medium / selective / low`. This is the canonical default — `AGENTS.md` and `SETTINGS.example.md` cross-reference here; do not duplicate.
+
+#### Style readout — mandatory once per report
+
+Render the `Style readout` block as **the first item under §10.11 Sources & data gaps**. (The renderer's masthead is a fixed template per the renderer-out-of-scope rule and cannot accept new fields without a renderer change.) The block is a single paragraph, ≤ 90 words, listing each of the six resolved lever values with the SETTINGS source it was derived from and a confidence tag (`pinned` / `bullet "<text>"` / `inferred — pin to confirm` / `default`). Example:
+
+> **Style readout** — Drawdown tolerance: high (bullet "我能承受極大的短期虧損與波動"); Conviction sizing: kelly-lite (pinned); Holding-period bias: investor (default); Confirmation threshold: low (inferred — pin to confirm); Contrarian appetite: selective (pinned); Hype tolerance: zero (bullet "不希望聽到過度誇大的樂觀預測"). Correct in `SETTINGS.md` if any value is wrong.
+
+If `Investment Style` is missing or empty *and* `Style levers` is omitted, fall back to neutral defaults and say so. Never invent risk preferences the user did not state.
+
+When a recommendation would differ across plausible lever settings, **state the difference inline** so the user sees the lever's effect:
+
+> "For a steady investor we'd hold; the user's high drawdown tolerance + kelly-lite sizing supports adding +2pp on a -10% pullback, capped at the 10% single-name rail."
+
+#### 15.7.1 Translation contract for new field labels (HARD)
+
+The new field labels introduced in §§15.3–15.7 — `Style readout`, `Consensus`, `Variant`, `Anchor`, `R:R`, `Kill`, `Portfolio fit`, `Sized at`, `Must do` / `May do` / `Avoid` / `Need data`, `pp of NAV` — are reference keys in this English-only spec. **At runtime they must be rendered in the SETTINGS `Language`.** Bilingual labels are forbidden per §5.1; the agent translates each label into the resolved language consistently throughout the report. Field *values* that are reference tokens (`consensus-aligned`, `variant`, `contrarian`, `rebalance`, `flat / kelly-lite / aggressive`, etc.) may stay in English as proper-noun-style codes, since they are part of the agent's vocabulary, not user-facing prose.
 
 ---
 
@@ -132,10 +291,24 @@ Run every item before declaring the report complete. Each item maps back to its 
 
 ### A.11 Investment content
 
-- [ ] Voice is professional research-note (§15.1).
+- [ ] Voice is professional research-note, PM persona (§15.1).
 - [ ] Recommendations include action + price band + trigger (§15.2).
-- [ ] Trims name specific lot(s) by acquisition date, default highest-cost-first (§15.2).
-- [ ] Today's action list has the 4 buckets in order, translated (§15.3).
+- [ ] Trims name specific lot(s) by ticker + acquisition date; ordering matches the §15.6.1 two-axis table for the resolved `Holding-period bias` lever (date axis vs cost axis are *not* conflated). Default fallback is §15.2 highest-cost-first.
+- [ ] Today's action list has the 4 buckets in order, translated (§15.3). **Empty `Must do` / `May do` is acceptable and preferred over filler when no edge exists** (§15.1, §15.3).
+- [ ] Each Must-do / May-do item carries variant tag, sized pp of NAV, R:R, and kill (§15.3). `rebalance` items are exempt from variant/R:R/kill per §15.4.1.
+- [ ] **Style readout** rendered as the first item under §10.11 Sources & data gaps (not in the masthead — masthead template is fixed). Names all six resolved levers with confidence tags `pinned` / `bullet "<text>"` / `inferred — pin to confirm` / `default` (§15.7).
+- [ ] Distinct-bullet rule respected — any lever inferred from a bullet already used for another lever is tagged `(inferred — pin to confirm)` (§15.7).
+- [ ] Every actionable recommendation (§10.8 / §10.9 / §10.10) carries a **Variant view** (Consensus / Variant / Anchor), is explicitly `consensus-aligned`, or uses a §15.4.1 carve-out template (Index ETF / sector ETF / crypto / short / rebalance).
+- [ ] **No fabricated consensus numbers.** Every `Consensus` line cites a real source (IBES, Visible Alpha, named report) or uses `unknown-consensus (...)` (§15.4).
+- [ ] **No fabricated anchors.** Every Anchor cites a verifiable source (10-K/Q, transcript, named index, named macro series). Recommendations without a verifiable anchor are downgraded to `consensus-aligned` (§15.4).
+- [ ] Every actionable recommendation has explicit **R:R** in the §15.4 format, or `n/a (binary outcome — see kill criteria)`, or `n/a (rebalance / tax / rail)` for housekeeping items. Stop equals §15.5 kill price for price-based cuts; uses `Stop = n/a (hedged ...)` or `Stop = n/a (binary)` when kill action is non-cut (§15.4 / §15.5).
+- [ ] Every actionable recommendation (rebalance items excepted) carries a **Pre-mortem & kill criteria** triplet (failure mode, kill trigger, kill action) (§15.5).
+- [ ] Every recommendation carries a **Portfolio fit** annotation — sized pp of NAV, correlated holdings, theme overlap, rail-check vs SETTINGS sizing rails (§15.6).
+- [ ] No recommendation breaches a SETTINGS rail without either an accompanying named-lot trim, a downsize, or escalation to §10.6 High-priority alerts (§15.6). Rail-breach is a §10.6 trigger.
+- [ ] `Contrarian appetite` lever respected as a **ceiling, not a floor**. Zero contrarian calls is acceptable and is the correct output when consensus is right. Manufacture-to-fill flagged as a violation (§15.4 / §15.7).
+- [ ] `Hype tolerance` lever respected — no superlatives at `zero`; price targets are base/bull/bear bracketed; bull case ≤ 1.5× base unless a named comparable trade is cited (§15.7).
+- [ ] **Length budget respected** (§15.6.2): §10.10 items ≤ 240 chars each; §10.9 top-5 full block + ≤ 60 words/position, others one-line; §10.8 watchlist one-line per name; Style readout ≤ 90 words.
+- [ ] **Translation contract honored** (§15.7.1): all field labels (`Style readout`, `Consensus`, `Variant`, `Anchor`, `R:R`, `Kill`, `Portfolio fit`, `Sized at`, action-list bucket names, `pp of NAV`) rendered in the SETTINGS `Language`. Reference token values (`consensus-aligned` / `variant` / `contrarian` / `rebalance` / `flat`-`kelly-lite`-`aggressive` / etc.) may stay in English.
 
 ### A.12 Reply
 

@@ -44,6 +44,13 @@ cp HOLDINGS.example.md HOLDINGS.md
 
 `SETTINGS.md`, `HOLDINGS.md`, `HOLDINGS.md.bak`, 생성 리포트, 일반 실행 산출물은 `.gitignore` 대상입니다.
 
+### `SETTINGS.md`와 `HOLDINGS.md` 운용
+
+- 선호 언어, 리스크 스타일, 기준 통화, 리포트 기본값이 바뀌면 `SETTINGS.md`를 갱신합니다.
+- 리서치나 리포트를 요청하기 전 기준 데이터로 `HOLDINGS.md`를 최신 보유의 단일 소스로 유지합니다.
+- 체결이 끝날 때마다 분석 정확도를 위해 즉시 에이전트에 `HOLDINGS.md` 업데이트를 요청합니다.
+- 리포트를 생성하기 전에 오래된 가정이 없는지 `SETTINGS.md`와 `HOLDINGS.md`를 빠르게 점검합니다.
+
 ## 자주 쓰는 워크플로
 
 보통은 아래 세 가지 중 하나만 에이전트에 요청하면 됩니다.
@@ -66,6 +73,8 @@ cp HOLDINGS.example.md HOLDINGS.md
 - "프리마켓 리포트 돌려줘."
 
 결과물은 `reports/` 아래의 단일 self-contained HTML 파일입니다.
+
+`auto mode`, `routine` 또는 기타 무인 환경에서 리포트를 생성할 때는, 보유 종목 티커를 외부 시장 데이터 소스로 보내 가격을 조회하기 전에 에이전트가 명시적인 동의를 받는 것을 권장합니다. 명확한 동의 문구 예시는 다음과 같습니다: `내 보유 티커를 외부 시장 데이터 소스로 보내 가격을 조회하고 오늘의 리포트를 생성하는 데 동의합니다.` 영어 문구는 다음과 같습니다: `I agree to let you send my holdings tickers to external market data sources to retrieve prices and generate today's report.`
 
 에이전트는 매번 새로 쓰지 말고 표준 스크립트를 사용해야 합니다.
 

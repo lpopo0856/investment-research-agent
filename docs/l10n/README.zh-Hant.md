@@ -44,6 +44,13 @@ cp HOLDINGS.example.md HOLDINGS.md
 
 `SETTINGS.md`、`HOLDINGS.md`、`HOLDINGS.md.bak`、產生的報表與常見執行產物皆在 `.gitignore`。
 
+### `SETTINGS.md` 與 `HOLDINGS.md` 的使用
+
+- 當你的偏好語言、風險風格、基準貨幣或報表預設變更時，請即時更新 `SETTINGS.md`。
+- 在提出研究或報表需求前，將 `HOLDINGS.md` 視為目前持倉的唯一事實來源並保持最新。
+- 每次交易成交後，立即請代理更新 `HOLDINGS.md`，以維持後續分析準確性。
+- 產生報表前快速檢查這兩個檔案，避免沿用過時假設。
+
 ## 常用工作流
 
 大多數情況，只要叫代理做以下三件事之一。
@@ -66,6 +73,8 @@ cp HOLDINGS.example.md HOLDINGS.md
 - 「幫我跑盤前報表。」
 
 交付物是 `reports/` 下的單一自含 HTML。
+
+若在 `auto mode`、`routine` 或其他無人看守環境下生成報表，建議代理先取得明確同意，再把持倉代號送到外部市場資料來源取價。清楚的同意例句可寫成：`我同意請把持倉代號送到外部市場資料來源來取得價格並生成今天的報表`。英文可寫為：`I agree to let you send my holdings tickers to external market data sources to retrieve prices and generate today's report.`
 
 代理應直接使用標準腳本，而不是每次重寫流程：
 

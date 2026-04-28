@@ -22,6 +22,28 @@ Describe how you want the agent to talk to you about risk and conviction. Exampl
 - I am willing to size up on high-probability or asymmetric reward setups.
 - I do not want exaggerated optimism — every claim must be supported by theory and data.
 
+## Style levers (optional, agent-inferred if omitted)
+
+The agent reads the `Investment Style` bullets above and infers six behavioral levers from them. These levers actively reshape recommendations — they change *what* the agent recommends (kill-price width, position size, lot-trim ordering, contrarian latitude), not just phrasing. Pin a value here to override inference. Allowed values are shown in parentheses.
+
+- Drawdown tolerance: medium        (low / medium / high)
+- Conviction sizing: flat           (flat / kelly-lite / aggressive)
+- Holding-period bias: investor     (trader / swing / investor / lifer)
+- Confirmation threshold: medium    (low / medium / high)
+- Contrarian appetite: selective    (none / selective / strong)
+- Hype tolerance: low               (zero / low / medium)
+
+Lever cheatsheet:
+
+- **Drawdown tolerance** sets how wide the agent places kill prices and whether it scales into deep drawdowns.
+- **Conviction sizing** sets the typical recommended `% of book` per name (flat ≈ equal weight; kelly-lite ≈ 2–8% by conviction; aggressive ≈ up to 8–15% if rails permit).
+- **Holding-period bias** skews horizon and the lot-trim ordering when the agent recommends selling.
+- **Confirmation threshold** decides whether the agent waits for breakout/earnings confirmation or is permitted to front-run setups.
+- **Contrarian appetite** gates whether non-consensus calls may appear (`none` blocks them; `strong` welcomes top-of-page contrarian theses).
+- **Hype tolerance** caps optimistic language and forecast multipliers (`zero` requires every upside number to be base/bull/bear bracketed).
+
+The agent prints the resolved levers as a `Style readout` block at the top of every analysis — correct any wrong inference here. If both this section and `Investment Style` are omitted, neutral defaults apply (`medium / flat / investor / medium / selective / low`).
+
 ## Reporting cadence (optional)
 
 - Default report frequency: ad-hoc (run on demand).

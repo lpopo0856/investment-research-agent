@@ -311,6 +311,7 @@ Surface a **High-priority alerts** block at the very top of the HTML whenever an
 - Any position breaking below 50-day MA *and* news flow turning negative.
 - Any position trading > 20% above analyst consensus target.
 - Any position with material negative news, guidance cut, regulatory risk, liquidity risk, dilution risk, or debt risk.
+- Any §10.9 recommendation that, if executed, would push a SETTINGS sizing rail (single-name cap / theme cap / high-vol bucket cap / cash floor) above its warn threshold and is being printed under the §15.6 path-(c) escalation (rail-breach with conviction reduced).
 
 ---
 

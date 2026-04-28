@@ -44,6 +44,13 @@ Common market tags: `[US]`, `[TW]`, `[TWO]`, `[JP]`, `[HK]`, `[LSE]`, `[crypto]`
 
 `SETTINGS.md`, `HOLDINGS.md`, `HOLDINGS.md.bak`, generated reports, and common run artifacts are git-ignored.
 
+### Using `SETTINGS.md` and `HOLDINGS.md`
+
+- Update `SETTINGS.md` whenever your preferred language, risk style, base currency, or report defaults change.
+- Treat `HOLDINGS.md` as the single source of truth for your live positions before asking for research or reports.
+- After every completed trade, ask the agent to update `HOLDINGS.md` immediately so analysis stays accurate.
+- Before generating a report, quickly review both files to avoid stale assumptions.
+
 ## Normal usage
 
 Most users only need to ask the agent for one of these three workflows.
@@ -66,6 +73,8 @@ Examples:
 - "Run my pre-market report."
 
 The deliverable is a single self-contained HTML file under `reports/`.
+
+For `auto mode`, `routine`, or any other unattended environment, it is recommended that the agent obtain explicit consent before sending holdings tickers to external market-data sources for report generation. A clear confirmation example is: `I agree to let you send my holdings tickers to external market data sources to retrieve prices and generate today's report.`
 
 The agent should use the canonical scripts, not rewrite the workflow:
 

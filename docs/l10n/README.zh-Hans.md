@@ -44,6 +44,13 @@ cp HOLDINGS.example.md HOLDINGS.md
 
 `SETTINGS.md`、`HOLDINGS.md`、`HOLDINGS.md.bak`、生成报告与常见运行产物都在 `.gitignore` 中。
 
+### `SETTINGS.md` 与 `HOLDINGS.md` 的使用
+
+- 当你的偏好语言、风险风格、基准货币或报告默认项变化时，及时更新 `SETTINGS.md`。
+- 在发起研究或报告请求前，将 `HOLDINGS.md` 作为当前持仓的唯一事实来源并保持最新。
+- 每次交易成交后，立即让代理更新 `HOLDINGS.md`，以保证后续分析准确。
+- 生成报告前快速检查这两个文件，避免沿用过时假设。
+
 ## 常用工作流
 
 大多数情况下，只需让代理做以下三件事之一。
@@ -66,6 +73,8 @@ cp HOLDINGS.example.md HOLDINGS.md
 - “帮我跑盘前报告。”
 
 交付物是 `reports/` 下的单个自包含 HTML。
+
+若在 `auto mode`、`routine` 或其他无人看守环境下生成报告，建议代理先取得明确同意，再把持仓代号发送到外部市场数据来源取价。清晰的同意例句可写为：`我同意请把持仓代号送到外部市场资料来源来取得价格并生成今天的报告`。英文可写为：`I agree to let you send my holdings tickers to external market data sources to retrieve prices and generate today's report.`
 
 代理应直接使用标准脚本，而不是每次重写流程：
 

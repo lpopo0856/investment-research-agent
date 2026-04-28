@@ -44,6 +44,13 @@ cp HOLDINGS.example.md HOLDINGS.md
 
 `SETTINGS.md`、`HOLDINGS.md`、`HOLDINGS.md.bak`、生成レポート、よくある実行生成物は `.gitignore` 対象です。
 
+### `SETTINGS.md` と `HOLDINGS.md` の運用
+
+- 言語設定、リスクスタイル、基準通貨、レポート既定を変更したら `SETTINGS.md` を更新します。
+- リサーチやレポートを依頼する前提データとして、`HOLDINGS.md` を最新ポジションの単一ソースにします。
+- 約定が終わるたびに、分析精度を保つためすぐエージェントへ `HOLDINGS.md` 更新を依頼します。
+- レポート生成前に、古い前提がないか `SETTINGS.md` と `HOLDINGS.md` を軽く見直します。
+
 ## よく使うワークフロー
 
 通常は、次の 3 つのどれかをエージェントに頼めば足ります。
@@ -66,6 +73,8 @@ cp HOLDINGS.example.md HOLDINGS.md
 - "プレマーケット用レポートを出して。"
 
 成果物は `reports/` 配下の単一 self-contained HTML です。
+
+`auto mode`、`routine`、またはその他の無人環境でレポートを生成する場合、保有銘柄ティッカーを外部の市場データソースへ送信して価格を取得する前に、エージェントが明確な同意を得ることを推奨します。明確な同意文の例: `保有ティッカーを外部の市場データソースに送信して価格を取得し、今日のレポートを生成することに同意します。` 英語では: `I agree to let you send my holdings tickers to external market data sources to retrieve prices and generate today's report.`
 
 エージェントは毎回作り直さず、標準スクリプトを使うべきです:
 

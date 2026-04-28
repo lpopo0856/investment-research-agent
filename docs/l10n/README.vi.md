@@ -44,6 +44,13 @@ Thẻ thị trường phổ biến: `[US]`, `[TW]`, `[TWO]`, `[JP]`, `[HK]`, `[L
 
 `SETTINGS.md`, `HOLDINGS.md`, `HOLDINGS.md.bak`, báo cáo sinh ra và các artifact chạy thông dụng đều nằm trong `.gitignore`.
 
+### Cách dùng `SETTINGS.md` và `HOLDINGS.md`
+
+- Cập nhật `SETTINGS.md` mỗi khi bạn đổi ngôn ngữ ưa thích, khẩu vị rủi ro, tiền tệ gốc hoặc mặc định báo cáo.
+- Duy trì `HOLDINGS.md` làm nguồn sự thật duy nhất cho vị thế hiện tại trước khi yêu cầu nghiên cứu hay báo cáo.
+- Sau mỗi giao dịch đã khớp lệnh, yêu cầu tác nhân cập nhật `HOLDINGS.md` ngay để giữ độ chính xác phân tích.
+- Trước khi tạo báo cáo, rà nhanh cả hai file để tránh dùng giả định đã cũ.
+
 ## Ba workflow thường dùng
 
 Thông thường chỉ cần yêu cầu tác nhân làm một trong ba việc sau.
@@ -66,6 +73,8 @@ Ví dụ:
 - "Chạy báo cáo trước giờ mở cửa."
 
 Kết quả là một file HTML tự chứa trong `reports/`.
+
+Với `auto mode`, `routine`, hoặc bất kỳ môi trường không giám sát nào khác, nên để tác nhân xin sự đồng ý rõ ràng trước khi gửi mã ticker danh mục của bạn tới nguồn dữ liệu thị trường bên ngoài để lấy giá. Ví dụ câu đồng ý rõ ràng: `Tôi đồng ý cho bạn gửi mã ticker danh mục của tôi tới các nguồn dữ liệu thị trường bên ngoài để lấy giá và tạo báo cáo hôm nay.` Bản tiếng Anh là: `I agree to let you send my holdings tickers to external market data sources to retrieve prices and generate today's report.`
 
 Tác nhân nên dùng thẳng các script chuẩn, không viết lại quy trình:
 
