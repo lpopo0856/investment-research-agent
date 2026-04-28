@@ -1,88 +1,73 @@
-# 投资 — 个人研究与持仓报告
+# Investments — AI 投资研究工作区
 
 **README 语言** · [English](../../README.md) · [繁體中文](README.zh-Hant.md) · [简体中文](README.zh-Hans.md) · [日本語](README.ja.md) · [Tiếng Việt](README.vi.md) · [한국어](README.ko.md)
 
-**英文**[根目录 README](../../README.md) 为权威、与仓库同步更新的项目说明。其他语言仅便于阅读；如有冲突，以英文为准。
+英文版 README 为正式版本，其他语言仅为方便阅读的翻译。
 
-本仓库是 AI 投资研究代理的个人工作区，包含：
+这个仓库是 AI 投资研究代理的本地工作区。实际主要做三件事：
 
-1. 代理说明（应如何思考与输出）。
-2. 个人数据（持仓、设置）— 不纳入 git。
-3. 在 `reports/` 下生成的 HTML 报告 — 也不纳入 git。
-4. 持仓报告的 HTML 设计参考样例。
-5. `scripts/` 下的两个 Python 模板，代理每轮直接执行，不必每次重写抓价与渲染 HTML 的逻辑。
+1. 根据你的设置与持仓回答研究问题。
+2. 生成每日 HTML 持仓报告。
+3. 按自然语言交易指令更新 `HOLDINGS.md`。
 
-代理在 LLM 客户端内运行（如 Cowork / Claude）。当你要求「做持仓健康检查」时，它会读说明与个人数据、运行 `scripts/fetch_prices.py` 通过市场对应来源获取最新价格并自动抓取 FX 转换汇率（按规范限速与回退），再运行 `scripts/generate_report.py` 在 `reports/` 中组装可独立打开的 HTML。
+最适合在能读文件并执行命令的代理工具中使用，例如 OpenAI Codex、Claude Code、Gemini CLI 或类似环境。
 
-## 仓库结构
+**模型建议：** 若要分析质量稳定，并能遵守本仓库规格（`AGENTS.md`、报表与持仓指引），请至少使用 **Claude Sonnet 4.6** 并开启 **High** 推理强度，或任何同等或更高能力的较新模型。较轻量的模型可能略过稽核步骤、误读持仓，或削弱研究深度。
 
-```
-.
-├── README.md
-├── docs/
-│   ├── l10n/
-│   ├── portfolio_report_agent_guidelines.md
-│   ├── portfolio_report_agent_guidelines/
-│   └── holdings_update_agent_guidelines.md
-├── AGENTS.md
-├── SETTINGS.md
-├── SETTINGS.example.md
-├── HOLDINGS.md
-├── HOLDINGS.md.bak
-├── HOLDINGS.example.md
-├── scripts/
-│   ├── fetch_prices.py
-│   ├── generate_report.py
-│   └── i18n/
-│       ├── report_ui.en.json
-│       ├── report_ui.zh-Hant.json
-│       └── report_ui.zh-Hans.json
-├── .gitignore
-└── reports/
-    ├── _sample_redesign.html
-    └── *_portfolio_report.html
-```
+## 关键文件
+
+- `AGENTS.md`：研究代理的思考与写作规范。
+- `SETTINGS.md`：语言、风险风格、基准货币。仅保存在本机。
+- `HOLDINGS.md`：你的持仓。仅保存在本机。
+- `docs/portfolio_report_agent_guidelines.md`：报告主规范；代理还必须读取 `docs/portfolio_report_agent_guidelines/` 下所有链接分章。
+- `docs/holdings_update_agent_guidelines.md`：持仓更新规范。
+- `scripts/fetch_prices.py`：标准价格与汇率抓取脚本。
+- `scripts/generate_report.py`：标准 HTML 报告渲染脚本。
+- `reports/`：输出目录。仅保存在本机。
 
 ## 首次设置
 
-1. 复制示例并填入真实数据：
+```sh
+cp SETTINGS.example.md SETTINGS.md
+cp HOLDINGS.example.md HOLDINGS.md
+```
 
-   ```sh
-   cp SETTINGS.example.md SETTINGS.md
-   cp HOLDINGS.example.md HOLDINGS.md
-   ```
+然后：
 
-2. 编辑 `SETTINGS.md`：
-   - 选择首选语言。
-   - 按真实风险承受能力调整投资风格条目。
-   -（可选）微调持仓代理用于提醒的规模边界。
+- 填写 `SETTINGS.md`。
+- 填写 `HOLDINGS.md`。
+- `HOLDINGS.md` 保留四个桶：`Long Term`、`Mid Term`、`Short Term`、`Cash Holdings`。
+- 每笔 lot 一行：`<TICKER>: <quantity> shares @ <cost basis> on <YYYY-MM-DD> [<MARKET>]`。
+- 若成本或日期不明，使用 `?`。
 
-3. 编辑 `HOLDINGS.md`：
-   - 将每一行换为实际持仓。
-   - 保持四桶结构（`Long Term`、`Mid Term`、`Short Term`、`Cash Holdings`）。
-   - 每笔一行：`<TICKER>: 数量 股/单位 @ 成本 于 <YYYY-MM-DD> [<市场>]` — `于 YYYY-MM-DD` 为建仓日（供持仓期分析），`[<MARKET>]` 供价格代理构造 `yfinance` 代码与回退链。
-   - 常见市场标签：`[US]`、`[TW]`、`[TWO]`、`[JP]`、`[HK]`、`[LSE]`、`[crypto]`、`[FX]`、`[cash]`。完整表见 `HOLDINGS.example.md` 与 `docs/portfolio_report_agent_guidelines.md` §4.1。
-   - 成本或日期不明时用 `?` — 受影响项显示 `n/a`（不适用用 `—`，如现金已兑现盈亏），不杜撰。
+常用市场标签：`[US]`、`[TW]`、`[TWO]`、`[JP]`、`[HK]`、`[LSE]`、`[crypto]`、`[FX]`、`[cash]`。
 
-`HOLDINGS.md`、`HOLDINGS.md.bak`、`SETTINGS.md` 在 `.gitignore` 中，不会通过 git 离开本机。
+`SETTINGS.md`、`HOLDINGS.md`、`HOLDINGS.md.bak`、生成报告与常见运行产物都在 `.gitignore` 中。
 
-## 使用代理
+## 常用工作流
 
-**模型建议：**为获得较好的分析与报告质量，请使用**至少 Claude Sonnet 4.6（High）或同等及以上推理能力的模型**。长持仓表、规格核对与综合段落需要足够推理深度——较轻的模型可能省略步骤或漏检。
+大多数情况下，只需让代理做以下三件事之一。
 
-**运行环境：**在能读文件并执行命令的编码代理里打开本文件夹即可，例如 **Claude Code**、**OpenAI Codex**（CLI 或 IDE）、**Google Gemini**（CLI 或其他客户端）等类似工具。没有唯一指定产品；只要能对本仓库应用 `AGENTS.md` 与 `docs/` 下说明即可。
+### 1. 研究分析
 
-主要有三类用法：
+例子：
 
-### 1. 研究类问题（随时）
+- “分析 NVDA 对我当前组合的意义。”
+- “我现在 AI 暴露有多高？”
+- “财报前要不要减掉短线仓位？”
 
-代理读 `SETTINGS.md` 和 `HOLDINGS.md`，按 `AGENTS.md` 的研究结构输出（先结论、基本面、估值、技术、风险、剧本、评分、总评）。
+代理会读取 `SETTINGS.md`、`HOLDINGS.md`，并按 `AGENTS.md` 输出。
 
-### 2. 持仓健康检查
+### 2. 持仓报告
 
-代理依 `docs/portfolio_report_agent_guidelines.md`（及其索引所链接的分章文件）在 `reports/` 生成自洽 HTML。共 11 节：今日摘要、组合仪表盘（KPI）、含 P/L 与每笔浮层的持仓表、持仓期与节奏、主题/行业暴露、重要新闻、未来 30 日事件历、高风与高机会清单、建议调整、今日行动清单、来源与数据缺口。有高危警报时，在 11 节上方显示横幅。
+例子：
 
-实现上，代理直接执行两个 Python 模板，而非每次重写：
+- “生成今天的持仓体检。”
+- “帮我跑盘前报告。”
+
+交付物是 `reports/` 下的单个自包含 HTML。
+
+代理应直接使用标准脚本，而不是每次重写流程：
 
 ```sh
 python scripts/fetch_prices.py --holdings HOLDINGS.md --settings SETTINGS.md --output prices.json
@@ -93,30 +78,63 @@ python scripts/generate_report.py \
     --output reports/2026-04-28_1330_portfolio_report.html
 ```
 
-`report_context.json` 是代理的编辑层：判读、新闻、建议与行动列表；不得放手动 FX 汇率。FX 转换数据由 `scripts/fetch_prices.py` 自动写入 `prices.json["_fx"]`；数字由脚本计算。
+若报告语言不是内建 UI 字典 `english`、`traditional chinese`、`simplified chinese` 之一，执行中的代理应将 `scripts/i18n/report_ui.en.json` 翻成临时 overlay，并通过 `--ui-dict` 传入。
 
-若 `SETTINGS.md` 所需语言不在内置 UI 字典（内置：`english`、`traditional chinese`、`simplified chinese`），**执行中的代理**应将 `scripts/i18n/report_ui.en.json` 译为临时 JSON overlay，并通过 `--ui-dict`（或 context 中的 `ui_dictionary`）传给 `scripts/generate_report.py`。渲染器本身不调用外部翻译服务。
+### 3. 自然语言更新持仓
 
-### 3. 用自然语言更新持仓
+例子：
 
-描述交易即可。规则见 `docs/holdings_update_agent_guidelines.md`：不静默覆盖、不杜撰；需你显式 `yes` 后写入，并先备份为 `HOLDINGS.md.bak`。
+- “昨天我在 185 美元买了 30 股 NVDA。”
+- “今天 400 美元卖出 10 股 TSLA。”
+- “把去年九月那笔 GOOG 改成 70 股，不是 75 股。”
 
-## 生成的报告
+硬规则：代理在展示解析结果与 unified diff，并获得你在同一轮明确 `yes` 之前，不得写入 `HOLDINGS.md`。每次写入前都必须先创建 `HOLDINGS.md.bak`。
 
-模式：`reports/<YYYY-MM-DD>_<HHMM>_portfolio_report.html` — 单文件、无外链资源。`scripts/generate_report.py` 从 `scripts/i18n/report_ui.en.json`、`report_ui.zh-Hant.json`、`report_ui.zh-Hans.json` 加载内置 UI 字典；其他单一语言时由执行代理从英文字典译成 overlay 传入（见上文 `--ui-dict`）。`reports/_sample_redesign.html` 为设计基准，勿删；代理与 `generate_report.py` 从其读取 CSS（默认 `--sample` 即该路径）。
+## 报告输出
 
-## 修改说明文档
+文件名格式：
 
-`AGENTS.md`、`docs/portfolio_report_agent_guidelines.md`（及 `docs/portfolio_report_agent_guidelines/` 下索引链接的分章文件）、`docs/holdings_update_agent_guidelines.md` 约束每次运行。要改行为就改文档；不要放入个人数据。大改后建议重跑一份报告验证。
+```text
+reports/<YYYY-MM-DD>_<HHMM>_portfolio_report.html
+```
+
+HTML 为单文件，不依赖外部 CSS、JS、字体或图表库。
+
+`reports/_sample_redesign.html` 是视觉参考文件，请不要删除。
+
+## 何时修改规范
+
+如果你要改变代理行为，请修改：
+
+- `AGENTS.md`
+- `docs/portfolio_report_agent_guidelines.md`
+- `docs/portfolio_report_agent_guidelines/` 下所有被链接的分章
+- `docs/holdings_update_agent_guidelines.md`
+
+不要把个人数据放进规范文件。
 
 ## 隐私
 
-持仓、设置、生成报告以及常见运行产物 `prices.json`、`report_context.json` git-ignored；可分享的是模板与说明。若 fork 仓库，真实数据仍只在本机。
+会被 git 跟踪的内容：
 
-## 第三方数据、API 与速率限制
+- 代理规范
+- 模板文件
+- Python 脚本
+- README
+- 视觉参考文件
 
-**本项目并不拥有、运营或担保**任何行情或外汇 API。`scripts/fetch_prices.py` 等流程可能使用公开端点、你在 `SETTINGS.md` 配置的选用 API 密钥，以及封装第三方来源的库（如 `yfinance`）。**你必须遵守**各供应商的**服务条款**、**可接受使用政策**与**速率限制**。过度或违规请求可能导致密钥或 IP 被限流或停用。规格内含节流与回退，但**合规、合法使用由你负责**。若来源要求署名、合约或付费，请遵循该供应商规则。
+不会被 git 跟踪的内容：
 
-## 免责
+- `SETTINGS.md`
+- `HOLDINGS.md`
+- `HOLDINGS.md.bak`
+- 生成的报告
+- 常见运行文件，如 `prices.json`、`report_context.json`
 
-本仓库与报告仅供个人研究，不构成投资建议或买卖邀约；请自行核实后再做交易决策。代理会提示缺口与不确定性，仍可能出错。
+## 第三方数据
+
+本项目不拥有也不保证任何行情或汇率来源。价格流程可能使用公开端点、可选 API key 与 `yfinance` 等封装来源。供应商条款、速率限制、署名和付费授权，均由使用者自行负责。
+
+## 免责声明
+
+本仓库仅供个人研究，不构成投资建议。交易前请自行核实重要信息。

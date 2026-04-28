@@ -1,78 +1,73 @@
-# Investments — Nghiên cứu cá nhân & báo cáo danh mục
+# Investments — Không gian làm việc nghiên cứu đầu tư AI
 
 **Ngôn ngữ README** · [English](../../README.md) · [繁體中文](README.zh-Hant.md) · [简体中文](README.zh-Hans.md) · [日本語](README.ja.md) · [Tiếng Việt](README.vi.md) · [한국어](README.ko.md)
 
-[README tiếng Anh](../../README.md) ở thư mục gốc là bản chuẩn, luôn được cập nhật. Các bản ngôn ngữ khác chỉ để tiện đọc; khi lệch nghĩa, ưu tiên bản tiếng Anh.
+README tiếng Anh là bản chính thức; các ngôn ngữ khác chỉ là bản dịch để tiện đọc.
 
-Repo này là workspace cá nhân cho tác nhân nghiên cứu đầu tư AI, gồm:
+Repo này là không gian làm việc cục bộ cho tác nhân nghiên cứu đầu tư AI. Thực tế nó phục vụ ba việc chính:
 
-1. Quy cách tác nhân (cách suy nghĩ và viết).
-2. Dữ liệu riêng (danh mục, cài đặt) — không commit git.
-3. Báo cáo HTML trong `reports/` — cũng bị bỏ qua git.
-4. Mẫu HTML tham chiếu giao diện báo cáo.
-5. Hai mẫu Python trong `scripts/`, tác nhân chạy trực tiếp mỗi phiên, không cần viết lại từ đầu phần lấy giá hay dựng HTML.
+1. Trả lời câu hỏi nghiên cứu dựa trên cài đặt và danh mục của bạn.
+2. Tạo báo cáo danh mục HTML hằng ngày.
+3. Cập nhật `HOLDINGS.md` từ chỉ dẫn giao dịch bằng ngôn ngữ tự nhiên.
 
-Tác nhân chạy trong ứng dụng LLM (ví dụ Cowork / Claude). Khi bạn yêu cầu “kiểm tra sức khỏe danh mục”, tác nhân đọc quy cách và dữ liệu, chạy `scripts/fetch_prices.py` lấy giá mới nhất và tỷ giá FX quy đổi tự động qua nguồn phù hợp từng thị trường (theo giới hạn tốc độ và dự phòng trong spec), rồi `scripts/generate_report.py` tạo HTML tự gói trong `reports/`.
+Phù hợp nhất khi dùng trong môi trường tác nhân có thể đọc file và chạy lệnh như OpenAI Codex, Claude Code, Gemini CLI hoặc công cụ tương tự.
 
-## Cấu trúc repo
+**Mức model:** Để phân tích tin cậy và tuân thủ quy cách của repo (`AGENTS.md`, hướng dẫn báo cáo và danh mục), hãy dùng **Claude Sonnet 4.6** với mức suy luận **High**—hoặc model mới hơn có khả năng tương đương trở lên. Model nhẹ hơn có thể bỏ bước kiểm, đọc sai danh mục hoặc làm nghiên cứu nông hơn.
 
-```
-.
-├── README.md
-├── docs/
-│   ├── l10n/
-│   ├── portfolio_report_agent_guidelines.md
-│   ├── portfolio_report_agent_guidelines/
-│   └── holdings_update_agent_guidelines.md
-├── AGENTS.md
-├── SETTINGS.md
-├── SETTINGS.example.md
-├── HOLDINGS.md
-├── HOLDINGS.md.bak
-├── HOLDINGS.example.md
-├── scripts/
-│   ├── fetch_prices.py
-│   ├── generate_report.py
-│   └── i18n/
-│       ├── report_ui.en.json
-│       ├── report_ui.zh-Hant.json
-│       └── report_ui.zh-Hans.json
-├── .gitignore
-└── reports/
-    ├── _sample_redesign.html
-    └── *_portfolio_report.html
-```
+## Tệp quan trọng
+
+- `AGENTS.md`: quy cách suy nghĩ và viết của tác nhân nghiên cứu
+- `SETTINGS.md`: ngôn ngữ, khẩu vị rủi ro, tiền tệ gốc. Chỉ lưu cục bộ
+- `HOLDINGS.md`: danh mục của bạn. Chỉ lưu cục bộ
+- `docs/portfolio_report_agent_guidelines.md`: quy cách chính của báo cáo; tác nhân còn phải đọc toàn bộ các phần được liên kết trong `docs/portfolio_report_agent_guidelines/`
+- `docs/holdings_update_agent_guidelines.md`: quy cách cập nhật danh mục
+- `scripts/fetch_prices.py`: script chuẩn lấy giá và FX
+- `scripts/generate_report.py`: script chuẩn dựng HTML
+- `reports/`: thư mục đầu ra. Chỉ lưu cục bộ
 
 ## Thiết lập lần đầu
 
-1. Sao chép file mẫu và điền dữ liệu thật:
+```sh
+cp SETTINGS.example.md SETTINGS.md
+cp HOLDINGS.example.md HOLDINGS.md
+```
 
-   ```sh
-   cp SETTINGS.example.md SETTINGS.md
-   cp HOLDINGS.example.md HOLDINGS.md
-   ```
+Sau đó:
 
-2. Sửa `SETTINGS.md`: ngôn ngữ, phong cách đầu tư, (tuỳ chọn) ngưỡng cảnh báo quy mô vị thế.
+- Điền `SETTINGS.md`.
+- Điền `HOLDINGS.md`.
+- Giữ bốn nhóm trong `HOLDINGS.md`: `Long Term`, `Mid Term`, `Short Term`, `Cash Holdings`.
+- Mỗi lô một dòng: `<TICKER>: <quantity> shares @ <cost basis> on <YYYY-MM-DD> [<MARKET>]`
+- Nếu không rõ giá vốn hoặc ngày mua, dùng `?`.
 
-3. Sửa `HOLDINGS.md`: bốn ngăn `Long Term`, `Mid Term`, `Short Term`, `Cash Holdings`. Mỗi lô một dòng: `<TICKER>: số lượng @ giá vốn on <YYYY-MM-DD> [<MARKET>]` — ngày mua dùng cho thống kê thời gian nắm; thẻ `[<MARKET>]` cho mã `yfinance` và chuỗi dự phòng. Thẻ thường dùng: `[US]`, `[TW]`, `[TWO]`, `[JP]`, `[HK]`, `[LSE]`, `[crypto]`, `[FX]`, `[cash]`. Bảng đầy đủ trong `HOLDINGS.example.md` và `docs/portfolio_report_agent_guidelines.md` §4.1. Dùng `?` nếu vốn hoặc ngày không rõ — ô liên quan hiển thị `n/a` (các ô không áp dụng dùng `—`).
+Thẻ thị trường phổ biến: `[US]`, `[TW]`, `[TWO]`, `[JP]`, `[HK]`, `[LSE]`, `[crypto]`, `[FX]`, `[cash]`
 
-Các `HOLDINGS*`, `SETTINGS.md` nằm trong `.gitignore` và không bị đẩy lên git.
+`SETTINGS.md`, `HOLDINGS.md`, `HOLDINGS.md.bak`, báo cáo sinh ra và các artifact chạy thông dụng đều nằm trong `.gitignore`.
 
-## Cách dùng tác nhân
+## Ba workflow thường dùng
 
-**Mô hình:** Để phân tích và báo cáo tốt hơn, nên dùng **ít nhất Claude Sonnet 4.6 (High), hoặc mô hình tương đương/mạnh hơn về suy luận**. Bảng nắm giữ dài, tuân thủ checklist và tổng hợp cần khả năng suy luận đủ — mô hình nhẹ có thể bỏ bước hoặc sót mục.
+Thông thường chỉ cần yêu cầu tác nhân làm một trong ba việc sau.
 
-**Môi trường:** Mở thư mục này trong trợ lý/công cụ coding có đọc file và chạy lệnh — ví dụ **Claude Code**, **OpenAI Codex** (CLI hoặc IDE), **Google Gemini** (CLI hoặc client khác). Không bắt buộc một sản phẩm duy nhất; miễn là áp dụng được `AGENTS.md` và tài liệu trong `docs/` cho repo này.
+### 1. Nghiên cứu
 
-### 1. Câu hỏi nghiên cứu
+Ví dụ:
 
-Đọc `SETTINGS.md` và `HOLDINGS.md`, theo khung `AGENTS.md` (kết luận trước, cơ bản, định giá, kỹ thuật, rủi ro, kế hoạch, chấm điểm, tổng kết).
+- "Phân tích NVDA trong bối cảnh danh mục hiện tại của tôi."
+- "Mức phơi bày AI hiện tại của tôi là bao nhiêu?"
+- "Có nên giảm vị thế ngắn hạn trước mùa kết quả kinh doanh không?"
 
-### 2. Kiểm tra sức khỏe danh mục
+Tác nhân sẽ đọc `SETTINGS.md`, `HOLDINGS.md` và trả lời theo `AGENTS.md`.
 
-Theo `docs/portfolio_report_agent_guidelines.md` (và các phần được liên kết từ mục lục), tạo một file HTML tự gói trong `reports/`. 11 mục: tóm tắt, bảng điều khiển KPI, bảng vị thế (P/L, popover từng lô), thời gian nắm & nhịp, phơi bày theme/ngành, tin mới, lịch 30 ngày, rủi ro/cơ hội, điều chỉnh gợi ý, việc cần làm, nguồn & lỗ hổng dữ liệu. Có cảnh báo ưu tiên thì hiển thị phía trên.
+### 2. Báo cáo danh mục
 
-Tác nhân chạy hai script Python mẫu:
+Ví dụ:
+
+- "Tạo báo cáo sức khỏe danh mục hôm nay."
+- "Chạy báo cáo trước giờ mở cửa."
+
+Kết quả là một file HTML tự chứa trong `reports/`.
+
+Tác nhân nên dùng thẳng các script chuẩn, không viết lại quy trình:
 
 ```sh
 python scripts/fetch_prices.py --holdings HOLDINGS.md --settings SETTINGS.md --output prices.json
@@ -83,30 +78,63 @@ python scripts/generate_report.py \
     --output reports/2026-04-28_1330_portfolio_report.html
 ```
 
-`report_context.json` là lớp biên tập: nhận xét, tin, gợi ý, hành động; không chứa tỷ giá FX thủ công. Dữ liệu FX quy đổi được `scripts/fetch_prices.py` tự động ghi vào `prices.json["_fx"]`; số liệu do script tính tự động.
+Nếu ngôn ngữ báo cáo không phải một trong các từ điển UI tích hợp `english`, `traditional chinese`, `simplified chinese`, tác nhân đang chạy phải dịch `scripts/i18n/report_ui.en.json` thành overlay tạm và truyền qua `--ui-dict`.
 
-Nếu `SETTINGS.md` yêu cầu ngôn ngữ không có trong từ điển UI mặc định (`english`, `traditional chinese`, `simplified chinese`), **agent đang chạy** nên dịch `scripts/i18n/report_ui.en.json` sang file JSON overlay tạm và truyền qua `--ui-dict` (hoặc `ui_dictionary` trong context) cho `scripts/generate_report.py`. Trình render không gọi dịch vụ dịch bên ngoài.
+### 3. Cập nhật danh mục bằng ngôn ngữ tự nhiên
 
-### 3. Cập nhật danh mục bằng ngôn tự nhiên
+Ví dụ:
 
-Mô tả giao dịch. Tác nhân sẽ phân tích, hiển thị diff, chờ `yes` rõ ràng, sao lưu `HOLDINGS.md.bak` rồi ghi. Không ghi đè thầm, không bịa dữ liệu. Quy tắc đầy đủ: `docs/holdings_update_agent_guidelines.md`.
+- "Hôm qua tôi mua 30 cổ NVDA ở giá 185 USD."
+- "Hôm nay bán 10 cổ TSLA ở giá 400 USD."
+- "Sửa lô GOOG tháng 9 năm ngoái thành 70 cổ, không phải 75."
 
-## Báo cáo sinh ra
+Quy tắc cứng: tác nhân không được ghi `HOLDINGS.md` cho đến khi đã hiển thị kế hoạch phân tích và unified diff, rồi nhận được `yes` rõ ràng từ bạn ngay trong cùng lượt. Trước mỗi lần ghi phải tạo `HOLDINGS.md.bak`.
 
-Mẫu tên: `reports/<YYYY-MM-DD>_<HHMM>_portfolio_report.html` — một file, không phụ thuộc tài nguyên ngoài. `scripts/generate_report.py` nạp từ điển UI từ `scripts/i18n/report_ui.en.json`, `report_ui.zh-Hant.json`, `report_ui.zh-Hans.json`; ngôn ngữ khác dùng overlay dịch từ bản tiếng Anh (xem `--ui-dict` ở trên). `reports/_sample_redesign.html` là tham chiếu thiết kế, không xóa; `generate_report.py` đọc CSS từ đó (mặc định `--sample`).
+## Đầu ra báo cáo
 
-## Sửa quy cách tác nhân
+Mẫu tên file:
 
-`AGENTS.md`, `docs/portfolio_report_agent_guidelines.md` (và các file được liên kết trong `docs/portfolio_report_agent_guidelines/`), và `docs/holdings_update_agent_guidelines.md` là hợp đồng hành vi. Đổi khi muốn đổi cách suy nghĩ/viết; không đưa dữ liệu cá nhân vào. Sau chỉnh lớn, nên tạo lại một báo cáo kiểm tra.
+```text
+reports/<YYYY-MM-DD>_<HHMM>_portfolio_report.html
+```
+
+HTML là file đơn, không phụ thuộc CSS, JS, font hay thư viện biểu đồ bên ngoài.
+
+`reports/_sample_redesign.html` là file tham chiếu giao diện, không xóa.
+
+## Khi muốn đổi hành vi tác nhân
+
+Hãy sửa các file sau:
+
+- `AGENTS.md`
+- `docs/portfolio_report_agent_guidelines.md`
+- mọi phần được liên kết trong `docs/portfolio_report_agent_guidelines/`
+- `docs/holdings_update_agent_guidelines.md`
+
+Không đưa dữ liệu cá nhân vào các file quy cách.
 
 ## Quyền riêng tư
 
-Các tệp cá nhân, báo cáo tạo ra, và artifact chạy `prices.json` / `report_context.json` bị git bỏ qua; chỉ mẫu và quy cách được theo dõi. Khi fork, vị thế thật vẫn ở máy bạn.
+Được git theo dõi:
 
-## Dữ liệu bên thứ ba, API và giới hạn tốc độ
+- quy cách tác nhân
+- file mẫu
+- script Python
+- README
+- file tham chiếu giao diện
 
-**Dự án này không sở hữu, vận hành hay bảo đảm** bất kỳ API giá hay FX nào. `scripts/fetch_prices.py` và luồng liên quan có thể dùng endpoint công khai, khóa API tùy chọn trong `SETTINGS.md`, và thư viện như `yfinance` bọc nguồn bên thứ ba. **Bạn phải tuân thủ** điều khoản dịch vụ, chính sách sử dụng chấp nhận được và giới hạn tốc độ của từng nhà cung cấp. Lạm dụng có thể khiến khóa hoặc IP bị giới hạn. Spec có nhịp và fallback nhưng **việc dùng hợp pháp, đúng điều khoản là trách nhiệm của bạn**. Nếu nguồn yêu cầu ghi công, hợp đồng hoặc trả phí, hãy làm theo quy tắc của họ.
+Không được git theo dõi:
 
-## Tuyên bố miễn trừ
+- `SETTINGS.md`
+- `HOLDINGS.md`
+- `HOLDINGS.md.bak`
+- báo cáo sinh ra
+- artifact chạy phổ biến như `prices.json`, `report_context.json`
 
-Repo và báo cáo chỉ phục vụ nghiên cứu cá nhân, không phải tư vấn tài chính hay lời mời mua bán. Hãy tự xác minh trước khi giao dịch. Tác nhân có thể vẫn sai dù đã nêu khoảng trống dữ liệu.
+## Dữ liệu bên thứ ba
+
+Dự án này không sở hữu hay bảo đảm bất kỳ nguồn dữ liệu giá hoặc FX nào. Luồng lấy giá có thể dùng endpoint công khai, API key tùy chọn và wrapper như `yfinance`. Việc tuân thủ điều khoản, giới hạn tốc độ, yêu cầu ghi nguồn và điều kiện trả phí là trách nhiệm của người dùng.
+
+## Miễn trừ
+
+Repo này chỉ phục vụ nghiên cứu cá nhân, không phải khuyến nghị đầu tư. Hãy tự xác minh các dữ kiện quan trọng trước khi giao dịch.

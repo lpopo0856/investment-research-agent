@@ -1,95 +1,73 @@
-# 投資專案 — 個人研究與持倉報表
+# Investments — AI 投資研究工作區
 
 **README 語言** · [English](../../README.md) · [繁體中文](README.zh-Hant.md) · [简体中文](README.zh-Hans.md) · [日本語](README.ja.md) · [Tiếng Việt](README.vi.md) · [한국어](README.ko.md)
 
-以**英文**撰寫的[根目錄 README](../../README.md)為權威、隨倉庫更新之專案說明。其餘語言僅供方便閱讀；如有歧義，以英文為準。
+英文版 README 為正式版本，其他語言為方便閱讀之翻譯。
 
-本倉庫是 AI 投資研究代理的個人工作區，內容包含：
+這個倉庫是 AI 投資研究代理的本機工作區。實際上主要做三件事：
 
-1. 代理規格（如何思考與產出）。
-2. 個人資料（持倉、設定）— 不納入 git。
-3. `reports/` 下產生的 HTML 報表 — 亦不納入 git。
-4. 作為持倉報表視覺參考的 HTML 範例。
-5. `scripts/` 內的兩個 Python 樣板，代理每回合直接執行，無需每次重寫抓價或產生 HTML 的邏輯。
+1. 依你的設定與持倉回答研究問題。
+2. 產出每日 HTML 持倉報表。
+3. 根據自然語言交易指令更新 `HOLDINGS.md`。
 
-代理在 LLM 用戶端內執行（如 Cowork / Claude）。當你請它「產出持倉健檢」時，它會讀取規格與個人資料、執行 `scripts/fetch_prices.py` 透過市場對應來源取得最新價格並自動抓取 FX 轉換匯率（依規格之節流與備援），再執行 `scripts/generate_report.py` 在 `reports/` 組出單一自洽的 HTML。
+最適合在可讀檔並可執行指令的代理工具中使用，例如 OpenAI Codex、Claude Code、Gemini CLI 或類似環境。
 
-## 倉庫結構
+**模型建議：** 若要分析品質穩定，並能遵守本倉庫規格（`AGENTS.md`、報表與持倉指引），請至少使用 **Claude Sonnet 4.6** 並開啟 **High** 推理強度，或任何同等或更高能力的較新模型。較輕量的模型可能略過檢核步驟、誤讀持倉，或削弱研究深度。
 
-```
-.
-├── README.md
-├── docs/
-│   ├── l10n/                              ← 本檔等：非英文 README
-│   ├── portfolio_report_agent_guidelines.md   ← 索引；連結至分章節檔（須讀索引＋全章）
-│   ├── portfolio_report_agent_guidelines/     ← 分章規格（§§0–17，00–07.md）
-│   └── holdings_update_agent_guidelines.md
-├── AGENTS.md
-├── SETTINGS.md
-├── SETTINGS.example.md
-├── HOLDINGS.md
-├── HOLDINGS.md.bak
-├── HOLDINGS.example.md
-├── scripts/
-│   ├── fetch_prices.py
-│   ├── generate_report.py
-│   └── i18n/
-│       ├── report_ui.en.json
-│       ├── report_ui.zh-Hant.json
-│       └── report_ui.zh-Hans.json
-├── .gitignore
-└── reports/
-    ├── _sample_redesign.html
-    └── *_portfolio_report.html
-```
+## 重要檔案
+
+- `AGENTS.md`：研究代理的思考與寫作規格。
+- `SETTINGS.md`：語言、風險風格、基準貨幣。僅存本機。
+- `HOLDINGS.md`：你的持倉。僅存本機。
+- `docs/portfolio_report_agent_guidelines.md`：報表主規格；代理也必須讀取 `docs/portfolio_report_agent_guidelines/` 下所有連結分章。
+- `docs/holdings_update_agent_guidelines.md`：持倉更新規格。
+- `scripts/fetch_prices.py`：標準價格與匯率抓取腳本。
+- `scripts/generate_report.py`：標準 HTML 報表渲染腳本。
+- `reports/`：產出目錄。僅存本機。
 
 ## 首次設定
 
-1. 複製範例檔並填入實際資料：
+```sh
+cp SETTINGS.example.md SETTINGS.md
+cp HOLDINGS.example.md HOLDINGS.md
+```
 
-   ```sh
-   cp SETTINGS.example.md SETTINGS.md
-   cp HOLDINGS.example.md HOLDINGS.md
-   ```
+接著：
 
-2. 編輯 `SETTINGS.md`：
-   - 選擇慣用語言。
-   - 依實際風險承受度調整投資風格條列。
-   - （選填）微調持倉代理用於警告的部位規模界線。
+- 填寫 `SETTINGS.md`。
+- 填寫 `HOLDINGS.md`。
+- `HOLDINGS.md` 保留四個桶：`Long Term`、`Mid Term`、`Short Term`、`Cash Holdings`。
+- 每筆 lot 一行：`<TICKER>: <quantity> shares @ <cost basis> on <YYYY-MM-DD> [<MARKET>]`。
+- 若成本或日期不明，用 `?`。
 
-3. 編輯 `HOLDINGS.md`：
-   - 各行改為實際部位。
-   - 維持四個桶子結構（`Long Term`、`Mid Term`、`Short Term`、`Cash Holdings`）。
-   - 每筆一列：`<TICKER>: 數量 股/單位 @ 成本 於 <YYYY-MM-DD> [<市場>]` — `於 YYYY-MM-DD` 為建倉日（用於持倉期分析），`[<MARKET>]` 讓價格代理能組出正確的 `yfinance` 代號與備援順序。
-   - 常見市場標籤：`[US]`、`[TW]`、`[TWO]`、`[JP]`、`[HK]`、`[LSE]`、`[crypto]`、`[FX]`、`[cash]`。完整表列見 `HOLDINGS.example.md` 與 `docs/portfolio_report_agent_guidelines.md` §4.1。
-   - 成本或日期不確定時用 `?` — 受影響欄位顯示 `n/a`（不適用欄位用 `—`，例如現金已實現損益），不臆測。
+常用市場標籤：`[US]`、`[TW]`、`[TWO]`、`[JP]`、`[HK]`、`[LSE]`、`[crypto]`、`[FX]`、`[cash]`。
 
-`HOLDINGS.md`、`HOLDINGS.md.bak`、`SETTINGS.md` 在 `.gitignore` 內，不會經由 git 離開本機。
+`SETTINGS.md`、`HOLDINGS.md`、`HOLDINGS.md.bak`、產生的報表與常見執行產物皆在 `.gitignore`。
 
-## 如何使用代理
+## 常用工作流
 
-**模型建議：**欲獲得較佳分析與報表品質，請使用**至少 Claude Sonnet 4.6（High），或同等以上推理能力的模型**。長持倉表、規格核對與綜合段落需要足夠推理深度——較輕量模型可能省略步驟或漏檢。
+大多數情況，只要叫代理做以下三件事之一。
 
-**執行環境：**在可讀檔並執行指令的程式／編碼代理中開啟本資料夾即可，例如 **Claude Code**、**OpenAI Codex**（CLI 或 IDE）、**Google Gemini**（CLI 或其他客戶端）等類似工具。並無唯一指定產品；只要能對本倉庫套用 `AGENTS.md` 與 `docs/` 下規格即可。
+### 1. 研究分析
 
-大致有三類請求：
+例子：
 
-### 1. 研究問題（隨時）
+- 「分析 NVDA 對我目前投組的意義。」
+- 「我現在 AI 曝險有多高？」
+- 「財報前要不要減碼短線部位？」
 
-- 「分析 NVDA 對我目前持倉的意義。」
-- 「我現在在 AI 主題上的曝險如何？」
-- 「本週財報前是否應先減碼短線部位？」
+代理會讀 `SETTINGS.md`、`HOLDINGS.md`，並依 `AGENTS.md` 輸出。
 
-代理讀 `SETTINGS.md` 把握語氣、讀 `HOLDINGS.md` 看部位，再依 `AGENTS.md` 之研究架構產出（先結論、基本面、估價、技術、風險、劇本、評分、結語）。
+### 2. 持倉報表
 
-### 2. 持倉健檢
+例子：
 
 - 「產出今天的持倉健檢。」
-- 「幫我跑盤前戰情。」
+- 「幫我跑盤前報表。」
 
-代理依 `docs/portfolio_report_agent_guidelines.md`（及其索引所連結之分章檔）在 `reports/` 產生單一自洽 HTML。共 11 小節（依序）：今日摘要、持倉儀表板（KPI）、含損益與每筆彈層的持倉表、持倉期與建倉節奏、主題／產業曝險、最新重要新聞、未來 30 日事件曆、高風險與高機會清單、建議調整、今日行動清單、資料來源與缺漏。若有高優先警示，會在 11 小節之上顯示橫幅。
+交付物是 `reports/` 下的單一自含 HTML。
 
-實作上，代理執行兩個慣用 Python 樣板，而非每回合從零撰寫：
+代理應直接使用標準腳本，而不是每次重寫流程：
 
 ```sh
 python scripts/fetch_prices.py --holdings HOLDINGS.md --settings SETTINGS.md --output prices.json
@@ -100,41 +78,63 @@ python scripts/generate_report.py \
     --output reports/2026-04-28_1330_portfolio_report.html
 ```
 
-`report_context.json` 是代理的編輯層：今日判讀、網路搜尋到的新聞、建議調整與行動清單；不得放手動 FX 匯率。FX 轉換資料由 `scripts/fetch_prices.py` 自動寫入 `prices.json["_fx"]`。數字（合計、權重、損益、持倉期、節奏分佈、來源查核等）由兩支腳本機械產生。
+若報表語言不是內建 UI 字典 `english`、`traditional chinese`、`simplified chinese` 之一，執行中的代理應把 `scripts/i18n/report_ui.en.json` 翻成暫存 overlay，並用 `--ui-dict` 傳入。
 
-若 `SETTINGS.md` 要的語言不在內建字典（內建：`english`、`traditional chinese`、`simplified chinese`），**執行中的代理**應將 `scripts/i18n/report_ui.en.json` 譯成暫存 JSON overlay，並以 `--ui-dict`（或 context 內的 `ui_dictionary`）傳給 `scripts/generate_report.py`。渲染器本身不呼叫外部翻譯服務。
+### 3. 自然語言更新持倉
 
-### 3. 以自然語言更新持倉
+例子：
 
-直接描述交易。例如：
+- 「昨天我用 185 美元買了 30 股 NVDA。」
+- 「今天 400 美元賣出 10 股 TSLA。」
+- 「把去年九月那筆 GOOG 改成 70 股，不是 75 股。」
 
-- 昨日以 $185 買 30 股 NVDA。
+硬性規則：代理在顯示解析結果與 unified diff、並取得你同一輪明確 `yes` 之前，不得寫入 `HOLDINGS.md`。每次寫入前都必須先建立 `HOLDINGS.md.bak`。
 
-代理會：解析交易並覆述假設、顯示 `HOLDINGS.md` 的 unified diff 與桶子合計、（若為賣出）每筆已實現損益、在同一輪內等你的明確 `yes`、先備份至 `HOLDINGS.md.bak` 再寫入、重讀驗證後回覆路徑。不靜默覆寫、不虛構欄位。規則見 `docs/holdings_update_agent_guidelines.md`。
+## 報表輸出
 
-## 產生之報表
+檔名格式：
 
-寫入 `reports/`，檔名：
-
-```
+```text
 reports/<YYYY-MM-DD>_<HHMM>_portfolio_report.html
 ```
 
-HTML 為單一自含檔（無外連 CSS/JS/字型/圖表庫），可於瀏覽器直接開啟、分享或封存。不再附帶 Markdown 摘要。`scripts/generate_report.py` 自 `scripts/i18n/report_ui.en.json`、`report_ui.zh-Hant.json`、`report_ui.zh-Hans.json` 載入內建 UI 字典；其他單一語言時由執行代理以英文字典譯成 overlay 傳入（見上文 `--ui-dict`）。`reports/_sample_redesign.html` 為慣用視覺參考（去識別示範資料），勿刪；持倉代理與 `scripts/generate_report.py` 自該檔讀取 CSS 作為唯一樣式來源（預設路徑，亦可 `--sample` 覆寫）。
+HTML 為單一檔案，不依賴外部 CSS、JS、字型或圖表函式庫。
 
-## 修改代理規格
+`reports/_sample_redesign.html` 是視覺參考檔，請勿刪除。
 
-`AGENTS.md`、`docs/portfolio_report_agent_guidelines.md`（及其 `docs/portfolio_report_agent_guidelines/` 下索引所連結之分章檔）、`docs/holdings_update_agent_guidelines.md` 形塑每次執行。作為版本化之「提示合約」：要改行為就改它們；不要放個人資料。重大修改後，請代理重產一則報表以驗證。
+## 何時修改規格
+
+若你要改變代理行為，請修改：
+
+- `AGENTS.md`
+- `docs/portfolio_report_agent_guidelines.md`
+- `docs/portfolio_report_agent_guidelines/` 下所有被連結的分章
+- `docs/holdings_update_agent_guidelines.md`
+
+不要把個人資料放進規格檔。
 
 ## 隱私
 
-- `HOLDINGS.md`、其備份、`SETTINGS.md`、產生之 `*_portfolio_report.html`，以及常見執行產物 `prices.json`、`report_context.json` 皆 git-ignored。
-- 追蹤於版本庫的僅有規格、範本、`scripts/` 內的樣式與本 README 等參考檔。若 fork 或分享，實際部位、備份與報表仍只留在本機。
+會被 git 追蹤的內容：
 
-## 第三方資料、API 與速率限制
+- 代理規格
+- 範本檔
+- Python 腳本
+- README
+- 視覺參考檔
 
-**本專案並未擁有、營運或擔保**任何行情或外匯 API。`scripts/fetch_prices.py` 等流程可能使用公開端點、你在 `SETTINGS.md` 設定的選用 API 金鑰，以及包裝第三方來源的程式庫（如 `yfinance`）。**你必須遵守**各供應商的**服務條款**、**可接受使用政策**與**速率／頻率限制**。過度或違規請求可能導致金鑰或 IP 被限流或停用。規格內含節流與備援，但**合規、合法使用仍由你負責**。若來源要求署名、合約或付費，請依該供應商規定辦理。
+不會被 git 追蹤的內容：
+
+- `SETTINGS.md`
+- `HOLDINGS.md`
+- `HOLDINGS.md.bak`
+- 產生的報表
+- 常見執行檔，如 `prices.json`、`report_context.json`
+
+## 第三方資料
+
+本專案不擁有也不保證任何行情或匯率來源。價格流程可能使用公開端點、選用 API key 與 `yfinance` 等封裝來源。供應商條款、速率限制、署名與付費授權，均由使用者自行負責。
 
 ## 免責聲明
 
-本倉庫與其產出僅供個人研究。非投資建議、非買賣要約，交易前請自行查證。代理會指出資料缺漏與不確定，仍可能出錯 — 行動前請驗證。
+本倉庫僅供個人研究，非投資建議。交易前請自行驗證重要資訊。

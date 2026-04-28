@@ -1,78 +1,73 @@
-# Investments — 個人リサーチとポートフォリオレポート
+# Investments — AI投資リサーチ用ワークスペース
 
 **README 言語** · [English](../../README.md) · [繁體中文](README.zh-Hant.md) · [简体中文](README.zh-Hans.md) · [日本語](README.ja.md) · [Tiếng Việt](README.vi.md) · [한국어](README.ko.md)
 
-リポジトリ直下の**英語** [README](../../README.md) が正式かつ随時更新されるプロジェクト概要です。他言語は閲覧の補助であり、解釈に相違があれば英語に従ってください。
+英語版 README が正式版で、他言語は読みやすさのための翻訳です。
 
-このリポジトリは、AI 投資リサーチ用エージェントの個人用ワークスペースです。含まれるもの:
+このリポジトリは AI 投資リサーチエージェントのローカル作業環境です。実際の用途は主に 3 つです。
 
-1. エージェント仕様（思考と出力の仕方）。
-2. 個人データ（保有銘柄・設定）— git には含めません。
-3. `reports/` 配下の生成 HTML レポート — 同様に git 対象外。
-4. ポートフォリオレポート用の HTML デザイン参照。
-5. `scripts/` 内の Python テンプレート2本。毎回ゼロから価格取得・HTML 生成を書かず、エージェントがそのまま実行する。
+1. 設定と保有銘柄を踏まえてリサーチ質問に答える。
+2. 毎日の HTML ポートフォリオレポートを作る。
+3. 自然言語の売買指示から `HOLDINGS.md` を更新する。
 
-エージェントは LLM クライアント内で動作します（例: Cowork / Claude）。「ポートフォリオのヘルスチェックを出して」と依頼すると、仕様と個人データを読み、`scripts/fetch_prices.py` で市場別ソースから最新価格と FX 換算レートを自動取得（仕様のペース制御とフォールバック付き）、`scripts/generate_report.py` で `reports/` に自己完結 HTML を書き出します。
+OpenAI Codex、Claude Code、Gemini CLI など、ファイル読取とコマンド実行ができるエージェント環境で使う前提です。
 
-## リポジトリ構成
+**モデル:** 分析の安定性と本リポジトリの仕様（`AGENTS.md`、レポートおよび保有銘柄のガイドライン）への準拠のため、**Claude Sonnet 4.6** を **High** 推論負荷で使うか、同等以上の能力の新しいモデルを選んでください。軽量モデルではチェックリストを飛ばしたり、保有を誤読したり、リサーチの深さが落ちることがあります。
 
-```
-.
-├── README.md
-├── docs/
-│   ├── l10n/
-│   ├── portfolio_report_agent_guidelines.md
-│   ├── portfolio_report_agent_guidelines/
-│   └── holdings_update_agent_guidelines.md
-├── AGENTS.md
-├── SETTINGS.md
-├── SETTINGS.example.md
-├── HOLDINGS.md
-├── HOLDINGS.md.bak
-├── HOLDINGS.example.md
-├── scripts/
-│   ├── fetch_prices.py
-│   ├── generate_report.py
-│   └── i18n/
-│       ├── report_ui.en.json
-│       ├── report_ui.zh-Hant.json
-│       └── report_ui.zh-Hans.json
-├── .gitignore
-└── reports/
-    ├── _sample_redesign.html
-    └── *_portfolio_report.html
-```
+## 重要ファイル
+
+- `AGENTS.md`: リサーチエージェントの思考と文体の仕様。
+- `SETTINGS.md`: 言語、リスクスタイル、基準通貨。ローカル専用。
+- `HOLDINGS.md`: 保有銘柄。ローカル専用。
+- `docs/portfolio_report_agent_guidelines.md`: レポートの主仕様。さらに `docs/portfolio_report_agent_guidelines/` 内のリンク先分割ファイルも全て読む必要があります。
+- `docs/holdings_update_agent_guidelines.md`: 保有更新の仕様。
+- `scripts/fetch_prices.py`: 標準の価格・為替取得スクリプト。
+- `scripts/generate_report.py`: 標準の HTML レンダラ。
+- `reports/`: 出力先。ローカル専用。
 
 ## 初回セットアップ
 
-1. 例のファイルをコピーし、実データを入れます:
+```sh
+cp SETTINGS.example.md SETTINGS.md
+cp HOLDINGS.example.md HOLDINGS.md
+```
 
-   ```sh
-   cp SETTINGS.example.md SETTINGS.md
-   cp HOLDINGS.example.md HOLDINGS.md
-   ```
+その後:
 
-2. `SETTINGS.md` を編集: 言語、リスクに合った投資スタイルの箇条書き、（任意）警告用のポジション規模の目安。
+- `SETTINGS.md` を埋める。
+- `HOLDINGS.md` を埋める。
+- `HOLDINGS.md` の 4 バケット `Long Term`、`Mid Term`、`Short Term`、`Cash Holdings` を維持する。
+- 1 ロット 1 行: `<TICKER>: <quantity> shares @ <cost basis> on <YYYY-MM-DD> [<MARKET>]`
+- 取得単価や日付が不明なら `?` を使う。
 
-3. `HOLDINGS.md` を編集: 4 バケット（`Long Term`, `Mid Term`, `Short Term`, `Cash Holdings`）を維持。1 ロット 1 行: `<TICKER>: 数量 @ 取得単価 on <YYYY-MM-DD> [<MARKET>]`。日付は保有期間分析用、`[<MARKET>]` は `yfinance` シンボルとフォールバック階層用。市場タグ例: `[US]`, `[TW]`, `[TWO]`, `[JP]`, `[HK]`, `[LSE]`, `[crypto]`, `[FX]`, `[cash]`。不明は `?` — 影響する欄は `n/a`（該当しない欄は `—`）。詳細は `HOLDINGS.example.md` および `docs/portfolio_report_agent_guidelines.md` §4.1。
+よく使う市場タグ: `[US]`, `[TW]`, `[TWO]`, `[JP]`, `[HK]`, `[LSE]`, `[crypto]`, `[FX]`, `[cash]`
 
-`HOLDINGS.md`、バックアップ、`SETTINGS.md` は `.gitignore` され、git 経由で外に出ません。
+`SETTINGS.md`、`HOLDINGS.md`、`HOLDINGS.md.bak`、生成レポート、よくある実行生成物は `.gitignore` 対象です。
 
-## 使い方
+## よく使うワークフロー
 
-**モデル：**分析・レポート品質のため、**少なくとも Claude Sonnet 4.6（High）、またはそれ以上の推論能力を持つモデル**の利用を推奨します。長い保有一覧やチェックリスト順守には十分な推論が必要で、軽量モデルでは手順省略や漏れが起きやすくなります。
+通常は、次の 3 つのどれかをエージェントに頼めば足ります。
 
-**環境：**ファイルを読みコマンドを実行できるコーディングエージェントでこのフォルダを開いてください（例：**Claude Code**、**OpenAI Codex**（CLI または IDE）、**Google Gemini**（CLI など））。特定製品は必須ではなく、`AGENTS.md` と `docs/` の仕様を適用できれば構いません。
+### 1. リサーチ
 
-### 1. リサーチ質問
+例:
 
-`SETTINGS.md` と `HOLDINGS.md` を読み、`AGENTS.md` の枠組みで回答（結論、ファンダ、バリュエーション、テクニカル、リスク、プレイブック、スコア、結論）。
+- "NVDA を今のポートフォリオ目線で分析して。"
+- "今の AI エクスポージャーはどれくらい？"
+- "決算前に短期ポジションを減らすべき？"
 
-### 2. ポートフォリオ・ヘルスチェック
+エージェントは `SETTINGS.md` と `HOLDINGS.md` を読み、`AGENTS.md` に従って回答します。
 
-`docs/portfolio_report_agent_guidelines.md`（およびインデックスからリンクされる分割ファイル）に従い `reports/` に単一 HTML。11 セクション（要約、ダッシュボード、保有表と P/L・ロット別ポップオーバー、保有期間とペース、テーマ/セクター、ニュース、30 日カレンダー、高リスク/高オポチュニティ、推奨調整、アクション、ソースとギャップ）。高優先アラート時はその上にバナー。
+### 2. ポートフォリオレポート
 
-エージェントは次の2本の Python テンプレを実行:
+例:
+
+- "今日のポートフォリオ健診を作って。"
+- "プレマーケット用レポートを出して。"
+
+成果物は `reports/` 配下の単一 self-contained HTML です。
+
+エージェントは毎回作り直さず、標準スクリプトを使うべきです:
 
 ```sh
 python scripts/fetch_prices.py --holdings HOLDINGS.md --settings SETTINGS.md --output prices.json
@@ -83,30 +78,63 @@ python scripts/generate_report.py \
     --output reports/2026-04-28_1330_portfolio_report.html
 ```
 
-`report_context.json` は編集層（本日の見解、ニュース、推奨、アクション）であり、手動 FX レートは入れない。FX 換算データは `scripts/fetch_prices.py` が `prices.json["_fx"]` に自動出力する。数値はスクリプトが機械的に生成。
+要求言語が組み込み UI 辞書 `english`、`traditional chinese`、`simplified chinese` 以外なら、実行中のエージェントが `scripts/i18n/report_ui.en.json` を一時 overlay に翻訳し、`--ui-dict` で渡します。
 
-組み込み以外の単一言語を `SETTINGS.md` で指定する場合、**実行中のエージェント** は `scripts/i18n/report_ui.en.json` を訳した一時 overlay を `--ui-dict`（または context の `ui_dictionary`）で `scripts/generate_report.py` に渡す。レンダラーが外部翻訳 API を呼ぶことはない。
+### 3. 自然言語で保有更新
 
-### 3. 自然言語で保有を更新
+例:
 
-取引を言語化する。`docs/holdings_update_agent_guidelines.md` の全ルールに従い、上書きは同じターン内の明示的 `yes` まで行わない。`HOLDINGS.md.bak` にバックアップしてから書き込み。
+- "昨日 NVDA を 185 ドルで 30 株買った。"
+- "今日 TSLA を 400 ドルで 10 株売った。"
+- "昨年 9 月の GOOG ロットを 75 株ではなく 70 株に直して。"
 
-## 生成物
+厳守ルール: エージェントは解析結果と unified diff を示し、同一ターンで明示的な `yes` を受け取るまで `HOLDINGS.md` を書き換えてはいけません。書き込み前には毎回 `HOLDINGS.md.bak` を作成します。
 
-`reports/<YYYY-MM-DD>_<HHMM>_portfolio_report.html` — 単一ファイル、外部 CSS/JS/フォント/チャートなし。`scripts/generate_report.py` は `scripts/i18n/report_ui.en.json` など組み込み UI 辞書を読み込む（上記 `--ui-dict`）。`reports/_sample_redesign.html` はカノニカルなデザイン参照。削除禁止。`generate_report.py` が CSS ソースとして読み取る（既定 `--sample` がこのパス）。
+## レポート出力
 
-## 仕様の編集
+ファイル名:
 
-`AGENTS.md`、`docs/portfolio_report_agent_guidelines.md`（および `docs/portfolio_report_agent_guidelines/` 内の分割ファイル）、`docs/holdings_update_agent_guidelines.md` はエージェント挙動の契約。個人データは `SETTINGS` / `HOLDINGS` へ。大きな変更後はレポートを1本再生成して確認。
+```text
+reports/<YYYY-MM-DD>_<HHMM>_portfolio_report.html
+```
+
+HTML は単一ファイルで、外部 CSS、JS、フォント、チャートライブラリに依存しません。
+
+`reports/_sample_redesign.html` はデザイン参照なので削除しないでください。
+
+## 仕様を変えるとき
+
+エージェントの挙動を変えたいなら、次を編集します。
+
+- `AGENTS.md`
+- `docs/portfolio_report_agent_guidelines.md`
+- `docs/portfolio_report_agent_guidelines/` 配下のリンクされた全分割ファイル
+- `docs/holdings_update_agent_guidelines.md`
+
+個人データは仕様ファイルに入れないでください。
 
 ## プライバシー
 
-保有、設定、生成 HTML、実行時に生成する `prices.json` と `report_context.json` は git-ignored。追跡されるのはテンプレと仕様類。fork 共有時も実ポジはローカルに留まる。
+git で追跡されるもの:
 
-## 第三者データ・API・レート制限
+- エージェント仕様
+- テンプレート
+- Python スクリプト
+- README
+- デザイン参照ファイル
 
-**本プロジェクトはいかなる相場・為替 API も所有・運営・保証しません。** `scripts/fetch_prices.py` 等は公開エンドポイント、`SETTINGS.md` で設定したオプションの API キー、`yfinance` のような第三者を経由するライブラリを利用する場合があります。**各提供者の利用規約・許容される利用・レート制限を遵守してください。** 過度・不当なリクエストではキーや IP が制限されることがあります。仕様にペーシングとフォールバックがありますが、**適法かつ規約に沿った利用は利用者の責任**です。署名・契約・有料が必要なソースは、その提供者のルールに従ってください。
+git で追跡されないもの:
+
+- `SETTINGS.md`
+- `HOLDINGS.md`
+- `HOLDINGS.md.bak`
+- 生成レポート
+- `prices.json` や `report_context.json` などの実行生成物
+
+## サードパーティデータ
+
+このプロジェクトは、相場データや為替ソースを所有も保証もしません。価格取得では公開エンドポイント、任意の API キー、`yfinance` のようなラッパーを使うことがあります。利用規約、レート制限、帰属表示、課金条件の順守は利用者の責任です。
 
 ## 免責
 
-本リポジトリとレポートは個人リサーチ用です。投資助言・売買勧誘ではありません。取引前に必ず独立して検証してください。データ欠損は示されますが、誤り得ます。
+このリポジトリは個人リサーチ専用であり、投資助言ではありません。売買前に重要情報を必ず独自に確認してください。
