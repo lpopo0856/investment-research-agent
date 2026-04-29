@@ -1,12 +1,10 @@
 # Portfolio Report Agent Guidelines
 
-This entrypoint is intentionally short.
+Machine entrypoint for portfolio-report generation. The spec is optimized for agent execution, not narrative readability.
 
-The full guideline content has been split into smaller files under [`/docs/portfolio_report_agent_guidelines/`](./portfolio_report_agent_guidelines/).
+## Required Bundle Read
 
-The normative guideline text in those part files is copied **verbatim** from the former monolithic file. Only the file boundaries changed.
-
-## Required reading order
+Read this file first, then read **every** part file below in order on every portfolio-report run. The part files are normative; do not use existing generated report HTML as a shortcut or data source.
 
 1. [00-preface-and-toc.md](./portfolio_report_agent_guidelines/00-preface-and-toc.md)
 2. [01-critical-references-to-glossary.md](./portfolio_report_agent_guidelines/01-critical-references-to-glossary.md)
@@ -17,7 +15,16 @@ The normative guideline text in those part files is copied **verbatim** from the
 7. [06-visual-design.md](./portfolio_report_agent_guidelines/06-visual-design.md)
 8. [07-investment-content-and-checklist.md](./portfolio_report_agent_guidelines/07-investment-content-and-checklist.md)
 
-## Section links
+## Hard Run Invariants
+
+- Execute in four serial phases: **A Gather → B Think → C Review → D Render + reply**.
+- Phase A gathers files, prices, metrics, full-universe news, dated catalysts, and follow-up research before any judgment is drafted.
+- Phase B drafts all alerts, watchlists, adjustments, action items, scoring, Strategy readout, and summary while continuously anchoring to `SETTINGS.md` `## Investment Style And Strategy`.
+- Phase C switches hat to a senior PM reviewer, annotates issues, and sends serious defects back to the relevant earlier phase before render.
+- Phase D renders one self-contained HTML file, runs Appendix A self-checks, removes temp files, and replies with the absolute path plus required audit notes.
+- `SETTINGS.md` and `HOLDINGS.md` are read-only unless the user explicitly asks to edit them.
+
+## Section Links
 
 0. [Critical references — read first](./portfolio_report_agent_guidelines/01-critical-references-to-glossary.md#0-critical-references--read-first)
 1. [Trigger phrases & scope](./portfolio_report_agent_guidelines/01-critical-references-to-glossary.md#1-trigger-phrases--scope)
@@ -38,7 +45,7 @@ The normative guideline text in those part files is copied **verbatim** from the
 16. [Reply format to user](./portfolio_report_agent_guidelines/07-investment-content-and-checklist.md#16-reply-format-to-user)
 17. [Appendix A — Pre-delivery self-check](./portfolio_report_agent_guidelines/07-investment-content-and-checklist.md#appendix-a--pre-delivery-self-check)
 
-## Section map
+## Section Map
 
 - `00-preface-and-toc.md`: title, preface, README language links, table of contents
 - `01-critical-references-to-glossary.md`: §§0-3
@@ -49,6 +56,6 @@ The normative guideline text in those part files is copied **verbatim** from the
 - `06-visual-design.md`: §14
 - `07-investment-content-and-checklist.md`: §§15-16 and Appendix A
 
-## Usage rule
+## Usage Rule
 
-When a workflow or another doc says to read `/docs/portfolio_report_agent_guidelines.md`, read this index first and then read **every** numbered part file above in order.
+When a workflow or another doc says to read `/docs/portfolio_report_agent_guidelines.md`, read this entrypoint and then the complete required bundle above. Partial reading is allowed only as a paging method; the effective read set is the full bundle.

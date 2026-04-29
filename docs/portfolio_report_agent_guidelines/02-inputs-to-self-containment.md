@@ -1,88 +1,67 @@
 ## 4. Inputs
 
-### 4.1 HOLDINGS.md — lot format
+### 4.1 `HOLDINGS.md`
 
-Every lot follows:
+Lot formats:
 
-```
+```text
 <TICKER>: <quantity> shares @ <cost basis> on <YYYY-MM-DD> [<MARKET>]
+<SYMBOL> <quantity> @ <cost> on <YYYY-MM-DD> [crypto|FX]
+<CURRENCY>: <amount> [cash]
 ```
 
-- `on YYYY-MM-DD` is the **acquisition date** for that lot. It powers per-lot tooltips and hold-period analytics.
-- `[<MARKET>]` is the **market-type tag** — required for new lots. It tells the price agent which Stooq suffix (`.us`, `.tw`, `.jp`, `.uk`, `.hk`) to use for the **primary** call, which `yfinance` symbol convention to use for the **secondary** fallback (`<code>.TW`, `<code>.T`, `<code>.HK`, `<code>.L`, `<PAIR>=X`), and which fallback hierarchy applies. The tag is the *single source of truth* for routing; do **not** rely on the bare-ticker shape to guess the market.
-- Crypto / FX use `<SYMBOL> <quantity> @ <cost> on <YYYY-MM-DD> [<MARKET>]` (no "shares").
-- Cash uses `<CURRENCY>: <amount> [cash]` (no "shares", no `@ cost`, no date).
-- `?` is allowed in place of cost or date when truly unknown — render the affected metric as `n/a` in the report (see §9.6). **Never invent a value.**
-- A ticker may have multiple lots across the four buckets (`Long Term`, `Mid Term`, `Short Term`, `Cash Holdings`). Aggregate per ticker for the holdings table; keep the lot-level array embedded in the page so the per-lot popover can render without a re-fetch.
+Rules: `on YYYY-MM-DD` = acquisition date for tooltips/hold-period; `[MARKET]` required for new lots and is routing source of truth; `?` allowed only for unknown cost/date and renders affected metric `n/a`; never invent values; aggregate by ticker for table but embed lot array for popover; multiple lots may span `Long Term`, `Mid Term`, `Short Term`, `Cash Holdings`.
 
-#### Market-type tag values
-
-| Tag | Meaning | Primary quote routing |
+| Tag | Meaning | Routing |
 |---|---|---|
-| `[US]` | NYSE / NASDAQ / AMEX listed equity or ETF | bare ticker (`NVDA`); dotted classes use Yahoo dash form (`BRK.B` → `BRK-B`) |
-| `[TW]` | Taiwan listed equity (TWSE) | `<code>.TW` (`2330.TW`) |
-| `[TWO]` | Taiwan OTC equity (TPEx) | `<code>.TWO` |
-| `[JP]` | Tokyo Stock Exchange | `<code>.T` |
-| `[HK]` | Hong Kong Stock Exchange | `<code>.HK` |
-| `[LSE]` | London Stock Exchange (UCITS ETFs etc.) | `<code>.L` |
-| `[crypto]` | Crypto asset | Binance public spot `<SYM>USDT`; CoinGecko by coin id |
-| `[FX]` | Currency pair held as position | `<PAIR>=X` (`USDJPY=X`) |
-| `[cash]` | Cash / cash-equivalent (no price fetch) | — |
+| `[US]` | NYSE/NASDAQ/AMEX equity/ETF | bare ticker; dotted class Yahoo dash (`BRK.B` → `BRK-B`) |
+| `[TW]` | TWSE | `<code>.TW` |
+| `[TWO]` | TPEx | `<code>.TWO` |
+| `[JP]` | Tokyo | `<code>.T` |
+| `[HK]` | Hong Kong | `<code>.HK` |
+| `[LSE]` | London / UCITS | `<code>.L` |
+| `[crypto]` | Crypto | Binance `<SYM>USDT`; CoinGecko id |
+| `[FX]` | Currency pair | `<PAIR>=X` |
+| `[cash]` | Cash/equivalent | no price fetch |
 
-If a legacy lot has no `[<MARKET>]` tag, the price agent falls back to a heuristic (suffix → market, known crypto / fiat lists). The heuristic is best-effort; always migrate the line to a tagged form when you next touch it. The holdings-update agent (§ `docs/holdings_update_agent_guidelines.md`) requires the tag for all new lots.
+Legacy untagged lots use best-effort heuristic (suffix / known crypto-fiat lists); migrate when touched. Holdings-update agent requires tags for new lots.
 
-### 4.2 SETTINGS.md
+### 4.2 `SETTINGS.md`
 
-- Read for output language, tone, and (if present) position-sizing rails. Settings rails override defaults in this spec when in conflict.
-- Language enforcement is in §5.
-- Optional API keys are listed in §8.6.
+Read every run for language, tone, `## Investment Style And Strategy`, optional sizing rails, optional API keys (§8.6). Settings rails override spec defaults.
 
-### 4.3 Auto-classify on every run
+### 4.3 Auto-classify
 
-- Auto-read all positions from `HOLDINGS.md` at run time. Do not hard-code holdings, do not assume any specific ticker is present, and re-classify on every run.
-- Auto-classify each holding by asset class, sector, and theme based on current data. Buckets are not fixed — examples include `ETF`, single stock, crypto, cash, semiconductor, AI, energy, aerospace, financials, healthcare, consumer, industrial, optical / data center, defense, other. Use whatever fits the actual book.
+Auto-read all positions every run; never hard-code holdings or assume tickers. Re-classify by asset class/sector/theme from current data. Buckets flexible: ETF, single stock, crypto, cash, semiconductor, AI, energy, aerospace, financials, healthcare, consumer, industrial, optical/data center, defense, other.
 
 ---
 
 ## 5. Output language (HARD)
 
-`SETTINGS.md` declares the output language. **Every** user-facing string in the HTML must be in that language — no bilingual mixing, no untranslated headers, no English fallbacks because "the term has no good translation".
+Every user-facing HTML string uses SETTINGS language; no bilingual labels or English fallback unless allowed.
 
 ### 5.1 Rules
 
-- The `<html lang="…">` attribute must match (`zh-TW`, `en`, `ja`, etc.).
-- Every section title, table header, KPI label, badge, tag, callout text, action label, tooltip / popover content, and prose paragraph must be in the SETTINGS language.
-- Bilingual headers like `代號 Symbol` or `損益 P&L` are **not** acceptable. Pick one — the SETTINGS language.
-- Latest-price source / freshness labels must be translated when they are natural-language labels. Provider names such as `Twelve Data`, `Finnhub`, `CoinGecko`, and `TWSE` may remain in English because they are source names. **Do not show session-state badges in any language.**
-- Tag chips (`High vol`, `Long`, `Mid`, `Rich val`): translate every visible label. Default English class names stay (the CSS hooks); the visible text is translated.
-- The HTML `<title>` must also be in the SETTINGS language (the filename itself stays ASCII per §6).
-- If `SETTINGS.md` is missing or unparseable, default to **English** and surface the missing setting as a `n/a` in the masthead meta row.
-- `scripts/generate_report.py` must load **stable built-in dictionaries** for `english`, `traditional chinese`, and `simplified chinese` from JSON files under `scripts/i18n/`.
-- If `SETTINGS.md` requests another single language, the **executing agent** should translate `scripts/i18n/report_ui.en.json` into a temporary JSON overlay and pass it into the renderer via `--ui-dict` or `context["ui_dictionary"]`. The renderer itself should not call external translation services.
+- `<html lang>` and `<title>` match language; filename remains ASCII.
+- Translate section titles, headers, KPI labels, badges, tag text, callouts, action labels, tooltips/popovers, prose, natural-language source/freshness labels. Provider names may stay English (`Twelve Data`, `Finnhub`, `CoinGecko`, `TWSE`). No session-state badges.
+- Translate visible tag chips (`High vol`, `Long`, `Mid`, `Rich val`); CSS class hooks stay English.
+- Missing/unparseable `SETTINGS.md` → English default and masthead meta `n/a`.
+- Renderer loads stable dictionaries for English / Traditional Chinese / Simplified Chinese from `scripts/i18n/`.
+- Other single language → executing agent translates `scripts/i18n/report_ui.en.json` to temporary overlay and passes `--ui-dict` or `context["ui_dictionary"]`; renderer does not call translation services.
 
-### 5.2 Allowed non-language tokens (allow-list)
+### 5.2 Allow-list
 
-These tokens may remain as-is regardless of SETTINGS language:
+May remain as-is: tickers, currency codes, unit symbols, ISO dates, URL hostnames in citations, inherently English source names (`Reuters`, `StockAnalysis`).
 
-- Ticker symbols (`NVDA`, `2330.TW`, `BTC`)
-- Currency codes (`USD`, `TWD`)
-- Unit symbols (`%`, `$`, `NT$`)
-- ISO dates (`2026-04-27`)
-- URL hostnames in citations
-- Bracketed source names that are inherently English (`Reuters`, `StockAnalysis`)
+### 5.3 Delivery check
 
-### 5.3 Self-check before delivery
-
-Search the rendered HTML for stray English (or non-SETTINGS-language) words. Every hit that is not in the §5.2 allow-list must be translated or removed.
+Search rendered HTML for stray non-SETTINGS-language text; every non-allow-listed hit must be translated/removed.
 
 ---
 
 ## 6. File output
 
-- The HTML must be written to `reports/`.
-- HTML filename: `YYYY-MM-DD_HHMM_portfolio_report.html`
-- Use the **local clock at execution time** for the timestamp prefix.
-- **Only** the HTML is produced. No Markdown summary, no companion files. The HTML is the single deliverable.
+Write exactly one HTML file to `reports/YYYY-MM-DD_HHMM_portfolio_report.html` using local clock. No Markdown summary or companion files.
 
 ---
 
@@ -90,46 +69,20 @@ Search the rendered HTML for stray English (or non-SETTINGS-language) words. Eve
 
 ### 7.1 Hard rules
 
-- The HTML must be a single self-contained file directly openable in the browser: all CSS, charts, data, and any required interactive logic must be inlined in the same HTML.
-- Do not leave external generator scripts, external CSS, CDN dependencies, build artifacts, or frontend project structure in the repo.
-- If you need a temporary script to wrangle data, keep it in `/tmp` or use it once. **Do not** check it in as a deliverable.
-- The final delivery should contain only the requested HTML and any necessary updates to the spec docs.
-- The HTML must not depend on local relative paths, `file://` images, external fonts, external chart libraries, or any service that requires login or payment.
-- External URLs are allowed *only* as data-source citations. Never as runtime style, generic script source, chart-library dependency, or market-data fetch endpoint.
-- The generated HTML must not fetch market data at runtime. All latest-price retrieval happens at report generation time, and the HTML shows a static snapshot.
-- If a value cannot be retrieved, render it as `n/a` and list it under **Sources & data gaps** — do not fill in by guesswork. A value you derived (e.g. P&L from your own cost basis) is fine; a guess at a market data point you could not source is `n/a`. See §9.6 for the two-glyph convention.
+Single directly-openable HTML: inline CSS, SVG/CSS charts, static data, optional popover-only inline JS. No external generator scripts, CSS, CDN, build artifacts, frontend structure, relative/local image paths, external fonts/chart libs, login/payment services, runtime market-data fetch. External URLs only data-source citations. Market data is generation-time static. Missing sourced value → `n/a` + Sources/data-gaps audit; own derivations OK; guesses forbidden.
 
-### 7.2 Inline JavaScript — restricted use
+Temp wrangling scripts go in `/tmp` or one-shot and are removed. Final delivery = requested HTML and any explicitly requested spec-doc updates only.
 
-Inline `<script>` is allowed **only** for optional cell-popover ergonomics. Anything else must use SVG / CSS.
+### 7.2 Inline JavaScript
 
-- **Cell popovers** — opens a hover/tap popover with per-lot detail on the Symbol and Price cells. Prefer the CSS-driven descendant popover pattern in §13.3; use a tiny inline script only if CSS cannot cover the target browser behavior.
-
-Constraints:
-
-- All script must be **inline** (`<script>...</script>`); no `<script src=...>`.
-- No third-party libraries, no bundlers, no transpiled output. Hand-written ES2020 only.
-- The HTML must remain valid and visually complete when JavaScript is disabled or the network is offline.
-- No API keys, auth tokens, user-identifying headers, market-data endpoints, `fetch()`, `XMLHttpRequest`, polling timers, or runtime quote refresh logic in the generated HTML.
-- API calls may be made only by the agent during report generation, using optional keys read from `SETTINGS.md`.
+Allowed only for optional Symbol/Price popover ergonomics if CSS descendant pattern (§13.3) cannot cover target browser behavior. Constraints: inline `<script>` only; no `<script src>`; no third-party libs/bundlers/transpiled output; hand-written ES2020; page remains valid/complete with JS disabled/offline; no API keys/tokens/user-identifying headers/market endpoints/`fetch`/XHR/polling/runtime quote refresh. Agent may call APIs only during generation using optional `SETTINGS.md` keys.
 
 ### 7.3 Self-containment grep
 
-After producing the report, verify:
-
-- No `<script src=...>`.
-- No `<link rel="stylesheet"...>`.
-- No `<script>` or `<link>` that pulls a chart library from a CDN.
-- Inline `<style>`, inline SVG, inline tables, inline static data, and the optional popover-only inline JS are allowed.
-- Prefer SVG / CSS over JavaScript. If `<script>` appears, confirm it does not contain `fetch`, `XMLHttpRequest`, API keys, or market-data endpoints.
-
-Suggested check:
+Run:
 
 ```sh
 rg -n "<script\\s+src=|<link[^>]+stylesheet|href=.*\\.css" reports/*.html
 ```
 
-For each hit, confirm it is purely a citation link; if it is anything else, inline it.
-
----
-
+For each hit, verify citation-only; otherwise inline. If any `<script>` exists, verify no `fetch`, `XMLHttpRequest`, API keys, market endpoints.

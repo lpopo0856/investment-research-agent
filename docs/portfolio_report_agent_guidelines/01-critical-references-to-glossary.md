@@ -1,21 +1,27 @@
 ## 0. Critical references — read first
 
-Before running the report, read these files. They are normative; this guidelines doc references them.
+Before running a report, read the complete required bundle by partial reading if necessary. The read set is normative.
 
-**MAKE SURE YOU READ FULL CONTENT OF THIS FILE BY PARTIAL READING**
-**DO NOT USE ANY EXISTING REPORT HTML AS FAST REFERENCE OR DATA SOURCE**
-**DO NOT EDIT/DELETE SETTINGS.md, HOLDINGS.md UNLESS USER SPECIFICALLY ASK TO**
-**DO NOT EDIT FILES WHILE GENERATING REPORT, YOU SHOULD ONLY ADD THE REPORT AND TEMP FILES**
-**ALL THE TEMP FILES CREATED DURING THE PROCESS SHOULD BE REMOVED AFTER REPORT GENERATED**
+### 0.1 Hard run constraints
 
-- `AGENTS.md` — repo-wide agent guidance.
-- `README.md` — project overview.
-- `/docs/*` — all docs in this directory.
-- `HOLDINGS.md` — current positions (auto-read every run).
-- `SETTINGS.md` — output language, tone, optional API keys, optional position-sizing rails.
-- `reports/_sample_redesign.html` — **canonical visual reference**. New reports must align color, typography, layout, and component styling with this file. If missing, rebuild from the tokens in §14.
-- `scripts/fetch_prices.py` — **canonical price-retrieval template** implementing §8 (market-aware primary-source routing: **Stooq JSON primary for listed securities, `yfinance` per-ticker secondary**; **`yfinance` primary for FX**; Binance / CoinGecko first for crypto; Yahoo v8 chart used for ticker-currency verification after every Stooq hit; yfinance pacing for the secondary/FX branches; auto-correction; fallback chain) and §9.0 auto-FX conversion-rate retrieval into `prices.json["_fx"]`. Run this rather than re-implementing the pipeline ad-hoc each report. Output: `prices.json`. **Before invoking it, the latest-price subagent must complete §8.0 (install `yfinance` and `requests`) — `requests` powers the Stooq / Yahoo-chart / keyed-API branches; `yfinance` powers the secondary listed-equity fallback and the FX primary branch.**
-- `scripts/generate_report.py` — **canonical HTML rendering template** implementing §5/§10/§13/§14. Reads `HOLDINGS.md`, `prices.json`, and an editorial context JSON; emits the self-contained HTML. Reads CSS from `reports/_sample_redesign.html` so visual edits land in one place. Stable built-in UI dictionaries live as JSON files under `scripts/i18n/` for English / Traditional Chinese / Simplified Chinese.
+- Read this file and every numbered part file under `/docs/portfolio_report_agent_guidelines/`.
+- Do **not** use existing generated report HTML as a fast reference or data source.
+- Do **not** edit or delete `SETTINGS.md` or `HOLDINGS.md` unless the user explicitly asks.
+- During report generation, do **not** edit repo files except the report HTML and temporary files required for the run.
+- Remove all temporary files after the report is generated.
+
+### 0.2 Required read set
+
+| Path | Contract |
+|---|---|
+| `AGENTS.md` | Repo-wide agent guidance and binding user persona rules. |
+| `README.md` | Project overview. |
+| `/docs/*` | All docs in this directory, including every numbered portfolio-report part file. |
+| `HOLDINGS.md` | Current positions. Auto-read fresh every run. Do not hard-code holdings. |
+| `SETTINGS.md` | Output language, tone, optional API keys, optional sizing rails, and the full `## Investment Style And Strategy` section. |
+| `reports/_sample_redesign.html` | Canonical visual reference. New reports must align color, typography, layout, and component styling with this file. If missing, rebuild from §14 tokens and rules. |
+| `scripts/fetch_prices.py` | Canonical price-retrieval template. Implements §8 routing (**Stooq JSON primary** for listed securities, `yfinance` per-ticker secondary; **`yfinance` primary for FX**; Binance / CoinGecko first for crypto), Yahoo v8 chart ticker-currency verification after every Stooq hit, yfinance pacing, auto-correction, fallback chain, and §9.0 auto-FX retrieval into `prices.json["_fx"]`. Run it instead of re-implementing the pipeline. Output: `prices.json`. Before invoking it, the latest-price subagent must complete §8.0 (`yfinance` and `requests` import/install check). |
+| `scripts/generate_report.py` | Canonical HTML renderer. Implements §5 / §10 / §13 / §14 and PM-grade math from §15. Reads `HOLDINGS.md`, `prices.json`, and editorial context JSON; emits one self-contained HTML file. Reads CSS from `reports/_sample_redesign.html`; stable built-in UI dictionaries live under `scripts/i18n/` for English / Traditional Chinese / Simplified Chinese. |
 
 ---
 
@@ -55,6 +61,15 @@ The procedure is structured as **four serial phases**: **(A) Gather** all data �
 | 13 | D · Render | Render the HTML (11 sections in order) with inline charts, popovers, RWA, and visual standard, slotting in the Phase C review notes alongside the user's content | §10.1, §10.2, §10.3, §10.4, §13, §14, §15.8 |
 | 14 | D · Render | Run the **Pre-delivery self-check** (Appendix A) | Appendix A |
 | 15 | D · Render | Reply to the user with the absolute HTML path plus key alerts, data gaps, and any cross-cutting reviewer concerns. Per §10.5.1, name which tickers were searched and how many material items each surfaced. If `yfinance` auto-correction succeeded, include a **建議更新 agent spec** note | §16 |
+
+### 2.1 Phase gates (must be true before advancing)
+
+| Gate | Required true conditions |
+|---|---|
+| A → B | `HOLDINGS.md`, `SETTINGS.md`, and required docs read; holdings parsed and classified; `prices.json` generated or exhaustive fallback audit captured; FX rates resolved or marked `n/a`; metrics computed; every cover-universe ticker has news search status and event search status; follow-up searches completed for material threads. |
+| B → C | High-priority alerts, high-risk / high-opportunity watchlist, recommended adjustments, action list, Strategy readout, and today's summary drafted from Phase A evidence; every actionable item has structured PM fields or an explicit carve-out; continuous strategy-anchor check completed. |
+| C → D | Reviewer pass completed in senior-PM voice; item-level notes attached only where specific; serious defects returned to Phase A or B and fixed; no reviewer note is being used to paper over missing data, rail breaches, or invalid kill criteria. |
+| D → reply | HTML rendered to `reports/`; Appendix A self-check complete; self-containment grep clean; temp files removed; reply includes absolute HTML path, key alerts, data gaps, §10.5.1 searched-ticker counts, and any required spec-update note. |
 
 **Anti-pattern (HARD) — Phase A skipped.** Drafting the alert block, action list, or recommended adjustments from holdings + prices alone — and only then "decorating" them with whatever news happens to come up — produces opinions that look authoritative but are not actually informed by the latest evidence. If you find yourself writing a recommendation before you have read this run's news for that ticker, **stop and go back to Phase A**. The cost of restarting Phase B is a few minutes; the cost of telling the user to act on a stale read is real money.
 
