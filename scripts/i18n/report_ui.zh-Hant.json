@@ -268,6 +268,10 @@
     "auto_fix": "自動修正",
     "retry": "重試 {count} 次"
   },
+  "reviewer": {
+    "note_label": "審稿備註",
+    "summary_label": "審稿總覽"
+  },
   "footer": {
     "text": "本報告依 docs/portfolio_report_agent_guidelines.md 規範產出，價格為產出時靜態快照，未持續刷新。"
   }

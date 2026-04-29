@@ -17,12 +17,12 @@ The repo is optimized for agent-driven use in tools such as OpenAI Codex, Claude
 ## What matters
 
 - `AGENTS.md`: how the research agent should think and write.
-- `SETTINGS.md`: your language, risk style, and base currency. Local only.
+- `SETTINGS.md`: your language, full `Investment Style And Strategy`, base currency, and sizing rails. Local only.
 - `HOLDINGS.md`: your positions. Local only.
-- `docs/portfolio_report_agent_guidelines.md`: report contract. The agent must also read every linked numbered part under `docs/portfolio_report_agent_guidelines/`.
+- `docs/portfolio_report_agent_guidelines.md`: report contract, including full news/event coverage, Strategy readout, and reviewer pass. The agent must also read every linked numbered part under `docs/portfolio_report_agent_guidelines/`.
 - `docs/holdings_update_agent_guidelines.md`: holdings-update contract.
 - `scripts/fetch_prices.py`: canonical latest-price and FX fetcher.
-- `scripts/generate_report.py`: canonical HTML report renderer.
+- `scripts/generate_report.py`: canonical HTML report renderer; consumes `strategy_readout` and `reviewer_pass` from `report_context.json`.
 - `reports/`: generated output. Local only.
 
 ## First-time setup
@@ -46,7 +46,8 @@ Common market tags: `[US]`, `[TW]`, `[TWO]`, `[JP]`, `[HK]`, `[LSE]`, `[crypto]`
 
 ### Using `SETTINGS.md` and `HOLDINGS.md`
 
-- Update `SETTINGS.md` whenever your preferred language, risk style, base currency, or report defaults change.
+- Update `SETTINGS.md` whenever your preferred language, full investment strategy, base currency, sizing rails, or report defaults change.
+- Write the whole `Investment Style And Strategy` section as the investor you want the agent to act as: temperament, drawdown tolerance, sizing, holding period, entry discipline, contrarian appetite, hype tolerance, off-limits zones, and decision style.
 - Treat `HOLDINGS.md` as the single source of truth for your live positions before asking for research or reports.
 - After every completed trade, ask the agent to update `HOLDINGS.md` immediately so analysis stays accurate.
 - Before generating a report, quickly review both files to avoid stale assumptions.
@@ -63,7 +64,7 @@ Examples:
 - "What is my AI exposure now?"
 - "Should I trim short-term positions before earnings?"
 
-The agent reads `SETTINGS.md` and `HOLDINGS.md`, then follows `AGENTS.md`.
+The agent reads the whole `Investment Style And Strategy` section in `SETTINGS.md`, reads `HOLDINGS.md`, then follows `AGENTS.md` in first person as your stated strategy.
 
 ### 2. Portfolio report
 
@@ -75,6 +76,8 @@ Examples:
 The deliverable is a single self-contained HTML file under `reports/`.
 
 For `auto mode`, `routine`, or any other unattended environment, it is recommended that the agent obtain explicit consent before sending holdings tickers to external market-data sources for report generation. A clear confirmation example is: `I agree to let you send my holdings tickers to external market data sources to retrieve prices and generate today's report.`
+
+A complete report run is phased: Gather data first, Think only after prices/metrics/news/events are collected, Review as a senior PM before rendering, then Render. The Gather phase includes live news and 30-day forward-event searches for every non-cash holding, not only top-weight positions. The Review phase annotates the user's analysis with reviewer notes where useful; it does not replace the user's content.
 
 The agent should use the canonical scripts, not rewrite the workflow:
 
@@ -88,6 +91,8 @@ python scripts/generate_report.py \
 ```
 
 If the requested report language is not one of the built-in UI dictionaries (`english`, `traditional chinese`, `simplified chinese`), the executing agent should translate `scripts/i18n/report_ui.en.json` into a temporary overlay and pass it with `--ui-dict`.
+
+`report_context.json` may include `strategy_readout` for the first-person Strategy readout and `reviewer_pass` for reviewer notes/summaries. The legacy `style_readout` key still renders, but new context should use `strategy_readout`.
 
 ### 3. Holdings update
 
@@ -138,11 +143,11 @@ Not tracked in git:
 - `HOLDINGS.md`
 - `HOLDINGS.md.bak`
 - generated reports
-- typical runtime files such as `prices.json` and `report_context.json`
+- typical runtime files such as `prices.json`, `report_context.json`, and `temp/`
 
 ## Third-party data
 
-This project does not own or guarantee any market-data or FX source. The price workflow may use public endpoints (Stooq JSON, Yahoo's v8 chart endpoint, Binance, CoinGecko, Frankfurter / ECB, Open ExchangeRate-API, TWSE MIS), optional API keys (Twelve Data, Finnhub, Alpha Vantage, FMP, Tiingo, Polygon, J-Quants, CoinGecko Demo), and wrappers such as `yfinance`. You are responsible for provider terms, rate limits, attribution, and paid-access requirements.
+This project does not own or guarantee any market-data or FX source. The price workflow may use public endpoints (Stooq JSON, Yahoo's v8 chart endpoint, Binance, CoinGecko, Frankfurter / ECB, Open ExchangeRate-API, TWSE / TPEx MIS), optional API keys (Twelve Data, Finnhub, Alpha Vantage, FMP, Tiingo, Polygon, J-Quants, CoinGecko Demo), and wrappers such as `yfinance`. For Taiwan names, the no-token MIS fallback probes both listed (`tse_`) and OTC (`otc_`) channels to catch `[TW]` / `[TWO]` misclassification. You are responsible for provider terms, rate limits, attribution, and paid-access requirements.
 
 ## Disclaimer
 

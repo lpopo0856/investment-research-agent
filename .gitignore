@@ -9,3 +9,4 @@ SETTINGS.md
 /scripts/__pycache__/
 prices.json
 report_context.json
+temp/

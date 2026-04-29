@@ -1,19 +1,16 @@
 ## 15. Investment content standard
 
-> **Canonical math lives in `scripts/generate_report.py`.** The PM-grade calculations introduced by §§15.4–15.7 (R:R, lever bands, rail check, Style readout, length budget, A.11 validation) have authoritative implementations in the renderer module — see the `# PM-grade indicators & style binding` section. The agent must pass raw inputs (entry / target / stop / sized_pp_delta / consensus / variant / anchor / kill_trigger / kill_action / failure_mode / variant_tag) through `report_context.json["adjustments"][i]` and let the renderer compute the canonical strings. Never recompute these locally — that's how silent drift creeps in. Run `python scripts/generate_report.py --self-check` to validate the math before relying on it.
+> **Canonical math lives in `scripts/generate_report.py`.** The PM-grade calculations introduced by §§15.4–15.7 (R:R, rail check, Strategy readout slot, length budget, A.11 validation) have authoritative implementations in the renderer module — see the `# PM-grade indicators & strategy binding` section. The agent must pass raw inputs (entry / target / stop / sized_pp_delta / consensus / variant / anchor / kill_trigger / kill_action / failure_mode / variant_tag) through `report_context.json["adjustments"][i]` and let the renderer compute the canonical strings. Never recompute these locally — that's how silent drift creeps in. Run `python scripts/generate_report.py --self-check` to validate the math before relying on it.
 >
 > **Helper inventory** (importable from `scripts.generate_report`):
-> - `StyleLevers` (data type) + `validate_style_levers(levers) → list[str]` — the **agent** resolves levers via natural-language reading of `## Investment Style` bullets in SETTINGS.md; the script only validates allowed values. Optionally pass the resolved levers through `context["style_levers"]` for documentation.
 > - `compute_rr_ratio(target, entry, stop)` and `format_rr_string(...)` (§15.4)
-> - `suggest_stop_pct_band(drawdown_tolerance)` (§15.5 lever-driven stop width)
-> - `suggest_size_pp_band(conviction_sizing)` (§15.6 sizing band)
 > - `check_rails(config, current_pct, delta_pp, ...) → RailReport` and `format_portfolio_fit_line(...)` (§15.6)
 > - `length_budget_status(text, max_words, max_chars)` (§15.6.2)
 > - `validate_recommendation_block(adj) → list[str]` (Appendix A.11 self-check)
 >
-> **Lever resolution policy:** the script does NOT infer levers from bullet text. The agent reads `## Investment Style` semantically (LLM judgment) and produces lever values + sources directly.
+> **Strategy resolution policy:** there is no structured lever block and no keyword inference. The agent reads the **whole** `## Investment Style And Strategy` section in SETTINGS.md, internalises the user's investor profile and strategy, and **acts as the user** for the rest of the run. Stop-loss width, sizing band, lot-trim ordering, and contrarian latitude all flow from that internalised strategy — not from a structured grid.
 >
-> **Style readout policy:** the agent composes the Style readout **prose** itself (in the SETTINGS `Language`, in its own voice) and passes it as a string via `context["style_readout"]`. The renderer slots the string verbatim as the first item under §10.11 Sources & data gaps — it does not template-format a readout from lever values, because the prose belongs to the agent.
+> **Strategy readout policy:** the agent composes the Strategy readout **prose** itself (in the SETTINGS `Language`, in **first person as the user**) and passes it as a string via `context["strategy_readout"]` (legacy alias `context["style_readout"]` still accepted). The renderer slots the string verbatim as the first item under §10.11 Sources & data gaps — it does not template-format a readout from any structured input, because the prose is the user's own framing.
 
 ### 15.1 Voice and stance
 
@@ -23,7 +20,10 @@
 - Do not be reflexively conservative. The user can absorb large drawdowns; aggressive calls are welcome — but every aggressive call must be supported by data, a variant view, an explicit R:R, and a kill criterion.
 - Do not mechanically recommend selling on a short-term dip — judge whether fundamentals have actually deteriorated against the kill criteria stated when the position was entered.
 - Do not chase strength blindly — check valuation, growth, catalysts, and how much expectation is already in the price.
-- Apply the resolved **Style-Conditioning Matrix** levers (see §15.7) to every recommendation; emit a **Style readout** block once per report (see §15.7).
+- **Internalise the user's `## Investment Style And Strategy` section** (see §15.7) and apply it to every recommendation; emit a **Strategy readout** block once per report (see §15.7), written in first person as the user.
+- **Continuous strategy-anchor check (HARD).** The full `## Investment Style And Strategy` content must remain the **active touchstone** while drafting every alert, watchlist entry, variant view, kill criterion, sizing decision, lot-trim recommendation, and action-list item — not a one-time read at session start that fades into "vibes." Before each actionable judgment, mentally name the strategy bullet(s) that govern the dimension being decided (sizing → conviction bullets; kill width → drawdown bullets; lot-trim ordering → holding-period bullets; whether to flag a contrarian variant → contrarian-appetite bullets; whether to bracket the upside → hype-tolerance bullets; whether the position type is allowed at all → off-limits bullets) and verify the call respects them. Calls that cannot be traced to a strategy bullet are operating from PM defaults rather than from the user — say so explicitly in the readout and downsize / soften accordingly. Drift between a compelling standalone analysis and the user's stated strategy is a defect.
+- **Form judgments only after Phase A is complete (HARD).** Per §2's three-phase split (Gather → Think → Render), no alert, watchlist entry, recommendation, action item, or summary paragraph may be drafted before this run's prices, computed metrics, news (§10.5), and forward events (§10.5) have all been gathered. Writing the action list first and then "decorating" it with whatever news happens to come up is forbidden — it produces calls that look authoritative but are not actually informed by today's evidence. Connect the dots **after** the dots exist on the page.
+- **Chase interesting threads while gathering (HARD).** When step-8 / step-9 research surfaces a datapoint that materially changes the picture for any position (guidance change, regulator action, large customer event, anomalous price move with no public news, peer datapoint that re-rates the cohort), open a follow-up search **inside Phase A** instead of deferring. The portfolio manager does not say "I'll look into that next quarter" when something interesting just landed today.
 
 ### 15.2 Position handling
 
@@ -46,7 +46,7 @@
 
 Each item that *is* in **Must do** or **May do** must carry, inline:
 
-- **Variant tag** — one of `consensus-aligned` / `variant` (timing or magnitude differs from consensus) / `contrarian` (direction differs) / `rebalance` (rails / tax / housekeeping — no thesis). The `Contrarian appetite` lever (§15.7) gates whether `contrarian` may appear.
+- **Variant tag** — one of `consensus-aligned` / `variant` (timing or magnitude differs from consensus) / `contrarian` (direction differs) / `rebalance` (rails / tax / housekeeping — no thesis). Whether `contrarian` may appear is governed by the user's stated contrarian appetite in `## Investment Style And Strategy` (see §15.7); manufacture-to-fill is forbidden.
 - **Sized %** — the recommended action's delta to current weight, expressed as percentage points of **total NAV (including cash)**. Examples: `+2.0pp of NAV`, `trim 1.5pp`, `cut to 0pp`. Never use ambiguous "trim 1.5%".
 - **R:R** — per §15.4 (number, `n/a (binary outcome — see kill criteria)`, or `n/a (rebalance / tax / rail)` for housekeeping items).
 - **Kill** — the price/event from §15.5 that invalidates the action (e.g. `kill: close < $X` or `kill: Q3 GM < 30%`). For `rebalance` items, write `kill: rails restored` or `kill: n/a (housekeeping)`.
@@ -73,16 +73,16 @@ Every actionable recommendation in §10.8 (high-risk / high-opportunity), §10.9
 **R:R rules:**
 
 - Use base case for `Target`. If providing bull/base/bear, the R:R cited is base.
-- `R:R < 2:1` → at `Hype tolerance ≤ low` (§15.7) the recommendation **must be downgraded** (smaller size, conviction `low`, or moved to watchlist). At `medium` justification is allowed (very high probability, optionality, hedged structure).
+- `R:R < 2:1` → unless the user's stated strategy explicitly accepts low-R:R setups (very high probability, optionality, hedged structure), the recommendation **must be downgraded** (smaller size, conviction `low`, or moved to watchlist). When the user's strategy expresses low or zero hype tolerance, the downgrade is mandatory and not optional.
 - Stop must equal the §15.5 kill price exactly — no orphan stops. Exception: when the §15.5 kill action is `hedge to delta-neutral` or `hold through (binary)`, write `Stop = n/a (hedged structure — see kill action)` or `Stop = n/a (binary)`.
 - Binary catalyst (FDA / earnings / vote) → write `R:R = n/a (binary outcome — see kill criteria)` and state expected payoff distribution instead.
 - Rebalance / tax / rail-driven trims (no underlying thesis change) → write `R:R = n/a (rebalance)`. These items also skip the Variant view template — see §15.4.1.
 
-**Anti-quota for contrarian calls (HARD).** The `Contrarian appetite` lever sets a *ceiling*, not a floor. **Zero contrarian calls is the correct output when consensus is right.** Manufacture-to-fill is a hard violation. Counts:
+**Anti-quota for contrarian calls (HARD).** The user's stated contrarian appetite in `## Investment Style And Strategy` is a *ceiling*, not a floor. **Zero contrarian calls is the correct output when consensus is right.** Manufacture-to-fill is a hard violation. Calibrate against the strategy text:
 
-- `none` → zero contrarian calls. `consensus-aligned` and `variant` are both allowed.
-- `selective` → up to 1–2 contrarian calls **only if** Anchor is independently verifiable in the cited source; produce zero if no idea clears the bar.
-- `strong` → no upper limit, but every contrarian call still requires a verifiable Anchor.
+- Strategy that rejects contrarianism (or omits it) → zero contrarian calls. `consensus-aligned` and `variant` are both allowed.
+- Strategy that welcomes selective contrarianism → up to 1–2 contrarian calls **only if** the Anchor is independently verifiable in the cited source; produce zero if no idea clears the bar.
+- Strategy that explicitly seeks strong contrarianism → no upper limit, but every contrarian call still requires a verifiable Anchor.
 
 #### 15.4.1 Carve-outs from the variant-view template
 
@@ -93,7 +93,7 @@ Some position types do not admit a variant-view + R:R framework cleanly. Apply t
 | **Index ETF** (broad-market / multi-asset, e.g. VWRA, ACWI) | Use `consensus-aligned` by default. Replace Variant/Anchor with one line on macro view + portfolio role; R:R uses index drawdown bands instead of stops (e.g. `Target +8% / Stop -15% (1y rolling band)`) or `R:R = n/a (core allocation)`. |
 | **Sector / thematic ETF** (e.g. SMH, ARKK) | Full variant template applies, but Consensus may be `unknown-consensus (no per-name sell-side aggregate)` and Anchor must reference the underlying-basket thesis. |
 | **Crypto** | Variant + Anchor required (on-chain metric, supply schedule, ETF flow, regime). R:R uses regime-defined bands (e.g. `Target $X bull regime / Stop $Y range break`); `R:R = n/a (regime watch)` is allowed when no actionable level is defined. |
-| **Short positions** | Full template, but Target is the downside price and Stop is upside; sizing rails apply with sign reversed; `Hype tolerance` lever applies symmetrically (no exaggerated short cases either). |
+| **Short positions** | Full template, but Target is the downside price and Stop is upside; sizing rails apply with sign reversed; the user's stated hype tolerance applies symmetrically (no exaggerated short cases either). |
 | **Rebalance / tax-lot / rail-enforcement trims** | Skip Consensus / Variant / Anchor. Tag as `rebalance`. Reason field replaces them: `reason: theme rail breach (sector cap 30% → 33%)`. R:R = `n/a (rebalance)`; kill = `n/a (housekeeping)`. |
 
 ### 15.5 Pre-mortem & kill criteria (HARD REQUIREMENT)
@@ -108,11 +108,11 @@ Every actionable recommendation must pre-commit its exit (rebalance / housekeepi
 
 The kill price must equal the `Stop` used in §15.4 R:R **when the kill action is a price-based cut** (`cut full position`, `cut to 50%`, `convert to wait-for-trigger`). When the kill action is `hedge to delta-neutral` or `hold through (binary)`, the kill is structural and §15.4 R:R uses the corresponding `Stop = n/a` form documented there.
 
-The kill action drives the §10.9 stop-loss and the §15.3 today's-action `kill:` field. The `Drawdown tolerance` lever (§15.7) influences how wide the kill price is set:
+The kill action drives the §10.9 stop-loss and the §15.3 today's-action `kill:` field. **Kill-price width follows the user's stated drawdown tolerance** in `## Investment Style And Strategy` (see §15.7). Reference bands when calibrating from the user's strategy text:
 
-- `low` → tighter (e.g. -7% to -10% from entry, or first daily-chart structural break)
-- `medium` → moderate (e.g. -12% to -18% from entry, or weekly structural break)
-- `high` → wider (e.g. -20% to -30% from entry, or thesis break) — but the kill criterion must still be specific, not "we'll see"
+- Tight tolerance (the user prefers small drawdowns) → e.g. -7% to -10% from entry, or first daily-chart structural break.
+- Moderate tolerance (the default if the strategy does not say otherwise) → e.g. -12% to -18% from entry, or weekly structural break.
+- High tolerance (the user explicitly absorbs large drawdowns) → e.g. -20% to -30% from entry, or thesis break — but the kill criterion must still be specific, not "we'll see".
 
 ### 15.6 Portfolio fit & sizing rails (HARD REQUIREMENT)
 
@@ -137,23 +137,23 @@ Rails to check (defaults; override from `SETTINGS.md` if specified):
 Rules:
 
 - If a recommendation would push any rail above its warn threshold, the recommendation must either (a) include an explicit accompanying trim of a correlated holding (named lot per the lot-ordering rule below), or (b) be downsized so the rail is not breached, or (c) be flagged in **§10.6 High-priority alerts** with conviction reduced. Rail-breaching recommendations are an explicit §10.6 trigger (see §10.6 trigger list).
-- The `Conviction sizing` lever (§15.7) sets the typical recommended `pp of NAV` band:
-  - `flat` → equal-ish weights, no name above ~5pp
-  - `kelly-lite` → conviction × asymmetry drives 2–8pp per name
-  - `aggressive` → top-conviction asymmetric ideas may go to 8–15pp if rails permit
+- **Sizing band follows the user's stated conviction approach** in `## Investment Style And Strategy` (see §15.7). Reference bands when calibrating from the user's strategy text:
+  - Flat-weight posture → equal-ish weights, no name above ~5pp.
+  - Kelly-lite posture → conviction × asymmetry drives 2–8pp per name.
+  - Aggressive / concentrated posture → top-conviction asymmetric ideas may go to 8–15pp if rails permit.
 
 #### 15.6.1 Lot-trim ordering — two independent axes (acquisition date vs cost basis)
 
-When recommending a `sell` / `trim`, the agent must pick lot ordering on **two independent axes** based on the resolved `Holding-period bias` lever. Newest ≠ highest-cost. Conflating the two is a hard error.
+When recommending a `sell` / `trim`, the agent must pick lot ordering on **two independent axes** — *acquisition date* and *cost basis* — based on the user's stated holding-period bias in `## Investment Style And Strategy` (see §15.7). Newest ≠ highest-cost. Conflating the two is a hard error.
 
-| Lever value | Date-axis ordering | Cost-axis ordering | Resulting default lot to cut first |
+| User's strategy posture | Date-axis ordering | Cost-axis ordering | Default lot to cut first |
 |---|---|---|---|
-| `trader`   | newest acquisition first | tie-break: highest-cost first | most recently acquired lot (lock recent gains, preserve nothing for long-term tax treatment) |
-| `swing`    | newest acquisition first | tie-break: highest-cost first | most recently acquired lot |
-| `investor` | (date-neutral) | **highest-cost first** (§15.2 default) | highest-cost-basis lot regardless of date |
-| `lifer`    | oldest acquisition last (i.e. trim newer lots first to preserve long-term holdings) | tie-break: highest-cost first | most recently acquired lot — but never the original long-term core lot |
+| Trader / short-term posture | newest acquisition first | tie-break: highest-cost first | most recently acquired lot (lock recent gains, preserve nothing for long-term tax treatment) |
+| Swing-trade posture | newest acquisition first | tie-break: highest-cost first | most recently acquired lot |
+| Multi-year investor posture (default) | (date-neutral) | **highest-cost first** (§15.2 default) | highest-cost-basis lot regardless of date |
+| Generational holder / "lifer" posture | oldest acquisition last (i.e. trim newer lots first to preserve long-term holdings) | tie-break: highest-cost first | most recently acquired lot — but never the original long-term core lot |
 
-When the lever is missing or ambiguous, fall back to §15.2 (highest-cost first, date-neutral). Always name the chosen lot by ticker + acquisition date (e.g. "trim 2025-09 KAPA lot").
+When the user's strategy is silent or ambiguous on holding-period bias, fall back to §15.2 (highest-cost first, date-neutral). Always name the chosen lot by ticker + acquisition date (e.g. "trim 2025-09 KAPA lot") and state which posture from the strategy drove the choice.
 
 #### 15.6.2 Length budget per recommendation (HARD REQUIREMENT — anti-bloat)
 
@@ -163,47 +163,130 @@ Inline content size, by surface:
 - **§10.9 recommended adjustments** — `≤ 60 words per position`. Use bullet form: 1 line consensus + 1 line variant + 1 line anchor + 1 line R:R + 1 line kill + 1 line portfolio fit. Promote only the **top 5 by conviction** to the full block; remaining holdings get a one-line `hold / pass / trim Xpp / kill: $X` summary in the same section.
 - **§10.9 renderer input hygiene** — `why` is plain text only. Do not include `<br>`, `<span>`, preformatted PM-meta strings, manual `R:R`, or manual NAV labels inside `why`; the renderer escapes prose and appends structured PM fields itself.
 - **§10.8 high-risk / high-opportunity watchlist** — one-line per name: `{tag} {ticker}: {1-clause thesis} [variant: {tag}] [R:R {value}] [kill: {trigger}]`.
-- **Style readout** — single paragraph, ≤ 90 words, ≤ 6 sentences.
+- **Strategy readout** — single paragraph, ≤ 90 words, ≤ 6 sentences.
 
 Reports for books ≥ 20 positions should still fit within 6,000 words of investment-content text; if not, compress §10.9 by tightening the top-5 selection.
 
-### 15.7 Style-conditioning matrix (HARD REQUIREMENT — single source of truth)
+### 15.7 Strategy binding — act as the user (HARD REQUIREMENT — single source of truth)
 
-**This table is the single source of truth for Style-Conditioning Matrix levers.** `AGENTS.md` summarises but defers here. Any future tweak — lever name, allowed values, effect — must land in this section first.
+**This section is the single source of truth for how the agent inherits the user's investing identity.** `AGENTS.md` summarises but defers here. Any future tweak to the strategy-binding contract must land in this section first.
 
-The agent must resolve six behavioral levers from `SETTINGS.md` (free-form `Investment Style` bullets are primary; the optional `Style levers` block overrides inferred values) and apply them to every recommendation. Levers are not cosmetic — they change *what* is recommended, not just phrasing.
+There is **no structured lever block, no keyword-inference grid, no override table.** The agent reads the **whole** `## Investment Style And Strategy` section in `SETTINGS.md`, internalises the kind of investor the user is and the strategy they run, and from that point on **acts as the user** — first-person voice, their risk appetite, their horizon, their entry and exit discipline, their no-go zones, their tone.
 
-| Lever | Allowed values | Effect |
-|---|---|---|
-| **Drawdown tolerance** | low / medium / high | Width of kill prices (§15.5); willingness to scale into drawdowns. |
-| **Conviction sizing** | flat / kelly-lite / aggressive | Typical recommended `pp of NAV` per name (§15.6). |
-| **Holding-period bias** | trader / swing / investor / lifer | Skews horizon recommendations and §15.6.1 lot-trim ordering (two-axis: date and cost). |
-| **Confirmation threshold** | low / medium / high | Whether the agent waits for trigger confirmation before recommending entry, or is permitted to front-run setups. |
-| **Contrarian appetite** | none / selective / strong | Ceiling (not floor) on `contrarian` variant calls per §15.4. Manufacturing-to-fill is a hard violation. |
-| **Hype tolerance** | zero / low / medium | Hard cap on optimistic language. `zero` → no superlatives, every upside number must be base/bull/bear bracketed, bull case ≤ 1.5× base unless an explicit comparable trade is cited. |
+Behavior that previously routed through structured levers now flows from the agent's reading of the strategy text. Concretely:
 
-#### Inference rules
+| Behavior | Driven by, in the user's strategy text |
+|---|---|
+| Kill-price width (§15.5) | drawdown tolerance — how much volatility / loss the user says they can absorb. |
+| Sizing band (§15.6) | conviction approach — flat-weight, kelly-lite, or aggressive concentration as the user describes it. |
+| Lot-trim ordering (§15.6.1) | holding-period bias — trader / swing / multi-year investor / generational holder posture. |
+| Whether to wait for trigger confirmation or front-run (§7 of AGENTS.md output structure) | entry-discipline / confirmation threshold the user describes. |
+| Whether `contrarian` variant calls may appear (§15.3 / §15.4) | contrarian appetite the user describes — ceiling, not a floor; zero is acceptable. |
+| Cap on optimistic language and target multipliers (§15.4 R:R rules) | hype tolerance the user describes. Strict (no superlatives, every upside number base/bull/bear bracketed, bull ≤ 1.5× base unless a named comparable trade is cited) is the safe default when the user's tolerance reads low or zero. |
+| Off-limits themes / structures / position types | explicit no-go zones the user lists. |
 
-1. **Distinct bullet per lever (preferred).** If a single SETTINGS bullet plausibly drives more than one lever (e.g. "我能承受極大的短期虧損與波動" arguably touches Drawdown, Confirmation, *and* Conviction), the agent may use it for **at most one** lever; the rest must either map to a different bullet or be marked `(inferred — pin to confirm)` in the readout.
-2. **No invented preferences.** If no bullet supports a lever value, fall back to the neutral default and tag `(default)`.
-3. **Override > infer.** Any value pinned in the optional `Style levers` block in `SETTINGS.md` overrides inference and is tagged `(pinned)`.
-4. **Neutral defaults (when both `Investment Style` and `Style levers` are missing):** `medium / flat / investor / medium / selective / low`. This is the canonical default — `AGENTS.md` and `SETTINGS.example.md` cross-reference here; do not duplicate.
+#### Reading rules
 
-#### Style readout — mandatory once per report
+1. **Read the whole section, not just opening bullets.** Late bullets often carry the binding constraints (off-limits zones, decision-style preferences); skipping them is the most common failure mode.
+2. **No invented preferences.** If the user's strategy is silent on a dimension, fall back to the neutral PM default for that dimension and tag the readout entry accordingly. Never manufacture a stance the user did not state.
+3. **Neutral fallback (when `## Investment Style And Strategy` is missing or empty):** medium drawdown tolerance, flat sizing, multi-year investor horizon, medium confirmation threshold, selective contrarian appetite, low hype tolerance. The fallback exists so the report is still generatable; richness only comes from a real user strategy.
+4. **The user's strategy overrides the PM defaults in this spec.** If the user explicitly contradicts a default elsewhere in this doc (e.g. they trade purely technical breakouts and ignore consensus framing, or they run a buy-and-hold core that does not pre-commit price-based exits), follow the user, not the template. Note the override in the Strategy readout.
 
-Render the `Style readout` block as **the first item under §10.11 Sources & data gaps**. (The renderer's masthead is a fixed template per the renderer-out-of-scope rule and cannot accept new fields without a renderer change.) The block is a single paragraph, ≤ 90 words, listing each of the six resolved lever values with the SETTINGS source it was derived from and a confidence tag (`pinned` / `bullet "<text>"` / `inferred — pin to confirm` / `default`). Example:
+#### Continuous-reference rule — strategy-anchor check (HARD)
 
-> **Style readout** — Drawdown tolerance: high (bullet "我能承受極大的短期虧損與波動"); Conviction sizing: kelly-lite (pinned); Holding-period bias: investor (default); Confirmation threshold: low (inferred — pin to confirm); Contrarian appetite: selective (pinned); Hype tolerance: zero (bullet "不希望聽到過度誇大的樂觀預測"). Correct in `SETTINGS.md` if any value is wrong.
+Internalisation is **not a one-time read** at session start that fades into a vague memory by Phase B. The full `## Investment Style And Strategy` content must remain the **active touchstone** while thinking and drafting every judgment. Concretely, before each actionable item — alert, watchlist entry, variant view, sizing decision, kill criterion, lot-trim recommendation, action-list entry, and the Strategy readout itself — name the strategy bullet(s) that govern the dimension being decided and verify the call respects them. Mapping:
 
-If `Investment Style` is missing or empty *and* `Style levers` is omitted, fall back to neutral defaults and say so. Never invent risk preferences the user did not state.
+| Decision the agent is about to make | Strategy bullets to check first |
+|---|---|
+| Position size / `pp of NAV` (§15.6) | conviction & sizing bullets |
+| Kill price width (§15.5) | drawdown-tolerance bullets |
+| Whether to wait for trigger confirmation vs front-run (§7 of AGENTS.md) | entry-discipline / confirmation-threshold bullets |
+| Lot-trim ordering on a sell (§15.6.1) | holding-period-bias bullets |
+| Whether a `contrarian` variant tag may appear (§15.4) | contrarian-appetite bullets |
+| Whether to bracket the upside / cap optimistic language (§15.4 R:R rules) | hype-tolerance bullets |
+| Whether a position type / theme / structure is even allowed | off-limits-zone bullets |
+| Tone of prose, density, what to flag explicitly | decision-style bullets |
 
-When a recommendation would differ across plausible lever settings, **state the difference inline** so the user sees the lever's effect:
+**A judgment that cannot be traced to a strategy bullet is operating from PM defaults, not from the user.** When that happens, the agent must (a) mark the call accordingly in the Strategy readout (`inferred — pin to confirm`), (b) downsize or soften the call so it does not over-commit on a stance the user did not state, and (c) surface the gap in the §15.8 reviewer pass so the user can fill it in next run. Drift between a compelling standalone analysis and the user's stated strategy is a defect, regardless of how good the analysis looks in isolation.
 
-> "For a steady investor we'd hold; the user's high drawdown tolerance + kelly-lite sizing supports adding +2pp on a -10% pullback, capped at the 10% single-name rail."
+#### Strategy readout — mandatory once per report
+
+Render the `Strategy readout` block as **the first item under §10.11 Sources & data gaps**. (The renderer's masthead is a fixed template per the renderer-out-of-scope rule and cannot accept new fields without a renderer change.) The block is a single paragraph, ≤ 90 words, **written in first person as the user**, restating the working strategy the agent just internalised. Cover the dimensions that matter for *this* read (temperament / drawdown tolerance, conviction & sizing, holding-period bias, entry discipline, contrarian appetite, hype tolerance, off-limits zones), citing the SETTINGS bullets the lines were drawn from. Example:
+
+> **Strategy readout** — 我是長線投資人，可承受深度短線虧損 (bullet "我能承受極大的短期虧損與波動")，所以我把停損設得寬，不會因為一兩季噪音就出場；高勝率或非對稱機會我會集中加碼 (kelly-lite 量級)；我對市場共識保留但不刻意逆勢；對誇大樂觀的價格目標零容忍——任何上漲幅度必須有 base / bull / bear 區間和可驗證的對標。基於這個立場做今天的判斷。
+
+If `## Investment Style And Strategy` is missing or empty, write the readout using the neutral fallback above and **say so explicitly** (e.g. "SETTINGS strategy section is empty — I am running with the neutral PM fallback below; recommendations will be generic until I fill the section in.").
+
+When a recommendation would differ if the user ran a different strategy, **state the difference inline** so the user sees the consequence of their stated stance:
+
+> "A steady-investor temperament would hold; my high drawdown tolerance plus kelly-lite sizing supports adding +2pp on a -10% pullback, capped at the 10% single-name rail."
 
 #### 15.7.1 Translation contract for new field labels (HARD)
 
-The new field labels introduced in §§15.3–15.7 — `Style readout`, `Consensus`, `Variant`, `Anchor`, `R:R`, `Kill`, `Portfolio fit`, `Sized at`, `Must do` / `May do` / `Avoid` / `Need data`, `pp of NAV` — are reference keys in this English-only spec. **At runtime they must be rendered in the SETTINGS `Language`.** Bilingual labels are forbidden per §5.1; the agent translates each label into the resolved language consistently throughout the report. Field *values* that are reference tokens (`consensus-aligned`, `variant`, `contrarian`, `rebalance`, `flat / kelly-lite / aggressive`, etc.) may stay in English as proper-noun-style codes, since they are part of the agent's vocabulary, not user-facing prose.
+The new field labels introduced in §§15.3–15.8 — `Strategy readout`, `Reviewer note`, `Reviewer summary`, `Consensus`, `Variant`, `Anchor`, `R:R`, `Kill`, `Portfolio fit`, `Sized at`, `Must do` / `May do` / `Avoid` / `Need data`, `pp of NAV` — are reference keys in this English-only spec. **At runtime they must be rendered in the SETTINGS `Language`.** Bilingual labels are forbidden per §5.1; the agent translates each label into the resolved language consistently throughout the report. Field *values* that are reference tokens (`consensus-aligned`, `variant`, `contrarian`, `rebalance`, etc.) may stay in English as proper-noun-style codes, since they are part of the agent's vocabulary, not user-facing prose.
+
+### 15.8 Reviewer pass — senior PM review of the user's analysis (HARD REQUIREMENT)
+
+**This section is the single source of truth for the Phase C reviewer pass.** `AGENTS.md` summarises but defers here.
+
+After Phase B (Think) is complete and **before any HTML is rendered**, the agent performs a mandatory reviewer pass. The persona switches from "I am the user" (Phases A/B) to "**I am a senior portfolio manager reviewing this user's analysis from the outside.**" This is an explicit hat-swap. The reviewer's job is to **annotate, not rewrite** — the user's Strategy readout, alerts, watchlist, recommendations, and action list stay exactly as the user wrote them; the reviewer attaches **review notes** alongside specific items.
+
+#### 15.8.1 What the reviewer attends to
+
+The reviewer is challenging the work, not narrating it. Look for:
+
+- **Sizing inconsistencies** — does the recommended `pp of NAV` square with the user's stated conviction approach (Strategy readout)? Has the user drifted from their own posture under recent stress?
+- **Anchor quality** — does the variant view's anchor (§15.4) actually support the disagreement, or is it weak / circular / unverifiable / from agent memory rather than the cited source?
+- **Kill criteria realism** — will the §15.5 kill price survive normal volatility for this name, or is it a routine swing-low that triggers on noise? Is the kill action consistent with the kill trigger (e.g. "hold through (binary)" attached to a structural-thesis trigger)?
+- **Strategy ↔ action contradictions** — does the Strategy readout say "long-term holder of mega-cap tech" while the action list trims AAPL on an earnings dip? Does it say "I do not buy unprofitable biotech" while the watchlist flags one as a high-opportunity name?
+- **Correlation / concentration risk missed** — is the user adding to a name that pushes a §15.6 theme or sector rail without acknowledging it? Are two of the top recommendations effectively the same factor bet?
+- **Rail-breach handling** — when a recommendation breaches a rail, does it carry the required accompanying trim, downsize, or §10.6 escalation per §15.6? If not, flag it.
+- **Missing-data dependencies** — is an action conditioned on guidance / catalyst / regulatory date that Phase A did not actually source? Has a `news_search:<ticker>:no_material_within_<N>d` ticker been built into a thesis the news could have invalidated?
+- **Phase-ordering hygiene** — has any judgment quietly been written before its underlying news / event evidence was on the page? (Cross-check against §15.1 phase-ordering rule.)
+- **Tone / persona drift** — has the user's voice slipped into generic-PM language somewhere, or back into sell-side hedging? Has consensus framing crept in where the user's strategy says they ignore consensus?
+- **Constructive alternatives** — is there a cleaner expression of the same trade (different lot to trim per §15.6.1, hedged structure, smaller initial tranche, partial fill on a price band rather than market) the user should consider?
+
+#### 15.8.2 Output shape — `reviewer_pass` block in `report_context.json`
+
+The agent passes review notes to the renderer through `context["reviewer_pass"]`:
+
+```jsonc
+{
+  "reviewer_pass": {
+    "summary": [
+      // Cross-cutting reviewer concerns that span multiple items.
+      // Rendered as the last block under §10.11 Sources & data gaps,
+      // immediately after the Strategy readout.
+      "整體部位的科技權重在加碼 NVDA 後會升至 38%，已超過 30% 的主題上限；建議併同 META 的減碼一併執行，否則本次調整應降規模到 +1pp。"
+    ],
+    "by_section": {
+      // Per-section notes. Each list maps to a content block. Items in the
+      // same order as the underlying section's content. Use null or an
+      // empty list to skip an item; only items the reviewer actually has
+      // something to say about should carry text.
+      "alerts":         ["..."],   // §10.6 high-priority alerts
+      "watchlist":      ["..."],   // §10.8 high-risk / high-opportunity list
+      "adjustments":    ["..."],   // §10.9 recommended adjustments
+      "actions":        ["..."],   // §10.10 today's action list
+      "strategy_readout": ["..."]  // §10.11 Strategy readout itself (yes — the readout is reviewable too)
+    }
+  }
+}
+```
+
+Per-row notes can also be attached inline by adding `"reviewer_notes": ["..."]` to a specific `adjustments[i]`, `watchlist[i]`, or `actions[bucket][i]` entry. The renderer accepts both forms; per-row inline form is preferred when the note pinpoints a single line.
+
+#### 15.8.3 Renderer treatment
+
+The renderer slots reviewer notes alongside (never inside) the user's content, with a visually distinct style (muted background, italic prose, prefixed by the translated `Reviewer note` label). The reviewer summary renders at the bottom of §10.11 immediately after the Strategy readout, prefixed by the translated `Reviewer summary` label. Empty `reviewer_pass` block → nothing rendered (no placeholder), which is the correct treatment when nothing notable surfaced.
+
+#### 15.8.4 Reviewer-pass discipline
+
+- **Annotate, do not rewrite.** A reviewer note never replaces an alert, recommendation, or action item. If the reviewer believes a recommendation is wrong, the note flags the concern and offers an alternative; the user-author retains the call.
+- **Empty notes are acceptable.** If a section is sound, the reviewer produces no notes for it. Generic-PM filler ("ensure ongoing risk monitoring", "consider portfolio diversification") is a hard violation — the reviewer either has a specific actionable observation or stays silent.
+- **Length budget.** Each reviewer note is ≤ 240 characters / 2 sentences. The reviewer summary block is ≤ 120 words.
+- **Translation contract.** The `Reviewer note` and `Reviewer summary` labels render in the SETTINGS `Language` per §15.7.1. Reviewer prose itself is in the SETTINGS `Language` and the reviewer's voice (senior-PM, third-person about the user — e.g. "the user's kelly-lite sizing implies …" — *not* first-person), distinguishing it from the first-person Strategy readout.
+- **Phase ordering.** The reviewer pass runs in Phase C — after Phase B is complete and before Phase D rendering starts. Reviewer notes that surface a defect serious enough to require re-thinking (e.g. an action depends on data Phase A did not source) **must trigger a return to the relevant earlier phase**, not be papered over with a note. Notes are for things the report can ship with; defects are for fixing.
 
 ---
 
@@ -275,8 +358,12 @@ Run every item before declaring the report complete. Each item maps back to its 
 - [ ] Holdings table has the 7 columns in order; `Held` / `Move` are removed (§10.2).
 - [ ] Holding period & pacing has 4-cell KPI + 5-segment strip + bucket-notes (§10.3).
 - [ ] All 8 inline charts present, no external chart lib (§10.4).
-- [ ] News items have date, source, link, impact tag (§10.5).
+- [ ] **Agent ran live web search for §10.5 news on every holding.** Cover universe = every position in `HOLDINGS.md` (cash excluded), de-duplicated, plus any extra ticker surfaced in §10.6 alerts or §10.9 adjustments. Each ticker has either ≥ 1 evidence-based news item (date, source, URL the agent fetched, impact tag) or an explicit `news_search:<ticker>:no_material_within_<N>d` audit row enumerating queries and sources tried. **Top-N-by-weight is not a substitute** — small positions are searched too. Empty news for any cover-universe ticker without that audit trail is a hard violation (§10.5).
+- [ ] **Agent ran live web search for §10.5 forward events on every holding.** Same cover universe; each ticker has either ≥ 1 dated catalyst within 30 days sourced from the issuer IR / exchange / official macro calendar (never model-memory) or an explicit `event_search:<ticker>:no_dated_catalyst_within_30d` audit row. Catalyst dates with no verifiable source render as `TBD` and flag in **Sources & data gaps** (§10.5).
+- [ ] **Materiality-not-weight prioritisation honored** (§10.5). Findings flowed into §10.6 / §10.8 / §10.9 / §10.10 by **how much the user needs to know**, not by position size. A small-weight position with a regulator action / going-concern / debt covenant trip / dilutive secondary / halted trial is surfaced ahead of a large-weight position with a routine analyst nudge. Position size is a tie-breaker, not a gate.
+- [ ] **No silent omission of small-weight positions from the action surface.** Every holding either (a) carries a §10.9 / §10.10 recommendation backed by today's evidence, (b) is explicitly tagged "hold — no material news in search window" with the audit row, or (c) is moved to `Need data` with the search gap named. Holdings with neither a recommendation nor an explicit hold-with-audit row are a defect (§10.5).
 - [ ] Forward events block covers earnings, calls, ex-div, launches, regulators, M&A, raises, debt maturities, lockup expiries, macro releases (§10.5).
+- [ ] Final reply names which tickers were searched and how many material items each surfaced (§10.5.1).
 - [ ] **High-priority alerts** block surfaced at top of HTML when any §10.6 trigger fired.
 
 ### A.7 Per-run special checks
@@ -313,13 +400,16 @@ Run every item before declaring the report complete. Each item maps back to its 
 
 ### A.11 Investment content
 
+- [ ] **Phase ordering honored** (§2 / §15.1): every alert, watchlist entry, recommendation, action item, and summary paragraph was drafted **after** Phase A (prices + metrics + §10.5 news + §10.5 forward events) was fully complete. No judgment was written before its underlying evidence was on the page.
+- [ ] **Follow-up research happened inside Phase A** when warranted (§2 step 9, §15.1): any datapoint surfaced by initial news/event search that materially changes the picture for a position triggered an additional search before Phase B started, not deferred to "next run".
 - [ ] Voice is professional research-note, PM persona (§15.1).
 - [ ] Recommendations include action + price band + trigger (§15.2).
-- [ ] Trims name specific lot(s) by ticker + acquisition date; ordering matches the §15.6.1 two-axis table for the resolved `Holding-period bias` lever (date axis vs cost axis are *not* conflated). Default fallback is §15.2 highest-cost-first.
+- [ ] Trims name specific lot(s) by ticker + acquisition date; ordering matches the §15.6.1 two-axis table for the user's stated holding-period bias (date axis vs cost axis are *not* conflated). Default fallback is §15.2 highest-cost-first.
 - [ ] Today's action list has the 4 buckets in order, translated (§15.3). **Empty `Must do` / `May do` is acceptable and preferred over filler when no edge exists** (§15.1, §15.3).
 - [ ] Each Must-do / May-do item carries variant tag, sized pp of NAV, R:R, and kill (§15.3). `rebalance` items are exempt from variant/R:R/kill per §15.4.1.
-- [ ] **Style readout** rendered as the first item under §10.11 Sources & data gaps (not in the masthead — masthead template is fixed). Names all six resolved levers with confidence tags `pinned` / `bullet "<text>"` / `inferred — pin to confirm` / `default` (§15.7).
-- [ ] Distinct-bullet rule respected — any lever inferred from a bullet already used for another lever is tagged `(inferred — pin to confirm)` (§15.7).
+- [ ] **Strategy readout** rendered as the first item under §10.11 Sources & data gaps (not in the masthead — masthead template is fixed). Written in **first person as the user**, restating temperament / conviction / horizon / entry discipline / contrarian appetite / hype tolerance / off-limits zones internalised from `## Investment Style And Strategy`, citing SETTINGS bullets (§15.7). Empty SETTINGS strategy → neutral fallback used **and** flagged explicitly.
+- [ ] Whole-section rule respected — agent read all of `## Investment Style And Strategy`, not just the opening bullets; off-limits zones and decision-style preferences from late bullets are reflected in the call (§15.7).
+- [ ] **Continuous strategy-anchor check honored (HARD)** — every actionable judgment (alert, watchlist entry, variant view, sizing decision, kill criterion, lot-trim recommendation, action-list item) is traceable to specific `## Investment Style And Strategy` bullet(s) per the §15.7 mapping table. Calls that fall back on PM defaults are explicitly flagged in the Strategy readout, downsized / softened, and surfaced in the §15.8 reviewer pass so the user can fill the gap next run. Drift between standalone analysis and the user's strategy was treated as a defect, not a feature.
 - [ ] Every actionable recommendation (§10.8 / §10.9 / §10.10) carries a **Variant view** (Consensus / Variant / Anchor), is explicitly `consensus-aligned`, or uses a §15.4.1 carve-out template (Index ETF / sector ETF / crypto / short / rebalance).
 - [ ] Non-action status rows (`hold`, `watch`, `do not add`, `avoid chasing`, `wait`) with `sized_pp_delta = 0` do **not** print fake R:R / kill / NAV strings; they show only the wait trigger or data need (§15.3 / §15.4).
 - [ ] **No fabricated consensus numbers.** Every `Consensus` line cites a real source (IBES, Visible Alpha, named report) or uses `unknown-consensus (...)` (§15.4).
@@ -329,10 +419,21 @@ Run every item before declaring the report complete. Each item maps back to its 
 - [ ] Every actionable recommendation carries a **Portfolio fit** annotation — sized pp of NAV, correlated holdings, theme overlap, rail-check vs SETTINGS sizing rails (§15.6).
 - [ ] NAV math is renderer-owned: `Current` uses actual total-NAV weight from `HOLDINGS.md + prices.json`; action size is numeric `sized_pp_delta` or `target_pct`; no free-form `NAV百分點` / `pp of NAV` strings are hand-written in prose (§15.3 / §15.6).
 - [ ] No recommendation breaches a SETTINGS rail without either an accompanying named-lot trim, a downsize, or escalation to §10.6 High-priority alerts (§15.6). Rail-breach is a §10.6 trigger.
-- [ ] `Contrarian appetite` lever respected as a **ceiling, not a floor**. Zero contrarian calls is acceptable and is the correct output when consensus is right. Manufacture-to-fill flagged as a violation (§15.4 / §15.7).
-- [ ] `Hype tolerance` lever respected — no superlatives at `zero`; price targets are base/bull/bear bracketed; bull case ≤ 1.5× base unless a named comparable trade is cited (§15.7).
-- [ ] **Length budget respected** (§15.6.2): §10.10 items ≤ 240 chars each; §10.9 top-5 full block + ≤ 60 words/position, others one-line; §10.8 watchlist one-line per name; Style readout ≤ 90 words.
-- [ ] **Translation contract honored** (§15.7.1): all field labels (`Style readout`, `Consensus`, `Variant`, `Anchor`, `R:R`, `Kill`, `Portfolio fit`, `Sized at`, action-list bucket names, `pp of NAV`) rendered in the SETTINGS `Language`. Reference token values (`consensus-aligned` / `variant` / `contrarian` / `rebalance` / `flat`-`kelly-lite`-`aggressive` / etc.) may stay in English.
+- [ ] User's stated **contrarian appetite** respected as a **ceiling, not a floor**. Zero contrarian calls is acceptable and is the correct output when consensus is right. Manufacture-to-fill flagged as a violation (§15.4 / §15.7).
+- [ ] User's stated **hype tolerance** respected — no superlatives when the user wants none; price targets are base/bull/bear bracketed; bull case ≤ 1.5× base unless a named comparable trade is cited (§15.7).
+- [ ] **Length budget respected** (§15.6.2): §10.10 items ≤ 240 chars each; §10.9 top-5 full block + ≤ 60 words/position, others one-line; §10.8 watchlist one-line per name; Strategy readout ≤ 90 words.
+- [ ] **Translation contract honored** (§15.7.1): all field labels (`Strategy readout`, `Consensus`, `Variant`, `Anchor`, `R:R`, `Kill`, `Portfolio fit`, `Sized at`, action-list bucket names, `pp of NAV`) rendered in the SETTINGS `Language`. Reference token values (`consensus-aligned` / `variant` / `contrarian` / `rebalance` / etc.) may stay in English.
+
+### A.13 Reviewer pass
+
+- [ ] **Phase C reviewer pass executed before render** (§15.8 / §2 phase-ordering). The agent explicitly switched persona from "I am the user" to a senior PM reviewing the analysis. Going from user-voice analysis straight to render is a hard violation, even when no notes are produced.
+- [ ] Reviewer notes **annotate, never replace.** No alert / watchlist entry / recommendation / action / Strategy readout was rewritten by the reviewer pass; review observations live alongside the user's content as `reviewer_notes` / `reviewer_pass.summary` (§15.8.2).
+- [ ] **Empty notes accepted, filler rejected.** Sections with no notable issues produced zero reviewer notes; generic-PM placeholder language ("ensure ongoing risk monitoring", "consider portfolio diversification") was not used (§15.8.4).
+- [ ] **Reviewer voice is third-person about the user** (e.g. "the user's kelly-lite sizing implies …"), distinguishable from the first-person Strategy readout (§15.8.4).
+- [ ] **Length budget respected** — each reviewer note ≤ 240 chars / 2 sentences; reviewer summary ≤ 120 words (§15.8.4).
+- [ ] **Translation contract honored** (§15.7.1 / §15.8.4): the `Reviewer note` and `Reviewer summary` labels render in the SETTINGS `Language`; reviewer prose is in the SETTINGS `Language` and the reviewer's voice.
+- [ ] **Defects sent back, not papered over.** Any reviewer concern serious enough to require re-thinking (action depends on un-sourced data, kill criterion that cannot survive normal volatility, sizing that breaches a rail with no accompanying trim) triggered a return to the relevant earlier phase rather than being noted-and-shipped (§15.8.4).
+- [ ] If the reviewer pass surfaced cross-cutting concerns, the **reviewer summary** rendered at the bottom of §10.11 immediately after the Strategy readout (§15.8.3).
 
 ### A.12 Reply
 

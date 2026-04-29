@@ -17,12 +17,12 @@ Phù hợp nhất khi dùng trong môi trường tác nhân có thể đọc fil
 ## Tệp quan trọng
 
 - `AGENTS.md`: quy cách suy nghĩ và viết của tác nhân nghiên cứu
-- `SETTINGS.md`: ngôn ngữ, khẩu vị rủi ro, tiền tệ gốc. Chỉ lưu cục bộ
+- `SETTINGS.md`: ngôn ngữ, toàn bộ `Investment Style And Strategy`, tiền tệ gốc và giới hạn vị thế. Chỉ lưu cục bộ
 - `HOLDINGS.md`: danh mục của bạn. Chỉ lưu cục bộ
-- `docs/portfolio_report_agent_guidelines.md`: quy cách chính của báo cáo; tác nhân còn phải đọc toàn bộ các phần được liên kết trong `docs/portfolio_report_agent_guidelines/`
+- `docs/portfolio_report_agent_guidelines.md`: quy cách chính của báo cáo, gồm bao phủ tin tức/sự kiện đầy đủ, Strategy readout và reviewer pass; tác nhân còn phải đọc toàn bộ các phần được liên kết trong `docs/portfolio_report_agent_guidelines/`
 - `docs/holdings_update_agent_guidelines.md`: quy cách cập nhật danh mục
 - `scripts/fetch_prices.py`: script chuẩn lấy giá và FX
-- `scripts/generate_report.py`: script chuẩn dựng HTML
+- `scripts/generate_report.py`: script chuẩn dựng HTML; đọc `strategy_readout` và `reviewer_pass` từ `report_context.json`
 - `reports/`: thư mục đầu ra. Chỉ lưu cục bộ
 
 ## Thiết lập lần đầu
@@ -46,7 +46,8 @@ Thẻ thị trường phổ biến: `[US]`, `[TW]`, `[TWO]`, `[JP]`, `[HK]`, `[L
 
 ### Cách dùng `SETTINGS.md` và `HOLDINGS.md`
 
-- Cập nhật `SETTINGS.md` mỗi khi bạn đổi ngôn ngữ ưa thích, khẩu vị rủi ro, tiền tệ gốc hoặc mặc định báo cáo.
+- Cập nhật `SETTINGS.md` mỗi khi bạn đổi ngôn ngữ ưa thích, chiến lược đầu tư đầy đủ, tiền tệ gốc, giới hạn vị thế hoặc mặc định báo cáo.
+- Viết toàn bộ phần `Investment Style And Strategy` như kiểu nhà đầu tư bạn muốn tác nhân nhập vai: tính khí, khả năng chịu drawdown, cách sizing, thời gian nắm giữ, kỷ luật vào lệnh, mức chấp nhận đi ngược đồng thuận, mức chịu hype, vùng cấm và phong cách ra quyết định.
 - Duy trì `HOLDINGS.md` làm nguồn sự thật duy nhất cho vị thế hiện tại trước khi yêu cầu nghiên cứu hay báo cáo.
 - Sau mỗi giao dịch đã khớp lệnh, yêu cầu tác nhân cập nhật `HOLDINGS.md` ngay để giữ độ chính xác phân tích.
 - Trước khi tạo báo cáo, rà nhanh cả hai file để tránh dùng giả định đã cũ.
@@ -63,7 +64,7 @@ Ví dụ:
 - "Mức phơi bày AI hiện tại của tôi là bao nhiêu?"
 - "Có nên giảm vị thế ngắn hạn trước mùa kết quả kinh doanh không?"
 
-Tác nhân sẽ đọc `SETTINGS.md`, `HOLDINGS.md` và trả lời theo `AGENTS.md`.
+Tác nhân sẽ đọc toàn bộ `Investment Style And Strategy` trong `SETTINGS.md`, đọc `HOLDINGS.md`, rồi trả lời theo `AGENTS.md` ở ngôi thứ nhất theo chiến lược của bạn.
 
 ### 2. Báo cáo danh mục
 
@@ -75,6 +76,8 @@ Ví dụ:
 Kết quả là một file HTML tự chứa trong `reports/`.
 
 Với `auto mode`, `routine`, hoặc bất kỳ môi trường không giám sát nào khác, nên để tác nhân xin sự đồng ý rõ ràng trước khi gửi mã ticker danh mục của bạn tới nguồn dữ liệu thị trường bên ngoài để lấy giá. Ví dụ câu đồng ý rõ ràng: `Tôi đồng ý cho bạn gửi mã ticker danh mục của tôi tới các nguồn dữ liệu thị trường bên ngoài để lấy giá và tạo báo cáo hôm nay.` Bản tiếng Anh là: `I agree to let you send my holdings tickers to external market data sources to retrieve prices and generate today's report.`
+
+Một lần chạy báo cáo đầy đủ có bốn pha: Gather để thu thập dữ liệu; Think chỉ sau khi giá, chỉ số, tin tức và sự kiện đã có đủ; Review với vai trò PM cấp cao trước khi render; rồi Render. Pha Gather phải tìm tin tức mới và sự kiện 30 ngày tới cho mọi vị thế không phải tiền mặt, không chỉ các vị thế lớn nhất. Pha Review chỉ thêm ghi chú phản biện khi hữu ích, không thay thế nội dung phân tích của bạn.
 
 Tác nhân nên dùng thẳng các script chuẩn, không viết lại quy trình:
 
@@ -88,6 +91,8 @@ python scripts/generate_report.py \
 ```
 
 Nếu ngôn ngữ báo cáo không phải một trong các từ điển UI tích hợp `english`, `traditional chinese`, `simplified chinese`, tác nhân đang chạy phải dịch `scripts/i18n/report_ui.en.json` thành overlay tạm và truyền qua `--ui-dict`.
+
+`report_context.json` có thể chứa `strategy_readout` cho Strategy readout ở ngôi thứ nhất và `reviewer_pass` cho ghi chú/tóm tắt phản biện. Khóa cũ `style_readout` vẫn render, nhưng context mới nên dùng `strategy_readout`.
 
 ### 3. Cập nhật danh mục bằng ngôn ngữ tự nhiên
 
@@ -138,11 +143,11 @@ Không được git theo dõi:
 - `HOLDINGS.md`
 - `HOLDINGS.md.bak`
 - báo cáo sinh ra
-- artifact chạy phổ biến như `prices.json`, `report_context.json`
+- artifact chạy phổ biến như `prices.json`, `report_context.json`, `temp/`
 
 ## Dữ liệu bên thứ ba
 
-Dự án này không sở hữu hay bảo đảm bất kỳ nguồn dữ liệu giá hoặc FX nào. Luồng lấy giá có thể dùng endpoint công khai, API key tùy chọn và wrapper như `yfinance`. Việc tuân thủ điều khoản, giới hạn tốc độ, yêu cầu ghi nguồn và điều kiện trả phí là trách nhiệm của người dùng.
+Dự án này không sở hữu hay bảo đảm bất kỳ nguồn dữ liệu giá hoặc FX nào. Luồng lấy giá có thể dùng endpoint công khai, API key tùy chọn và wrapper như `yfinance`. Với cổ phiếu Đài Loan, fallback MIS không cần token thử cả kênh niêm yết (`tse_`) và OTC (`otc_`) để giảm lỗi thiếu giá do phân loại nhầm `[TW]` / `[TWO]`. Việc tuân thủ điều khoản, giới hạn tốc độ, yêu cầu ghi nguồn và điều kiện trả phí là trách nhiệm của người dùng.
 
 ## Miễn trừ
 

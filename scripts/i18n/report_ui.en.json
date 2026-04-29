@@ -268,6 +268,10 @@
     "auto_fix": "Auto-fix",
     "retry": "Retry {count}"
   },
+  "reviewer": {
+    "note_label": "Reviewer note",
+    "summary_label": "Reviewer summary"
+  },
   "footer": {
     "text": "This report follows docs/portfolio_report_agent_guidelines.md and uses a static price snapshot captured at generation time."
   }

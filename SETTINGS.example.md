@@ -12,37 +12,32 @@ The agent reads this file on every run to set tone, language, and risk handling.
 
 (Stable built-in dictionaries: `english`, `traditional chinese`, `simplified chinese`. Other single-language values such as `japanese` are allowed, but the **executing agent** should translate `scripts/i18n/report_ui.en.json` and pass the translated overlay into `scripts/generate_report.py` via `--ui-dict` or `context["ui_dictionary"]`. Do not use bilingual values.)
 
-## Investment Style
+## Investment Style And Strategy
 
-Describe how you want the agent to talk to you about risk and conviction. Examples — keep, edit, or replace:
+Describe **the kind of investor you are and the strategy you run**. The agent reads this **whole section** every run, internalises it, and from that point on **acts as you** — your voice, your risk appetite, your horizon, your entry and exit discipline, your no-go zones. The richer this section, the more the output reads like you wrote it yourself; vague descriptions produce generic output.
+
+Useful things to cover (keep, edit, or replace):
+
+- **Temperament & drawdown tolerance** — how much volatility you can absorb and what kind of risk-reminder language is useful vs. patronising.
+- **Conviction & sizing** — flat-weight, kelly-lite, or aggressive concentration; whether you size up on asymmetric setups; how big a single name is allowed to get before you trim.
+- **Holding-period bias** — trader, swing, multi-year investor, or generational holder; what makes you exit early vs. ride through.
+- **Entry discipline** — wait for trigger confirmation (breakout / earnings beat / structural break) or front-run setups; minimum evidence threshold before adding.
+- **Contrarian appetite** — welcome non-consensus calls, or only buy when the tape agrees.
+- **Hype tolerance** — how much optimistic framing you accept; whether every upside number must be base / bull / bear bracketed.
+- **Off-limits zones** — themes, structures, or position types you will not own (e.g. unprofitable biotech, single-stock options, illiquid OTC).
+- **Decision style** — what you want from the agent (bullets first; flag data gaps explicitly; never pad action lists; etc.).
+
+Examples — keep, edit, or replace:
 
 - I can absorb large short-term losses and volatility.
 - As long as the long-run expected value is positive, I am fine with deep drawdowns along the way.
 - My temperament is steady; I do not need overly conservative risk reminders.
 - I am willing to size up on high-probability or asymmetric reward setups.
 - I do not want exaggerated optimism — every claim must be supported by theory and data.
+- I run multi-year holds for high-conviction names and do not chase quarterly noise.
+- I do not buy unprofitable biotech or single-stock options.
 
-## Style levers (optional, agent-inferred if omitted)
-
-The agent reads the `Investment Style` bullets above and infers six behavioral levers from them. These levers actively reshape recommendations — they change *what* the agent recommends (kill-price width, position size, lot-trim ordering, contrarian latitude), not just phrasing. Pin a value here to override inference. Allowed values are shown in parentheses.
-
-- Drawdown tolerance: medium        (low / medium / high)
-- Conviction sizing: flat           (flat / kelly-lite / aggressive)
-- Holding-period bias: investor     (trader / swing / investor / lifer)
-- Confirmation threshold: medium    (low / medium / high)
-- Contrarian appetite: selective    (none / selective / strong)
-- Hype tolerance: low               (zero / low / medium)
-
-Lever cheatsheet:
-
-- **Drawdown tolerance** sets how wide the agent places kill prices and whether it scales into deep drawdowns.
-- **Conviction sizing** sets the typical recommended `% of book` per name (flat ≈ equal weight; kelly-lite ≈ 2–8% by conviction; aggressive ≈ up to 8–15% if rails permit).
-- **Holding-period bias** skews horizon and the lot-trim ordering when the agent recommends selling.
-- **Confirmation threshold** decides whether the agent waits for breakout/earnings confirmation or is permitted to front-run setups.
-- **Contrarian appetite** gates whether non-consensus calls may appear (`none` blocks them; `strong` welcomes top-of-page contrarian theses).
-- **Hype tolerance** caps optimistic language and forecast multipliers (`zero` requires every upside number to be base/bull/bear bracketed).
-
-The agent prints the resolved levers as a `Style readout` block at the top of every analysis — correct any wrong inference here. If both this section and `Investment Style` are omitted, neutral defaults apply (`medium / flat / investor / medium / selective / low`).
+The agent opens every analysis with a short **Strategy readout** block — written in **first person, as you** — restating the working strategy it just internalised. If this section is empty, the agent falls back to a neutral PM persona and says so explicitly; recommendations will be generic until you fill it in.
 
 ## Reporting cadence (optional)
 

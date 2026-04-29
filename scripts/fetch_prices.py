@@ -1104,17 +1104,56 @@ def _try_no_token_twse_mis(twse_code: str, session: Any) -> Optional[Dict[str, A
         if latest is None:
             return None
         move_pct = round(((latest - prior) / prior) * 100.0, 4) if prior else None
+        is_otc = twse_code.lower().startswith("otc_")
         return {
             "latest_price": latest,
             "prior_close": prior,
             "move_pct": move_pct,
-            "price_source": "no_token:twse_mis",
+            "price_source": "no_token:tpex_mis" if is_otc else "no_token:twse_mis",
             "price_as_of": _utc_iso(),
             "currency": "TWD",
-            "exchange": "TWSE",
+            "exchange": "TPEx" if is_otc else "TWSE",
+            "mis_channel": "otc" if is_otc else "tse",
         }
     except Exception:                                         # noqa: BLE001
         return None
+
+
+def _try_no_token_twse_mis_dual(
+    raw_ticker: str,
+    session: Any,
+    prefer: str = "tse",
+) -> Optional[Dict[str, Any]]:
+    """TWSE MIS dual-channel probe — try both ``tse_<code>.tw`` (TWSE listed) and
+    ``otc_<code>.tw`` (TPEx OTC) so OTC names (8155 / 3680 / 8027 / ...) classified
+    as ``MarketType.TW`` (or vice versa) don't fall through to
+    ``agent_web_search:TODO`` because of an exchange mismatch.
+
+    ``prefer`` selects which channel runs first — ``"tse"`` for ``MarketType.TW``,
+    ``"otc"`` for ``MarketType.TWO``. The fallback channel runs only when the
+    primary one misses; when it succeeds, ``mis_channel_corrected`` records the
+    swap so the source audit can show that the user's classification was wrong.
+    """
+    raw = raw_ticker.lower().strip()
+    if raw.endswith(".two"):
+        bare = raw[:-4]
+    elif raw.endswith(".tw"):
+        bare = raw[:-3]
+    else:
+        bare = raw
+    if not bare:
+        return None
+    channels = ("tse", "otc") if prefer == "tse" else ("otc", "tse")
+    for idx, ch in enumerate(channels):
+        twse_code = f"{ch}_{bare}.tw"
+        res = _try_no_token_twse_mis(twse_code, session)
+        if res:
+            if idx == 1:
+                # Primary channel missed; fallback channel hit — flag the swap so
+                # downstream audit can surface the misclassification.
+                res["mis_channel_corrected"] = f"{channels[0]}_{bare}.tw → {twse_code}"
+            return res
+    return None
 
 
 # Per-asset fallback order (§8.5). Each entry is a callable that returns dict | None.
@@ -1165,11 +1204,12 @@ def _build_fallback_chain(
         # Secondary: yfinance per-ticker
         if yf_symbol:
             chain.append(("yfinance", _yf_callable(yf_symbol)))
-        # Tertiary: TWSE MIS (works for both listed `tse_` and OTC `otc_` prefixes)
-        prefix = "tse" if market == MarketType.TW else "otc"
-        twse_code = f"{prefix}_{raw_ticker.lower()}.tw" if not raw_ticker.lower().endswith(".tw") \
-                    else f"{prefix}_{raw_ticker.lower()}"
-        chain.append(("no_token:twse_mis", lambda: _try_no_token_twse_mis(twse_code, session)))
+        # Tertiary: TWSE MIS — dual-channel so OTC stocks (8155 / 3680 / 8027 / ...)
+        # classified as MarketType.TW are caught via the `otc_<code>.tw` channel
+        # before falling through to `agent_web_search:TODO` (and likewise listed
+        # stocks misclassified as TWO are caught via the `tse_` channel).
+        prefer = "tse" if market == MarketType.TW else "otc"
+        chain.append(("no_token:twse_mis", lambda: _try_no_token_twse_mis_dual(raw_ticker, session, prefer=prefer)))
     elif market == MarketType.JP:
         # Primary: Stooq covers `.jp` codes like `7203.jp`
         chain.append(("no_token:stooq", lambda: _try_no_token_stooq(f"{raw_ticker.lower()}.jp", session)))

@@ -17,12 +17,12 @@
 ## 关键文件
 
 - `AGENTS.md`：研究代理的思考与写作规范。
-- `SETTINGS.md`：语言、风险风格、基准货币。仅保存在本机。
+- `SETTINGS.md`：语言、完整 `Investment Style And Strategy`、基准货币与仓位上限。仅保存在本机。
 - `HOLDINGS.md`：你的持仓。仅保存在本机。
-- `docs/portfolio_report_agent_guidelines.md`：报告主规范；代理还必须读取 `docs/portfolio_report_agent_guidelines/` 下所有链接分章。
+- `docs/portfolio_report_agent_guidelines.md`：报告主规范，包含完整新闻／事件覆盖、Strategy readout 与 reviewer pass；代理还必须读取 `docs/portfolio_report_agent_guidelines/` 下所有链接分章。
 - `docs/holdings_update_agent_guidelines.md`：持仓更新规范。
 - `scripts/fetch_prices.py`：标准价格与汇率抓取脚本。
-- `scripts/generate_report.py`：标准 HTML 报告渲染脚本。
+- `scripts/generate_report.py`：标准 HTML 报告渲染脚本；会读取 `report_context.json` 中的 `strategy_readout` 与 `reviewer_pass`。
 - `reports/`：输出目录。仅保存在本机。
 
 ## 首次设置
@@ -46,7 +46,8 @@ cp HOLDINGS.example.md HOLDINGS.md
 
 ### `SETTINGS.md` 与 `HOLDINGS.md` 的使用
 
-- 当你的偏好语言、风险风格、基准货币或报告默认项变化时，及时更新 `SETTINGS.md`。
+- 当你的偏好语言、完整投资策略、基准货币、仓位上限或报告默认项变化时，及时更新 `SETTINGS.md`。
+- 将 `Investment Style And Strategy` 整段写成你希望代理扮演的投资人：性格、回撤容忍、仓位大小、持有周期、进场纪律、逆势意愿、夸大叙事容忍度、禁区与决策风格。
 - 在发起研究或报告请求前，将 `HOLDINGS.md` 作为当前持仓的唯一事实来源并保持最新。
 - 每次交易成交后，立即让代理更新 `HOLDINGS.md`，以保证后续分析准确。
 - 生成报告前快速检查这两个文件，避免沿用过时假设。
@@ -63,7 +64,7 @@ cp HOLDINGS.example.md HOLDINGS.md
 - “我现在 AI 暴露有多高？”
 - “财报前要不要减掉短线仓位？”
 
-代理会读取 `SETTINGS.md`、`HOLDINGS.md`，并按 `AGENTS.md` 输出。
+代理会读取完整的 `SETTINGS.md` `Investment Style And Strategy`、读取 `HOLDINGS.md`，并按 `AGENTS.md` 以你的策略第一人称输出。
 
 ### 2. 持仓报告
 
@@ -75,6 +76,8 @@ cp HOLDINGS.example.md HOLDINGS.md
 交付物是 `reports/` 下的单个自包含 HTML。
 
 若在 `auto mode`、`routine` 或其他无人看守环境下生成报告，建议代理先取得明确同意，再把持仓代号发送到外部市场数据来源取价。清晰的同意例句可写为：`我同意请把持仓代号送到外部市场资料来源来取得价格并生成今天的报告`。英文可写为：`I agree to let you send my holdings tickers to external market data sources to retrieve prices and generate today's report.`
+
+完整报告流程分为四阶段：先 Gather 收集数据；价格、指标、新闻与事件完成后才 Think 形成判断；渲染前以资深 PM 身份 Review；最后 Render。Gather 阶段要对每个非现金持仓做实时新闻与未来 30 天事件搜索，而不只看最大权重仓位。Review 阶段只添加审稿备注，不改写你的原始判断。
 
 代理应直接使用标准脚本，而不是每次重写流程：
 
@@ -88,6 +91,8 @@ python scripts/generate_report.py \
 ```
 
 若报告语言不是内建 UI 字典 `english`、`traditional chinese`、`simplified chinese` 之一，执行中的代理应将 `scripts/i18n/report_ui.en.json` 翻成临时 overlay，并通过 `--ui-dict` 传入。
+
+`report_context.json` 可放入 `strategy_readout` 作为第一人称 Strategy readout，也可放入 `reviewer_pass` 作为审稿备注／总览。旧的 `style_readout` key 仍会渲染，但新的 context 应使用 `strategy_readout`。
 
 ### 3. 自然语言更新持仓
 
@@ -138,11 +143,11 @@ HTML 为单文件，不依赖外部 CSS、JS、字体或图表库。
 - `HOLDINGS.md`
 - `HOLDINGS.md.bak`
 - 生成的报告
-- 常见运行文件，如 `prices.json`、`report_context.json`
+- 常见运行文件，如 `prices.json`、`report_context.json`、`temp/`
 
 ## 第三方数据
 
-本项目不拥有也不保证任何行情或汇率来源。价格流程可能使用公开端点、可选 API key 与 `yfinance` 等封装来源。供应商条款、速率限制、署名和付费授权，均由使用者自行负责。
+本项目不拥有也不保证任何行情或汇率来源。价格流程可能使用公开端点、可选 API key 与 `yfinance` 等封装来源。台股无 token 的 MIS fallback 会同时探测上市 (`tse_`) 与上柜 (`otc_`) channel，以降低 `[TW]` / `[TWO]` 分类错误造成的漏价。供应商条款、速率限制、署名和付费授权，均由使用者自行负责。
 
 ## 免责声明
 

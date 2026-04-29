@@ -289,7 +289,7 @@ def parse_settings_profile(path: Path) -> SettingsProfile:
 
 
 # ----------------------------------------------------------------------------- #
-# PM-grade indicators & style binding
+# PM-grade indicators & strategy binding
 #
 # Canonical implementation of the calculation logic introduced by AGENTS.md
 # and `/docs/portfolio_report_agent_guidelines/07-investment-content-and-checklist.md`
@@ -297,17 +297,22 @@ def parse_settings_profile(path: Path) -> SettingsProfile:
 # `report_context.json` and let the renderer call them) so every report uses
 # the same math:
 #
-#   - StyleLevers (data type)  — §15.7 lever resolution. **Resolved by the
-#     agent via natural-language reading of `## Investment Style`** in
-#     SETTINGS.md, then optionally passed through `context["style_levers"]`.
-#     The script deliberately does NOT do keyword-based inference and does
-#     NOT auto-format the Style readout — both belong to the agent's
-#     semantic / linguistic layer. The script only validates lever values.
-#   - The Style readout prose is supplied by the agent via
-#     `context["style_readout"]` (string) and slotted verbatim by the renderer.
+#   - Strategy readout is supplied by the agent via
+#     `context["strategy_readout"]` (legacy alias `context["style_readout"]`
+#     still accepted). The agent reads the whole `## Investment Style And
+#     Strategy` section in SETTINGS.md, internalises it, and writes the
+#     readout in first person as the user. The renderer slots the prose
+#     verbatim under §10.11 — there is no structured lever block, no keyword
+#     inference, and no template formatter on the script side. Behavior that
+#     used to route through structured levers (kill-price width, sizing band,
+#     lot-trim ordering, contrarian latitude, hype cap) now flows from the
+#     agent's reading of the strategy text per §15.7.
+#   - StyleLevers / validate_style_levers / suggest_stop_pct_band /
+#     suggest_size_pp_band are retained as legacy helpers for callers that
+#     want a structured value-band lookup, but they are no longer mandated
+#     by the spec. The agent is free to derive these values directly from
+#     the user's strategy text and pass them straight into the recommendation.
 #   - compute_rr_ratio() / format_rr_string()  — §15.4 Reward-to-risk asymmetry
-#   - suggest_stop_pct_band()  — §15.5 kill-price width by drawdown lever
-#   - suggest_size_pp_band()   — §15.6 conviction-sizing band
 #   - check_rails() / format_portfolio_fit_line()  — §15.6 sizing-rail gate
 #   - length_budget_status() / validate_recommendation_block()  — §15.6.2 / A.11
 #
@@ -336,18 +341,16 @@ LEVER_ALLOWED = {
 
 @dataclass
 class StyleLevers:
-    """Resolved Style-Conditioning Matrix (§15.7).
+    """Legacy structured-lever helper (retained for backward compatibility).
 
-    Built by the **agent** from a semantic reading of `## Investment Style`
-    bullets in SETTINGS.md (the agent is the LLM judge — the script does not
-    keyword-match). The agent passes the resolved values via
-    `context["style_levers"]` and the renderer formats them deterministically.
+    The §15.7 spec no longer mandates a structured lever resolution: the agent
+    reads the whole `## Investment Style And Strategy` section in SETTINGS.md
+    and acts as the user. This dataclass remains available for callers that
+    still want a value-band lookup (e.g. mapping a textual conviction posture
+    to a sizing band). It is not consumed by the renderer's report flow.
 
-    `sources[lever]` carries the confidence tag rendered in the Style readout:
-      "bullet \"<text>\""          — derived semantically from a specific bullet
-      "inferred — pin to confirm" — the agent inferred a value but no single
-                                    bullet clearly supports it
-      "default"                   — neutral fallback (no signal in SETTINGS)
+    `sources[lever]` is a free-form provenance tag (e.g. ``bullet "<text>"``,
+    ``"default"``) preserved for callers that mirror the legacy readout format.
 
     Validation: pass through `validate_style_levers()` to enforce that every
     field's value is in `LEVER_ALLOWED[field]`.
@@ -831,6 +834,21 @@ def resolve_ui_bundle(
 # ----------------------------------------------------------------------------- #
 
 _STYLE_RE = re.compile(r"<style[^>]*>(.*?)</style>", re.DOTALL | re.IGNORECASE)
+
+# §15.8 — reviewer-pass styling. Visually distinct from the user's prose so
+# annotations are obviously the reviewer's voice, not the user's. Appended to
+# the loaded sample CSS via `_REVIEWER_CSS` in the rendered HTML.
+_REVIEWER_CSS = """
+.reviewer-note-block { margin-top: 12px; padding: 10px 12px; border-left: 3px solid #94a3b8; background: rgba(148, 163, 184, 0.08); border-radius: 4px; }
+.reviewer-note-block ul { margin: 0; padding-left: 0; list-style: none; }
+.reviewer-note-block li { font-style: italic; color: #475569; font-size: 0.9em; line-height: 1.5; padding: 2px 0; }
+.reviewer-note-block li b { font-style: normal; color: #334155; margin-right: 4px; }
+.reviewer-note-inline { margin-top: 8px; padding: 6px 8px; border-left: 2px solid #94a3b8; background: rgba(148, 163, 184, 0.08); border-radius: 3px; font-style: italic; color: #475569; font-size: 0.88em; line-height: 1.45; }
+.reviewer-note-inline b { font-style: normal; color: #334155; margin-right: 4px; }
+li.reviewer-note, li.reviewer-summary { font-style: italic; color: #475569; }
+li.reviewer-note b, li.reviewer-summary b { font-style: normal; color: #334155; }
+li.reviewer-summary { margin-top: 8px; padding-top: 8px; border-top: 1px dashed #cbd5e1; }
+"""
 
 
 def load_canonical_css(sample_path: Path) -> str:
@@ -1398,17 +1416,64 @@ def render_masthead(context: Dict[str, Any]) -> str:
   </header>"""
 
 
+def _reviewer_pass(context: Dict[str, Any]) -> Dict[str, Any]:
+    """Return the §15.8 reviewer-pass payload, normalising shape.
+
+    Accepted shapes (any combination):
+      context["reviewer_pass"] = {
+        "summary": [str, ...],
+        "by_section": {"alerts": [...], "watchlist": [...],
+                       "adjustments": [...], "actions": [...],
+                       "strategy_readout": [...]}
+      }
+
+    Returns ``{"summary": [...], "by_section": {...}}`` with safe defaults.
+    """
+    rp = context.get("reviewer_pass") or {}
+    if not isinstance(rp, dict):
+        return {"summary": [], "by_section": {}}
+    summary = rp.get("summary") or []
+    by_section = rp.get("by_section") or {}
+    if not isinstance(summary, list):
+        summary = []
+    if not isinstance(by_section, dict):
+        by_section = {}
+    return {"summary": summary, "by_section": by_section}
+
+
+def _render_reviewer_notes(notes, label: str) -> str:
+    """Render a list of reviewer notes as an aside block.
+
+    Returns an empty string when ``notes`` is falsy (empty notes are the
+    correct treatment per §15.8.4 — never render a placeholder).
+    """
+    if not notes:
+        return ""
+    if isinstance(notes, str):
+        notes = [notes]
+    items = "".join(
+        f'<li><b>{_esc(label)}:</b> {_esc(n)}</li>'
+        for n in notes if isinstance(n, str) and n.strip()
+    )
+    if not items:
+        return ""
+    return f'<aside class="reviewer-note-block"><ul>{items}</ul></aside>'
+
+
 def render_alerts(context: Dict[str, Any]) -> str:
     alerts = context.get("alerts") or []
     if not alerts:
         return ""
     items = "\n      ".join(f"<li>{_esc(a)}</li>" for a in alerts)
+    rp_notes = _reviewer_pass(context)["by_section"].get("alerts") or []
+    reviewer_block = _render_reviewer_notes(rp_notes, _ui("reviewer.note_label"))
     return f"""\
   <section class="callout">
     <div class="ctitle"><span class="badge">{_esc(_ui("alerts.badge"))}</span>{_esc(_ui("alerts.title"))}</div>
     <ul>
       {items}
     </ul>
+    {reviewer_block}
   </section>"""
 
 
@@ -2406,6 +2471,7 @@ def render_adjustments(
     </div>
     <div class="prose"><p>{_esc(_ui("adjustments.placeholder"))}</p></div>
   </section>"""
+    rp_label = _ui("reviewer.note_label")
     rows = []
     for a in adjs:
         ticker = str(a.get("ticker", "")).strip()
@@ -2420,6 +2486,18 @@ def render_adjustments(
         # `why_cell` is already escaped (or contains pre-escaped HTML for the
         # PM-meta span); skip _esc in the template to avoid double-escape.
         why_cell = _enrich_adjustment_why(a, cfg, current_pct)
+        # §15.8 inline per-row reviewer notes — appended to the why cell so
+        # they sit beside the recommendation they annotate without replacing
+        # the user's prose.
+        row_notes = a.get("reviewer_notes") or []
+        if isinstance(row_notes, str):
+            row_notes = [row_notes]
+        for n in row_notes:
+            if isinstance(n, str) and n.strip():
+                why_cell += (
+                    f'<div class="reviewer-note-inline">'
+                    f'<b>{_esc(rp_label)}:</b> {_esc(n)}</div>'
+                )
         rows.append(f"""\
           <tr>
             <td><span class="sym-trigger" tabindex="0" role="button">{_esc(ticker or _ui("common.dash"))}</span></td>
@@ -2428,6 +2506,8 @@ def render_adjustments(
             <td class="why">{why_cell}</td>
             <td class="trig">{_esc(a.get('trigger', ''))}</td>
           </tr>""")
+    section_notes = _reviewer_pass(context)["by_section"].get("adjustments") or []
+    section_reviewer_block = _render_reviewer_notes(section_notes, rp_label)
     return f"""\
   <section class="section">
     <div class="section-head">
@@ -2447,6 +2527,7 @@ def render_adjustments(
         <tbody>{''.join(rows)}</tbody>
       </table>
     </div>
+    {section_reviewer_block}
   </section>"""
 
 
@@ -2462,6 +2543,8 @@ def render_actions(context: Dict[str, Any]) -> str:
         for item in a.get(key, []) or []:
             rows.append(f'<li><span class="lbl {label_class}">{_esc(label_text)}</span><span>{_esc(item)}</span></li>')
     body = "\n".join(rows) or f'<li><span class="lbl">{_esc(_ui("common.dash"))}</span><span>{_esc(_ui("actions.placeholder"))}</span></li>'
+    rp_notes = _reviewer_pass(context)["by_section"].get("actions") or []
+    reviewer_block = _render_reviewer_notes(rp_notes, _ui("reviewer.note_label"))
     return f"""\
   <section class="section">
     <div class="section-head">
@@ -2471,6 +2554,7 @@ def render_actions(context: Dict[str, Any]) -> str:
     <ul class="actions">
 {body}
     </ul>
+    {reviewer_block}
   </section>"""
 
 
@@ -2529,18 +2613,38 @@ def render_sources(prices: Dict[str, Any], context: Dict[str, Any]) -> str:
     gaps = context.get("data_gaps") or []
     gap_items: List[str] = []
 
-    # §15.7 Style readout — agent supplies the pre-formatted string.
-    # The script does not auto-format from style_levers because the readout
-    # is natural-language prose; the LLM writes it (in the SETTINGS Language)
-    # using its semantic reading of `## Investment Style`. Renderer just slots it.
-    style_readout_str = context.get("style_readout")
-    if style_readout_str:
-        gap_items.append(f'<li class="style-readout">{_esc(style_readout_str)}</li>')
+    # §15.7 Strategy readout — agent supplies the pre-formatted string.
+    # The script does not template-format the readout from any structured input
+    # because the prose is the user's own framing: the LLM reads the whole
+    # `## Investment Style And Strategy` section in SETTINGS.md, internalises
+    # it, and writes the readout in first person as the user (in the SETTINGS
+    # Language). Renderer just slots it.
+    # Canonical key: `strategy_readout`. Legacy alias `style_readout` is still
+    # accepted so older context payloads keep rendering.
+    strategy_readout_str = context.get("strategy_readout") or context.get("style_readout")
+    if strategy_readout_str:
+        gap_items.append(f'<li class="strategy-readout">{_esc(strategy_readout_str)}</li>')
+
+    rp = _reviewer_pass(context)
+    rp_label = _ui("reviewer.note_label")
+    for note in rp["by_section"].get("strategy_readout") or []:
+        if isinstance(note, str) and note.strip():
+            gap_items.append(
+                f'<li class="reviewer-note"><b>{_esc(rp_label)}:</b> {_esc(note)}</li>'
+            )
 
     for g in gaps:
         gap_items.append(
             f'<li><b>{_esc(g.get("summary", ""))}:</b> {_esc(g.get("detail", ""))}</li>'
         )
+
+    rp_summary_label = _ui("reviewer.summary_label")
+    for note in rp["summary"]:
+        if isinstance(note, str) and note.strip():
+            gap_items.append(
+                f'<li class="reviewer-summary"><b>{_esc(rp_summary_label)}:</b> {_esc(note)}</li>'
+            )
+
     gap_html = "".join(gap_items) or f'<li>{_esc(_ui("sources.no_gaps"))}</li>'
     spec_note = context.get("spec_update_note")
     spec_html = (f'<div class="bucket-note" style="margin-top:18px"><b>{_esc(_ui("sources.spec_note"))}</b>{_esc(spec_note)}</div>'
@@ -2619,7 +2723,7 @@ def render_html(
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{_esc(context.get('title', _ui('masthead.title')))}</title>
-<style>{css}</style>
+<style>{css}{_REVIEWER_CSS}</style>
 </head>
 <body>
 <div class="wrap">
@@ -2727,9 +2831,11 @@ def _run_self_check() -> int:
     if "BREACHES rails: single-name" not in fit_breach:
         failures.append(f"  - portfolio fit breach: got {fit_breach!r}")
 
-    # --- Style lever validation ---
-    # The agent (LLM) builds StyleLevers from natural-language reading of
-    # `## Investment Style`; the script only validates and formats.
+    # --- Style lever validation (legacy helper) ---
+    # The §15.7 spec no longer mandates structured lever resolution; the agent
+    # reads `## Investment Style And Strategy` and acts as the user. The
+    # validator is kept so legacy callers that still produce StyleLevers
+    # objects continue to round-trip correctly.
     good_levers = StyleLevers(
         drawdown_tolerance="high", conviction_sizing="kelly-lite",
         holding_period_bias="investor", confirmation_threshold="low",
@@ -2751,10 +2857,12 @@ def _run_self_check() -> int:
     defaults = StyleLevers()  # all neutral defaults
     check("default levers valid", validate_style_levers(defaults), [])
 
-    # Note: the Style readout *prose* is composed by the agent in natural
-    # language and passed via context["style_readout"]. The script does not
-    # format the readout — that would force template English/Chinese into a
-    # block that should match the SETTINGS Language and the agent's voice.
+    # Note: the Strategy readout *prose* is composed by the agent in natural
+    # language (first person, as the user) and passed via
+    # context["strategy_readout"] (legacy alias context["style_readout"] still
+    # accepted). The script does not format the readout — that would force
+    # template English/Chinese into a block that should match the SETTINGS
+    # Language and the user's voice.
 
     # --- Length budget ---
     lb = length_budget_status("hello world", max_words=5, max_chars=20)

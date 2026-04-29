@@ -17,12 +17,12 @@ OpenAI Codex, Claude Code, Gemini CLI처럼 파일을 읽고 명령을 실행할
 ## 핵심 파일
 
 - `AGENTS.md`: 리서치 에이전트의 사고 방식과 문체 규격
-- `SETTINGS.md`: 언어, 리스크 스타일, 기준 통화. 로컬 전용
+- `SETTINGS.md`: 언어, 전체 `Investment Style And Strategy`, 기준 통화, 포지션 한도. 로컬 전용
 - `HOLDINGS.md`: 보유 종목. 로컬 전용
-- `docs/portfolio_report_agent_guidelines.md`: 리포트 메인 규격. `docs/portfolio_report_agent_guidelines/` 아래 링크된 분할 파일도 모두 읽어야 함
+- `docs/portfolio_report_agent_guidelines.md`: 리포트 메인 규격. 전체 뉴스/이벤트 커버리지, Strategy readout, reviewer pass를 포함하며, `docs/portfolio_report_agent_guidelines/` 아래 링크된 분할 파일도 모두 읽어야 함
 - `docs/holdings_update_agent_guidelines.md`: 보유 업데이트 규격
 - `scripts/fetch_prices.py`: 표준 가격/환율 수집 스크립트
-- `scripts/generate_report.py`: 표준 HTML 렌더러
+- `scripts/generate_report.py`: 표준 HTML 렌더러. `report_context.json`의 `strategy_readout`과 `reviewer_pass`를 읽음
 - `reports/`: 출력 폴더. 로컬 전용
 
 ## 최초 설정
@@ -46,7 +46,8 @@ cp HOLDINGS.example.md HOLDINGS.md
 
 ### `SETTINGS.md`와 `HOLDINGS.md` 운용
 
-- 선호 언어, 리스크 스타일, 기준 통화, 리포트 기본값이 바뀌면 `SETTINGS.md`를 갱신합니다.
+- 선호 언어, 전체 투자 전략, 기준 통화, 포지션 한도, 리포트 기본값이 바뀌면 `SETTINGS.md`를 갱신합니다.
+- `Investment Style And Strategy` 전체에는 에이전트가 따라야 할 투자자상을 씁니다. 성향, 손실폭 허용도, 포지션 크기, 보유 기간, 진입 규율, 역발상 허용도, 과장된 서사에 대한 허용도, 금지 영역, 의사결정 스타일을 포함합니다.
 - 리서치나 리포트를 요청하기 전 기준 데이터로 `HOLDINGS.md`를 최신 보유의 단일 소스로 유지합니다.
 - 체결이 끝날 때마다 분석 정확도를 위해 즉시 에이전트에 `HOLDINGS.md` 업데이트를 요청합니다.
 - 리포트를 생성하기 전에 오래된 가정이 없는지 `SETTINGS.md`와 `HOLDINGS.md`를 빠르게 점검합니다.
@@ -63,7 +64,7 @@ cp HOLDINGS.example.md HOLDINGS.md
 - "지금 내 AI 익스포저가 얼마나 돼?"
 - "실적 발표 전에 단기 포지션을 줄여야 할까?"
 
-에이전트는 `SETTINGS.md`와 `HOLDINGS.md`를 읽고 `AGENTS.md`에 따라 답합니다.
+에이전트는 `SETTINGS.md`의 `Investment Style And Strategy` 전체와 `HOLDINGS.md`를 읽고, `AGENTS.md`에 따라 당신의 전략을 1인칭으로 실행하는 형태로 답합니다.
 
 ### 2. 포트폴리오 리포트
 
@@ -75,6 +76,8 @@ cp HOLDINGS.example.md HOLDINGS.md
 결과물은 `reports/` 아래의 단일 self-contained HTML 파일입니다.
 
 `auto mode`, `routine` 또는 기타 무인 환경에서 리포트를 생성할 때는, 보유 종목 티커를 외부 시장 데이터 소스로 보내 가격을 조회하기 전에 에이전트가 명시적인 동의를 받는 것을 권장합니다. 명확한 동의 문구 예시는 다음과 같습니다: `내 보유 티커를 외부 시장 데이터 소스로 보내 가격을 조회하고 오늘의 리포트를 생성하는 데 동의합니다.` 영어 문구는 다음과 같습니다: `I agree to let you send my holdings tickers to external market data sources to retrieve prices and generate today's report.`
+
+완전한 리포트 실행은 네 단계입니다. 먼저 Gather에서 데이터를 수집하고, 가격/지표/뉴스/이벤트가 모인 뒤 Think에서 판단을 만들며, 렌더링 전에 시니어 PM 관점으로 Review하고, 마지막으로 Render합니다. Gather 단계는 현금이 아닌 모든 보유 종목에 대해 최신 뉴스와 30일 이내 이벤트를 검색하며, 비중 상위 종목만 보지 않습니다. Review 단계는 필요한 경우 검토 메모를 붙일 뿐, 사용자의 분석 내용을 대체하지 않습니다.
 
 에이전트는 매번 새로 쓰지 말고 표준 스크립트를 사용해야 합니다.
 
@@ -88,6 +91,8 @@ python scripts/generate_report.py \
 ```
 
 요청 언어가 내장 UI 사전 `english`, `traditional chinese`, `simplified chinese` 외라면, 실행 중인 에이전트가 `scripts/i18n/report_ui.en.json`을 임시 overlay로 번역해 `--ui-dict`로 넘깁니다.
+
+`report_context.json`에는 1인칭 Strategy readout용 `strategy_readout`과 검토 메모/요약용 `reviewer_pass`를 넣을 수 있습니다. 기존 `style_readout` 키도 렌더링되지만, 새 context는 `strategy_readout`을 사용해야 합니다.
 
 ### 3. 자연어 보유 업데이트
 
@@ -138,11 +143,11 @@ git에 추적되지 않는 것:
 - `HOLDINGS.md`
 - `HOLDINGS.md.bak`
 - 생성 리포트
-- `prices.json`, `report_context.json` 같은 실행 산출물
+- `prices.json`, `report_context.json`, `temp/` 같은 실행 산출물
 
 ## 서드파티 데이터
 
-이 프로젝트는 시세나 환율 소스를 소유하거나 보장하지 않습니다. 가격 수집 과정은 공개 엔드포인트, 선택적 API 키, `yfinance` 같은 래퍼를 사용할 수 있습니다. 약관, 속도 제한, 출처 표기, 유료 조건 준수는 사용자 책임입니다.
+이 프로젝트는 시세나 환율 소스를 소유하거나 보장하지 않습니다. 가격 수집 과정은 공개 엔드포인트, 선택적 API 키, `yfinance` 같은 래퍼를 사용할 수 있습니다. 대만 종목은 토큰 없는 MIS fallback이 상장(`tse_`)과 OTC(`otc_`) 채널을 모두 시도해 `[TW]` / `[TWO]` 분류 오류로 인한 가격 누락을 줄입니다. 약관, 속도 제한, 출처 표기, 유료 조건 준수는 사용자 책임입니다.
 
 ## 면책
 
