@@ -6,4 +6,4 @@
 
 ## Temp files
 
-All temporary files (smoke-test inputs, scratch JSON, intermediate prices/context fixtures, regen output for verification, etc.) **MUST** be written under `/tmp/` — never inside the repository working tree. The repo only stores canonical artifacts (`HOLDINGS.md`, `SETTINGS.md`, `reports/<dated>_portfolio_report.html`, source under `scripts/`, `docs/`). Anything ephemeral goes to `/tmp` and is cleaned up after use.
+All temporary files (smoke-test inputs, scratch JSON, intermediate prices/context fixtures, regen output for verification, etc.) **MUST** be written under `/tmp/` — never inside the repository working tree. Canonical user-local artifacts live at the repo root (`SETTINGS.md`, `transactions.db` with append-only log plus materialized `open_lots` / `cash_balances`, `reports/<dated>_portfolio_report.html`); tracked source and contracts live under `scripts/` and `docs/` (see `README.md`). Anything ephemeral goes to `/tmp` and is cleaned up after use.

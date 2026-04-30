@@ -1,30 +1,42 @@
 ## 4. Inputs
 
-### 4.1 `HOLDINGS.md`
+### 4.1 `transactions.db` — positions and cash
 
-Lot formats:
+Positions are loaded via `transactions.load_holdings_lots(db_path)` which
+returns the materialized `open_lots` + `cash_balances` tables as a
+`List[Lot]` compatible with the report renderer's lot shape. Each row carries:
 
-```text
-<TICKER>: <quantity> shares @ <cost basis> on <YYYY-MM-DD> [<MARKET>]
-<SYMBOL> <quantity> @ <cost> on <YYYY-MM-DD> [crypto|FX]
-<CURRENCY>: <amount> [cash]
-```
+| Column     | Meaning |
+|------------|---------|
+| `ticker`   | Canonical ticker (uppercase; preserves dotted suffix like `2330.TW`) |
+| `qty`      | Open quantity (floats; crypto allows fractional) |
+| `cost`     | Per-unit cost basis in trade currency |
+| `acq_date` | ISO YYYY-MM-DD; the lot's BUY date |
+| `bucket`   | `Long Term` / `Mid Term` / `Short Term` |
+| `market`   | One of `US` / `TW` / `TWO` / `JP` / `HK` / `LSE` / `crypto` / `FX` |
+| `currency` | Trade currency (USD / TWD / JPY / …) |
 
-Rules: `on YYYY-MM-DD` = acquisition date for tooltips/hold-period; `[MARKET]` required for new lots and is routing source of truth; `?` allowed only for unknown cost/date and renders affected metric `n/a`; never invent values; aggregate by ticker for table but embed lot array for popover; multiple lots may span `Long Term`, `Mid Term`, `Short Term`, `Cash Holdings`.
+Routing per market tag:
 
 | Tag | Meaning | Routing |
 |---|---|---|
-| `[US]` | NYSE/NASDAQ/AMEX equity/ETF | bare ticker; dotted class Yahoo dash (`BRK.B` → `BRK-B`) |
-| `[TW]` | TWSE | `<code>.TW` |
-| `[TWO]` | TPEx | `<code>.TWO` |
-| `[JP]` | Tokyo | `<code>.T` |
-| `[HK]` | Hong Kong | `<code>.HK` |
-| `[LSE]` | London / UCITS | `<code>.L` |
-| `[crypto]` | Crypto | Binance `<SYM>USDT`; CoinGecko id |
-| `[FX]` | Currency pair | `<PAIR>=X` |
-| `[cash]` | Cash/equivalent | no price fetch |
+| `US`     | NYSE/NASDAQ/AMEX equity/ETF | bare ticker; dotted class Yahoo dash (`BRK.B` → `BRK-B`) |
+| `TW`     | TWSE | `<code>.TW` |
+| `TWO`    | TPEx | `<code>.TWO` |
+| `JP`     | Tokyo | `<code>.T` |
+| `HK`     | Hong Kong | `<code>.HK` |
+| `LSE`    | London / UCITS | `<code>.L` |
+| `crypto` | Crypto | Binance `<SYM>USDT`; CoinGecko id |
+| `FX`     | Currency pair | `<PAIR>=X` |
+| `cash`   | Cash/equivalent | no price fetch (one row per currency in `cash_balances`) |
 
-Legacy untagged lots use best-effort heuristic (suffix / known crypto-fiat lists); migrate when touched. Holdings-update agent requires tags for new lots.
+Drift between the materialized tables and a fresh log replay is caught by
+`transactions.py verify`; on mismatch run `db rebuild`. The renderer must
+not invent or hard-code holdings — always read fresh from the DB.
+
+For historical migrations only, `transactions.py migrate --holdings HOLDINGS.md`
+can bootstrap a DB from the pre-existing markdown lot file. Report generation
+never reads `HOLDINGS.md`.
 
 ### 4.2 `SETTINGS.md`
 

@@ -22,7 +22,7 @@ Read this file first, then read **every** part file below in order on every port
 - Phase B drafts all alerts, watchlists, adjustments, action items, scoring, Strategy readout, and summary while continuously anchoring to `SETTINGS.md` `## Investment Style And Strategy`.
 - Phase C switches hat to a senior PM reviewer, annotates issues, and sends serious defects back to the relevant earlier phase before render.
 - Phase D renders one self-contained HTML file, runs Appendix A self-checks, removes temp files, and replies with the absolute path plus required audit notes.
-- `SETTINGS.md` and `HOLDINGS.md` are read-only unless the user explicitly asks to edit them.
+- `SETTINGS.md` and `transactions.db` are read-only unless the user explicitly asks to edit them.
 
 ## Section Links
 

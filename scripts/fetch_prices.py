@@ -5,7 +5,7 @@ fetch_prices.py — Latest-price retrieval template for the portfolio report age
 
 Implements `docs/portfolio_report_agent_guidelines.md` §8 (Latest-price retrieval pipeline):
 
-  1. Parse HOLDINGS.md (§4.1)
+  1. Load projected positions/cash from transactions.db (§4.1)
   2. Group tickers by market type and resolve the market-native primary source path (§8.5)
   3. **PRIMARY**: Stooq (no-token) for listed securities — `.us`/`.uk`/`.jp`/`.hk`/`.tw` suffixes
   4. **SECONDARY**: yfinance per-ticker history (skip crypto) — used only when Stooq misses (§8.3)
@@ -64,14 +64,14 @@ Output JSON shape (per ticker):
 USAGE
 -----
     python scripts/fetch_prices.py \
-        --holdings HOLDINGS.md \
         --settings SETTINGS.md \
         --output prices.json
 
 The script does NOT make web-search calls (those require the agent's tooling, not Python).
-For tickers that fall through the keyed-API and no-token tiers, it records the failure
-reason and leaves `price_source = "n/a"` so the agent can fill the gap with web search
-during report generation.
+For tickers that fall through the automated tiers, it records the failure reason and
+marks `agent_web_search:TODO_required`. The CLI hard-fails on that marker unless
+`--allow-incomplete-fallbacks` is passed for debugging; the agent must complete tier 3
+and tier 4 before report rendering.
 
 DEPENDENCIES
 ------------
@@ -129,7 +129,7 @@ class MarketState(str, Enum):
     UNKNOWN = "unknown"
 
 
-# §4.1 — market types declared on HOLDINGS lots
+# §4.1 — market types carried by transaction lots / legacy migration rows
 class MarketType(str, Enum):
     US = "US"            # NYSE / NASDAQ / AMEX (yfinance: bare ticker)
     TW = "TW"            # Taiwan listed (yfinance: <code>.TW)
@@ -226,7 +226,7 @@ SUFFIX_TO_MARKET: Dict[str, MarketType] = {
 
 @dataclass
 class Lot:
-    """One line in HOLDINGS.md (§4.1). `cost` and `date` may be None when "?" used."""
+    """Legacy lot shape. Runtime rows are projected from transactions.db."""
     raw_line: str
     bucket: str               # "Long Term", "Mid Term", "Short Term", "Cash Holdings"
     ticker: str               # canonicalized, no market suffix here
@@ -266,7 +266,7 @@ class PriceResult:
 
 
 # ----------------------------------------------------------------------------- #
-# HOLDINGS.md parser (§4.1)
+# Legacy HOLDINGS.md parser (§4.1) — used only by transactions.py migrate
 # ----------------------------------------------------------------------------- #
 
 # Equity/ETF line:
@@ -379,7 +379,7 @@ def _heuristic_market(ticker: str, bucket: str, is_share: bool) -> MarketType:
 
 
 def parse_holdings(path: Path) -> List[Lot]:
-    """Parse HOLDINGS.md. Lines that don't match a known format are skipped silently."""
+    """Parse retired HOLDINGS.md input for one-shot migration only."""
     lots: List[Lot] = []
     bucket = ""
     for raw in path.read_text(encoding="utf-8").splitlines():
@@ -1127,7 +1127,7 @@ def _try_no_token_twse_mis_dual(
     """TWSE MIS dual-channel probe — try both ``tse_<code>.tw`` (TWSE listed) and
     ``otc_<code>.tw`` (TPEx OTC) so OTC names (8155 / 3680 / 8027 / ...) classified
     as ``MarketType.TW`` (or vice versa) don't fall through to
-    ``agent_web_search:TODO`` because of an exchange mismatch.
+    ``agent_web_search:TODO_required`` because of an exchange mismatch.
 
     ``prefer`` selects which channel runs first — ``"tse"`` for ``MarketType.TW``,
     ``"otc"`` for ``MarketType.TWO``. The fallback channel runs only when the
@@ -1206,7 +1206,7 @@ def _build_fallback_chain(
             chain.append(("yfinance", _yf_callable(yf_symbol)))
         # Tertiary: TWSE MIS — dual-channel so OTC stocks (8155 / 3680 / 8027 / ...)
         # classified as MarketType.TW are caught via the `otc_<code>.tw` channel
-        # before falling through to `agent_web_search:TODO` (and likewise listed
+        # before falling through to `agent_web_search:TODO_required` (and likewise listed
         # stocks misclassified as TWO are caught via the `tse_` channel).
         prefer = "tse" if market == MarketType.TW else "otc"
         chain.append(("no_token:twse_mis", lambda: _try_no_token_twse_mis_dual(raw_ticker, session, prefer=prefer)))
@@ -1618,10 +1618,107 @@ def _result_by_symbol(results: Dict[str, PriceResult], yf_sym: str) -> Optional[
 # CLI
 # ----------------------------------------------------------------------------- #
 
+TODO_REQUIRED_MARKERS: Tuple[str, ...] = (
+    "agent_web_search:todo",
+    "agent_web_search:todo_required",
+    "rate_limited:tier3_4_continuation_required",
+)
+
+
+def _chain_has_todo_required(chain: Iterable[Any]) -> bool:
+    for item in chain:
+        text = str(item).strip().lower()
+        if any(text.startswith(marker) for marker in TODO_REQUIRED_MARKERS):
+            return True
+    return False
+
+
+def _chain_has_real_tier3(chain: Iterable[Any]) -> bool:
+    for item in chain:
+        text = str(item).strip().lower()
+        if "todo" in text or "required" in text:
+            continue
+        if text.startswith(("tier3:", "web:")):
+            return True
+        if text.startswith(("agent_web_search:done", "agent_web_search:completed")):
+            return True
+    return False
+
+
+def _chain_has_real_tier4(chain: Iterable[Any]) -> bool:
+    for item in chain:
+        text = str(item).strip().lower()
+        if "todo" in text or "required" in text:
+            continue
+        if text.startswith("tier4:"):
+            return True
+    return False
+
+
+def _iter_price_payload_details(payload: Dict[str, Any]) -> Iterable[Tuple[str, Dict[str, Any]]]:
+    for ticker, detail in sorted(payload.items()):
+        if ticker == "_fx":
+            fx_details = detail.get("details") if isinstance(detail, dict) else {}
+            if not isinstance(fx_details, dict):
+                continue
+            for pair, fx_detail in sorted(fx_details.items()):
+                if isinstance(fx_detail, dict):
+                    yield f"FX {pair}", fx_detail
+            continue
+        if str(ticker).startswith("_") or not isinstance(detail, dict):
+            continue
+        yield str(ticker), detail
+
+
+def find_todo_required_hard_failures(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Return unresolved price rows that still need manual tier 3 / tier 4 work."""
+    failures: List[Dict[str, Any]] = []
+    for symbol, detail in _iter_price_payload_details(payload):
+        chain_raw = detail.get("fallback_chain") or []
+        chain = chain_raw if isinstance(chain_raw, list) else [chain_raw]
+        if not _chain_has_todo_required(chain):
+            continue
+        missing = []
+        if not _chain_has_real_tier3(chain):
+            missing.append("tier3")
+        if not _chain_has_real_tier4(chain):
+            missing.append("tier4")
+        failures.append({
+            "symbol": symbol,
+            "market": detail.get("market"),
+            "price_source": detail.get("price_source"),
+            "yfinance_failure_reason": detail.get("yfinance_failure_reason"),
+            "missing_tiers": missing,
+            "fallback_chain": [str(x) for x in chain],
+        })
+    return failures
+
+
+def format_todo_required_hard_failures(failures: List[Dict[str, Any]]) -> str:
+    lines = [
+        "ERROR: unresolved price fallback chains still contain "
+        "agent_web_search:TODO_required.",
+        "Complete tier 3 web-search and tier 4 no-token fallback attempts before "
+        "rendering. For a debug prices file only, rerun fetch_prices.py with "
+        "--allow-incomplete-fallbacks.",
+    ]
+    for failure in failures[:20]:
+        missing = ",".join(failure.get("missing_tiers") or []) or "tier3/tier4"
+        chain = " -> ".join(failure.get("fallback_chain") or [])
+        reason = failure.get("yfinance_failure_reason") or "n/a"
+        lines.append(
+            f"  - {failure.get('symbol')}: missing={missing}; "
+            f"source={failure.get('price_source')}; yf_reason={reason}; chain={chain}"
+        )
+    if len(failures) > 20:
+        lines.append(f"  - ... +{len(failures) - 20} more")
+    return "\n".join(lines)
+
+
 def _cli_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--holdings", default="HOLDINGS.md", type=Path,
-                   help="Path to HOLDINGS.md (default: ./HOLDINGS.md)")
+    p.add_argument("--db", default=Path("transactions.db"), type=Path,
+                   help="Path to transactions.db (canonical source; default: ./transactions.db)")
     p.add_argument("--settings", default="SETTINGS.md", type=Path,
                    help="Path to SETTINGS.md for base currency and optional API keys "
                         "(default: ./SETTINGS.md)")
@@ -1631,9 +1728,21 @@ def _cli_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
                    help="Skip yfinance AND the keyed/no-token fallback chain — leaves every "
                         "non-cash ticker at price_source=n/a. Useful for testing the parser and "
                         "JSON shape without making any network calls.")
+    p.add_argument("--allow-incomplete-fallbacks", action="store_true",
+                   help="Debug only: write output even when unresolved tickers still contain "
+                        "agent_web_search:TODO_required. Do not use before generate_report.py.")
     p.add_argument("--verbose", "-v", action="store_true",
                    help="Enable INFO-level logging")
     return p.parse_args(argv)
+
+
+def _load_lots_from_db(args: argparse.Namespace) -> Tuple[List[Lot], str]:
+    """Resolve lots from transactions.db (open_lots + cash_balances)."""
+    if args.db and args.db.exists():
+        # Lazy import to avoid circular dependency.
+        from transactions import load_holdings_lots  # type: ignore[import-not-found]
+        return load_holdings_lots(args.db), str(args.db)
+    return [], str(args.db)
 
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -1643,13 +1752,11 @@ def main(argv: Optional[List[str]] = None) -> int:
         format="%(asctime)s [%(levelname)s] %(message)s",
     )
 
-    if not args.holdings.exists():
-        print(f"ERROR: holdings file not found: {args.holdings}", file=sys.stderr)
-        return 2
-
-    lots = parse_holdings(args.holdings)
+    lots, source = _load_lots_from_db(args)
     if not lots:
-        print(f"ERROR: no lots parsed from {args.holdings}", file=sys.stderr)
+        print(f"ERROR: no lots resolved from --db {args.db}. "
+              f"Run `python scripts/transactions.py db init` and import transactions first.",
+              file=sys.stderr)
         return 3
 
     settings_path = args.settings if args.settings.exists() else None
@@ -1675,7 +1782,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     payload["_fx"] = fx_payload
     payload["_audit"] = {
         "generated_at": _now_iso(),
-        "holdings_file": str(args.holdings),
+        "positions_source": source,
         "settings_file": str(args.settings) if args.settings.exists() else None,
         "base_currency": base_currency,
         "lot_count": len(lots),
@@ -1691,6 +1798,15 @@ def main(argv: Optional[List[str]] = None) -> int:
             "stored_fields_8_8": True,
         },
     }
+    hard_failures = find_todo_required_hard_failures(payload)
+    payload["_audit"]["todo_required_hard_failures"] = hard_failures
+    payload["_audit"]["todo_required_hard_fail"] = bool(hard_failures)
+    payload["_audit"]["allow_incomplete_fallbacks"] = args.allow_incomplete_fallbacks
+
+    if hard_failures and not args.allow_incomplete_fallbacks:
+        print(format_todo_required_hard_failures(hard_failures), file=sys.stderr)
+        return 5
+
     serialized = json.dumps(payload, indent=2, ensure_ascii=False)
 
     if args.output:

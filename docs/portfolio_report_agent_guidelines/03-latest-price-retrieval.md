@@ -13,7 +13,7 @@ Before `scripts/fetch_prices.py`, ad-hoc yfinance code, or a REPL quote probe:
 4. Log `yfinance.__version__`.
 5. Add `subagent_prerequisites`: `installed=<bool>`, `version=<version|n/a>`, `install_command=<command|skipped>`.
 
-Do not: swallow `ImportError`; use non-quiet install; use `sudo` / `--user`; pin versions unless user asks; assume a previous install; stop at script `price_source="n/a"`. `n/a` or `agent_web_search:TODO` from the script is a handoff to the agent for tier 3 / tier 4.
+Do not: swallow `ImportError`; use non-quiet install; use `sudo` / `--user`; pin versions unless user asks; assume a previous install; stop at script `price_source="n/a"`. `n/a` or `agent_web_search:TODO_required` from the script is a handoff to the agent for tier 3 / tier 4; `fetch_prices.py` and `generate_report.py` must hard-fail on that marker unless the operator explicitly passes `--allow-incomplete-fallbacks` for debugging.
 
 ### 8.1 Source hierarchy + workflow gate
 
@@ -30,7 +30,7 @@ Asset-native first; never yfinance-first globally.
 
 Accept only values passing §8.7 Freshness gate. Conflict rule: prefer fresher credible timestamp + clearer market coverage; audit rejected source + reason.
 
-**Render gate:** every non-cash ticker must have `latest_price` + source OR `fallback_chain` containing real tier 3 and tier 4 entries (`tier3:exhausted` / `tier4:exhausted` allowed). `agent_web_search:TODO` at render time is a hard failure.
+**Render gate:** every non-cash ticker must have `latest_price` + source OR `fallback_chain` containing real tier 3 and tier 4 entries (`tier3:exhausted` / `tier4:exhausted` allowed). `agent_web_search:TODO_required` at `fetch_prices.py` output time or render time is a hard failure, because it means the agent stopped before completing tier 3 / tier 4.
 
 ### 8.2 Primary policy and required returned fields
 

@@ -17,7 +17,6 @@ Editorial content comes from a JSON context file the agent prepares per-run.
 USAGE
 -----
     python scripts/generate_report.py \
-        --holdings HOLDINGS.md \
         --settings SETTINGS.md \
         --prices prices.json \
         --context report_context.json \
@@ -48,8 +47,13 @@ CONTEXT FILE SHAPE  (report_context.json)
       "holdings_actions": {"BTC": "長線續抱；50–55k 分批加碼", ...},
       "actions":       {"must_do": ["..."], "may_do": ["..."],
                          "avoid": ["..."],  "need_data": ["..."]},
+      "transaction_analytics": {
+        "performance_attribution": {...},
+        "trade_quality": {...},
+        "discipline_check": {...}
+      },                  // optional override; generated automatically from transactions.db when absent
       "data_gaps":     [{"summary": "ALPH 成本基礎缺失",
-                          "detail": "<HOLDINGS.md → Long Term> 內 ALPH 1 @ ? on ..."}, ...],
+                          "detail": "transactions.db open_lots row for ALPH lacks cost basis"}, ...],
       "spec_update_note": "...",
 
       "theme_sector_html": "<div class=\"bars\">...</div>"
@@ -125,12 +129,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-# Reuse the parser + market routing from the sister script.
+# Reuse the lot shape + market routing from the sister script.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fetch_prices import (                                    # noqa: E402
     Lot,
     MarketType,
-    parse_holdings,
+    find_todo_required_hard_failures,
+    format_todo_required_hard_failures,
 )
 
 
@@ -1532,6 +1537,407 @@ def render_dashboard(
   </section>"""
 
 
+_PROFIT_PANEL_PERIOD_KEYS = (
+    ("1D",      "profit_panel.period_1d"),
+    ("7D",      "profit_panel.period_7d"),
+    ("MTD",     "profit_panel.period_mtd"),
+    ("1M",      "profit_panel.period_1m"),
+    ("YTD",     "profit_panel.period_ytd"),
+    ("1Y",      "profit_panel.period_1y"),
+    ("ALLTIME", "profit_panel.period_alltime"),
+)
+
+
+def _profit_panel_signed_money(value: Optional[float]) -> Tuple[str, str]:
+    """Return (td_class, inner_text) for a signed money cell in the profit panel."""
+    if value is None:
+        return "", f'<span class="na">{_ui("common.na")}</span>'
+    cls = "pos-txt" if value >= 0 else "neg-txt"
+    sign = "+" if value >= 0 else "−"
+    return cls, f"{sign}{_base_prefix()}{abs(value):,.0f}"
+
+
+def _profit_panel_pct(value: Optional[float]) -> Tuple[str, str]:
+    if value is None:
+        return "", f'<span class="na">{_ui("common.na")}</span>'
+    cls = "pos-txt" if value >= 0 else "neg-txt"
+    sign = "+" if value >= 0 else "−"
+    return cls, f"{sign}{abs(value):.2f}%"
+
+
+def render_profit_panel(context: Dict[str, Any]) -> str:
+    """§10.1.5 — Profit panel: period P&L for 1D/7D/MTD/1M/YTD/1Y/ALLTIME.
+
+    Consumes context['profit_panel'] (output of `python scripts/transactions.py
+    profit-panel`). When profit-panel rows are absent, the section is omitted;
+    the newer transaction analytics sections carry the useful performance view.
+    """
+    panel = context.get("profit_panel") or {}
+    realized_unrealized = context.get("realized_unrealized") or {}
+
+    rows = panel.get("rows") or []
+    if not rows:
+        return ""
+
+    # KPI strip with lifetime realized + open unrealized when available.
+    kpi_html = ""
+    if realized_unrealized:
+        realized = realized_unrealized.get("realized")
+        unrealized = realized_unrealized.get("unrealized")
+        r_cls, r_inner = _profit_panel_signed_money(realized if realized is not None else None)
+        u_cls, u_inner = _profit_panel_signed_money(unrealized if unrealized is not None else None)
+        kpi_html = f"""
+    <div class="kpis">
+      <div class="kpi"><div class="k">{_esc(_ui("profit_panel.lifetime_realized_label"))}</div>
+        <div class="v {r_cls}">{r_inner}</div></div>
+      <div class="kpi"><div class="k">{_esc(_ui("profit_panel.lifetime_unrealized_label"))}</div>
+        <div class="v {u_cls}">{u_inner}</div></div>
+    </div>"""
+
+    # Table rows
+    body_rows: List[str] = []
+    period_label_by_key = {k: ui_key for k, ui_key in _PROFIT_PANEL_PERIOD_KEYS}
+    seen_keys = {row.get("period") for row in rows}
+    for key, ui_key in _PROFIT_PANEL_PERIOD_KEYS:
+        row = next((r for r in rows if r.get("period") == key), None)
+        if row is None:
+            continue
+        boundary = row.get("boundary")
+        boundary_html = ""
+        if boundary:
+            boundary_html = f' <span class="muted">({_esc(_ui("profit_panel.boundary_prefix"))} {_esc(boundary)})</span>'
+
+        pnl_cls, pnl_html = _profit_panel_signed_money(row.get("pnl"))
+        ret_cls, ret_html = _profit_panel_pct(row.get("return_pct"))
+        rea_cls, rea_html = _profit_panel_signed_money(row.get("realized"))
+        unr_cls, unr_html = _profit_panel_signed_money(row.get("unrealized_delta"))
+        flw_cls, flw_html = _profit_panel_signed_money(row.get("net_flows"))
+
+        body_rows.append(
+            f"""\
+      <tr>
+        <td>{_esc(_ui(ui_key))}{boundary_html}</td>
+        <td class="num {pnl_cls}">{pnl_html}</td>
+        <td class="num {ret_cls}">{ret_html}</td>
+        <td class="num {rea_cls}">{rea_html}</td>
+        <td class="num {unr_cls}">{unr_html}</td>
+        <td class="num {flw_cls}">{flw_html}</td>
+      </tr>"""
+        )
+
+    return f"""\
+  <section class="section">
+    <div class="section-head">
+      <h2>{_esc(_ui("profit_panel.title"))}</h2>
+      <span class="sub">{_esc(_ui("profit_panel.subtitle", base=ACTIVE_BASE_CURRENCY))}</span>
+    </div>{kpi_html}
+    <div class="tbl-wrap" style="margin-top:14px">
+      <table class="holdings-tbl">
+        <thead>
+          <tr>
+            <th>{_esc(_ui("profit_panel.col_period"))}</th>
+            <th class="num">{_esc(_ui("profit_panel.col_pnl"))}</th>
+            <th class="num">{_esc(_ui("profit_panel.col_return"))}</th>
+            <th class="num">{_esc(_ui("profit_panel.col_realized"))}</th>
+            <th class="num">{_esc(_ui("profit_panel.col_unrealized"))}</th>
+            <th class="num">{_esc(_ui("profit_panel.col_flows"))}</th>
+          </tr>
+        </thead>
+        <tbody>
+{chr(10).join(body_rows)}
+        </tbody>
+      </table>
+    </div>
+  </section>"""
+
+
+def _profit_panel_audit_notes(context: Dict[str, Any]) -> List[str]:
+    panel = context.get("profit_panel") or {}
+    rows = panel.get("rows") or []
+    notes: List[str] = []
+    for row in rows:
+        for line in row.get("audit", []) or []:
+            if line and line not in notes:
+                notes.append(line)
+    for line in panel.get("open_position_audit", []) or []:
+        if line and line not in notes:
+            notes.append(line)
+    for line in panel.get("issues", []) or []:
+        if line and line not in notes:
+            notes.append(line)
+    return notes
+
+
+def _transaction_analytics(context: Dict[str, Any]) -> Dict[str, Any]:
+    payload = context.get("transaction_analytics") or context.get("analytics") or {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _analytics_pct(value: Optional[float]) -> str:
+    if value is None:
+        return _ui("common.na")
+    sign = "+" if value >= 0 else "−"
+    return f"{sign}{abs(value):.2f}%"
+
+
+def _analytics_plain_pct(value: Optional[float]) -> str:
+    if value is None:
+        return _ui("common.na")
+    return f"{value:.2f}%"
+
+
+def _analytics_money(value: Optional[float]) -> str:
+    return _fmt_money(value)
+
+
+def _asset_class_label(key: str) -> str:
+    translated = _ui(f"analytics.asset_class_{key}")
+    return translated if translated != f"analytics.asset_class_{key}" else key
+
+
+def render_performance_attribution(context: Dict[str, Any]) -> str:
+    analytics = _transaction_analytics(context)
+    perf = analytics.get("performance_attribution") or {}
+    if not perf:
+        return ""
+    periods = perf.get("periods") or []
+    contributors = perf.get("top_contributors") or []
+    detractors = perf.get("top_detractors") or []
+    classes = perf.get("asset_class_contribution") or []
+
+    best = contributors[0] if contributors else {}
+    worst = detractors[0] if detractors else {}
+    best_label = f'{best.get("ticker", _ui("common.na"))} {_analytics_money(best.get("total_pnl"))}' if best else _ui("common.na")
+    worst_label = f'{worst.get("ticker", _ui("common.na"))} {_analytics_money(worst.get("total_pnl"))}' if worst else _ui("common.na")
+    mwr = perf.get("money_weighted_return_annualized")
+
+    rows = []
+    period_label_by_key = {k: ui_key for k, ui_key in _PROFIT_PANEL_PERIOD_KEYS}
+    for row in periods:
+        period = str(row.get("period") or "")
+        label_key = period_label_by_key.get(period)
+        label = _ui(label_key) if label_key else period
+        rows.append(
+            f"""\
+      <tr>
+        <td>{_esc(label)}</td>
+        <td class="num">{_analytics_money(row.get("pnl"))}</td>
+        <td class="num">{_analytics_pct(row.get("return_pct")) if row.get("return_pct") is not None else _ui("common.na")}</td>
+        <td class="num">{_analytics_money(row.get("net_flows"))}</td>
+        <td class="num">{_analytics_money(row.get("realized"))}</td>
+        <td class="num">{_analytics_money(row.get("unrealized_delta"))}</td>
+        <td class="num">{_analytics_money(row.get("residual"))}</td>
+      </tr>"""
+        )
+
+    def _bars(items: List[Dict[str, Any]]) -> str:
+        if not items:
+            return f'<p class="muted">{_esc(_ui("common.na"))}</p>'
+        max_abs = max(abs(float(i.get("total_pnl") or 0)) for i in items) or 1.0
+        out = []
+        for item in items:
+            value = float(item.get("total_pnl") or 0)
+            width = abs(value) / max_abs * 100.0
+            cls = "pos" if value >= 0 else "neg"
+            txt_cls = "pos-txt" if value >= 0 else "neg-txt"
+            sign = "+" if value >= 0 else "−"
+            out.append(
+                f'<div class="bar-row"><div class="bar-label">{_esc(str(item.get("ticker") or ""))}</div>'
+                f'<div class="bar-track"><div class="bar {cls}" style="width:{width:.1f}%"></div></div>'
+                f'<div class="bar-value {txt_cls}">{sign}{_base_prefix()}{abs(value):,.0f}</div></div>'
+            )
+        return "".join(out)
+
+    class_rows = []
+    for item in classes:
+        class_rows.append(
+            f"""\
+      <tr>
+        <td>{_esc(_asset_class_label(str(item.get("asset_class") or "other")))}</td>
+        <td class="num">{_analytics_money(item.get("total_pnl"))}</td>
+        <td class="num">{_analytics_money(item.get("realized"))}</td>
+        <td class="num">{_analytics_money(item.get("unrealized"))}</td>
+      </tr>"""
+        )
+
+    class_table = ""
+    if class_rows:
+        class_table = f"""
+    <div class="tbl-wrap scroll-y" style="margin-top:18px">
+      <table>
+        <thead><tr><th>{_esc(_ui("analytics.asset_class"))}</th><th class="num">{_esc(_ui("analytics.total_pnl"))}</th><th class="num">{_esc(_ui("analytics.realized"))}</th><th class="num">{_esc(_ui("analytics.unrealized"))}</th></tr></thead>
+        <tbody>{chr(10).join(class_rows)}</tbody>
+      </table>
+    </div>"""
+
+    return f"""\
+  <section class="section">
+    <div class="section-head">
+      <h2>{_esc(_ui("analytics.performance_title"))}</h2>
+      <span class="sub">{_esc(_ui("analytics.performance_subtitle", base=ACTIVE_BASE_CURRENCY))}</span>
+    </div>
+    <div class="kpis">
+      <div class="kpi"><div class="k">{_esc(_ui("analytics.ending_nav"))}</div><div class="v">{_analytics_money(perf.get("ending_nav"))}</div><div class="delta">{_esc(_ui("analytics.ending_nav_note"))}</div></div>
+      <div class="kpi"><div class="k">{_esc(_ui("analytics.mwr"))}</div><div class="v">{_analytics_pct(mwr) if mwr is not None else _ui("common.na")}</div><div class="delta">{_esc(_ui("analytics.mwr_note"))}</div></div>
+      <div class="kpi"><div class="k">{_esc(_ui("analytics.best_contributor"))}</div><div class="v">{_esc(best_label)}</div><div class="delta">{_esc(_ui("analytics.lifetime_basis"))}</div></div>
+      <div class="kpi"><div class="k">{_esc(_ui("analytics.worst_detractor"))}</div><div class="v">{_esc(worst_label)}</div><div class="delta">{_esc(_ui("analytics.lifetime_basis"))}</div></div>
+    </div>
+    <div class="tbl-wrap scroll-y" style="margin-top:18px">
+      <table>
+        <thead><tr><th>{_esc(_ui("profit_panel.col_period"))}</th><th class="num">{_esc(_ui("analytics.investment_pnl"))}</th><th class="num">{_esc(_ui("profit_panel.col_return"))}</th><th class="num">{_esc(_ui("profit_panel.col_flows"))}</th><th class="num">{_esc(_ui("analytics.realized"))}</th><th class="num">{_esc(_ui("analytics.unrealized"))}</th><th class="num">{_esc(_ui("analytics.residual"))}</th></tr></thead>
+        <tbody>{chr(10).join(rows)}</tbody>
+      </table>
+    </div>
+    {class_table}
+    <div class="cols-2" style="margin-top:22px">
+      <div><div class="eyebrow" style="margin-bottom:10px">{_esc(_ui("analytics.top_contributors"))}</div><div class="bars">{_bars(contributors)}</div></div>
+      <div><div class="eyebrow" style="margin-bottom:10px">{_esc(_ui("analytics.top_detractors"))}</div><div class="bars">{_bars(detractors)}</div></div>
+    </div>
+  </section>"""
+
+
+def render_trade_quality(context: Dict[str, Any]) -> str:
+    analytics = _transaction_analytics(context)
+    tq = analytics.get("trade_quality") or {}
+    if not tq:
+        return ""
+    sells = tq.get("sell_followups") or []
+    buys = tq.get("buy_followups") or []
+
+    sell_rows = []
+    for item in sells[:8]:
+        sell_rows.append(
+            f"""\
+      <tr>
+        <td>{_esc(str(item.get("ticker") or ""))}</td>
+        <td>{_esc(str(item.get("sell_date") or ""))}</td>
+        <td class="num">{_analytics_money(item.get("realized"))}</td>
+        <td class="num">{_analytics_pct(item.get("after_30d_pct")) if item.get("after_30d_pct") is not None else _ui("common.na")}</td>
+        <td class="num">{_analytics_pct(item.get("after_90d_pct")) if item.get("after_90d_pct") is not None else _ui("common.na")}</td>
+        <td class="num">{_analytics_money(item.get("after_90d_pnl"))}</td>
+      </tr>"""
+        )
+    buy_rows = []
+    for item in buys[:8]:
+        buy_rows.append(
+            f"""\
+      <tr>
+        <td>{_esc(str(item.get("ticker") or ""))}</td>
+        <td>{_esc(str(item.get("buy_date") or ""))}</td>
+        <td class="num">{_analytics_pct(item.get("after_30d_pct")) if item.get("after_30d_pct") is not None else _ui("common.na")}</td>
+        <td class="num">{_analytics_pct(item.get("after_90d_pct")) if item.get("after_90d_pct") is not None else _ui("common.na")}</td>
+      </tr>"""
+        )
+
+    sell_table = f"""
+    <div class="tbl-wrap scroll-y" style="margin-top:18px;max-width:100%;overflow-x:auto">
+      <table style="min-width:600px">
+        <thead><tr><th>{_esc(_ui("adjustments.ticker"))}</th><th>{_esc(_ui("analytics.sell_date"))}</th><th class="num">{_esc(_ui("analytics.realized"))}</th><th class="num">{_esc(_ui("analytics.after_30d"))}</th><th class="num">{_esc(_ui("analytics.after_90d"))}</th><th class="num">{_esc(_ui("analytics.missed_saved"))}</th></tr></thead>
+        <tbody>{chr(10).join(sell_rows) if sell_rows else f'<tr><td colspan="6">{_esc(_ui("analytics.no_closed_trades"))}</td></tr>'}</tbody>
+      </table>
+    </div>"""
+    buy_table = f"""
+    <div class="tbl-wrap scroll-y" style="margin-top:18px;max-width:100%;overflow-x:auto">
+      <table style="min-width:420px">
+        <thead><tr><th>{_esc(_ui("adjustments.ticker"))}</th><th>{_esc(_ui("analytics.buy_date"))}</th><th class="num">{_esc(_ui("analytics.after_30d"))}</th><th class="num">{_esc(_ui("analytics.after_90d"))}</th></tr></thead>
+        <tbody>{chr(10).join(buy_rows) if buy_rows else f'<tr><td colspan="4">{_esc(_ui("analytics.no_buy_followups"))}</td></tr>'}</tbody>
+      </table>
+    </div>"""
+
+    return f"""\
+  <section class="section">
+    <div class="section-head">
+      <h2>{_esc(_ui("analytics.trade_quality_title"))}</h2>
+      <span class="sub">{_esc(_ui("analytics.trade_quality_subtitle"))}</span>
+    </div>
+    <div class="kpis">
+      <div class="kpi"><div class="k">{_esc(_ui("analytics.closed_lots"))}</div><div class="v">{_esc(str(tq.get("closed_lot_count", 0)))}</div><div class="delta">{_esc(_ui("analytics.closed_lots_note"))}</div></div>
+      <div class="kpi"><div class="k">{_esc(_ui("analytics.win_rate"))}</div><div class="v">{_analytics_plain_pct(tq.get("win_rate_pct")) if tq.get("win_rate_pct") is not None else _ui("common.na")}</div><div class="delta">{_esc(_ui("analytics.sell_lot_basis"))}</div></div>
+      <div class="kpi"><div class="k">{_esc(_ui("analytics.profit_factor"))}</div><div class="v">{_esc(str(tq.get("profit_factor") if tq.get("profit_factor") is not None else _ui("common.na")))}</div><div class="delta">{_esc(_ui("analytics.profit_factor_note"))}</div></div>
+      <div class="kpi"><div class="k">{_esc(_ui("analytics.avg_hold_days"))}</div><div class="v">{_esc(str(tq.get("avg_hold_days") if tq.get("avg_hold_days") is not None else _ui("common.na")))}</div><div class="delta">{_esc(_ui("analytics.sell_lot_basis"))}</div></div>
+    </div>
+    <div class="cols-2" style="margin-top:4px;align-items:start">
+      <div style="min-width:0">{sell_table}</div>
+      <div style="min-width:0">{buy_table}</div>
+    </div>
+  </section>"""
+
+
+def render_discipline_check(context: Dict[str, Any]) -> str:
+    analytics = _transaction_analytics(context)
+    dc = analytics.get("discipline_check") or {}
+    if not dc:
+        return ""
+    weights = dc.get("top_position_weights") or []
+    recent = dc.get("recent_buy_counts_30d") or []
+    stale = dc.get("short_bucket_over_1y") or []
+    cost_flags = dc.get("latest_lot_cost_flags") or []
+    losses = dc.get("largest_unrealized_losses") or []
+    gains = dc.get("largest_unrealized_gains") or []
+    gaps = dc.get("data_gaps") or []
+
+    top_weight = weights[0] if weights else {}
+    weight_label = (
+        f'{top_weight.get("ticker")} {top_weight.get("weight_pct"):.1f}%'
+        if top_weight and top_weight.get("weight_pct") is not None else _ui("common.na")
+    )
+
+    def _simple_list(items: List[str]) -> str:
+        if not items:
+            return f'<li>{_esc(_ui("common.na"))}</li>'
+        return "".join(f"<li>{_esc(str(i))}</li>" for i in items)
+
+    weight_rows = "".join(
+        f'<tr><td>{_esc(str(i.get("ticker") or ""))}</td><td class="num">{i.get("weight_pct"):.2f}%</td></tr>'
+        for i in weights if i.get("weight_pct") is not None
+    )
+    recent_items = [f'{i.get("ticker")} x{i.get("count")}' for i in recent]
+    stale_items = [f'{i.get("ticker")} {i.get("acq_date")} ({i.get("hold_days")}d)' for i in stale]
+    cost_items = [
+        f'{i.get("ticker")} {i.get("newest_date")}: +{i.get("premium_pct")}% vs older avg'
+        for i in cost_flags
+    ]
+
+    def _lot_rows(items: List[Dict[str, Any]]) -> str:
+        if not items:
+            return f'<tr><td colspan="4">{_esc(_ui("common.na"))}</td></tr>'
+        return "".join(
+            f'<tr><td>{_esc(str(i.get("ticker") or ""))}</td><td>{_esc(str(i.get("acq_date") or ""))}</td>'
+            f'<td class="num">{_analytics_money(i.get("unrealized"))}</td>'
+            f'<td class="num">{_analytics_pct(i.get("unrealized_pct")) if i.get("unrealized_pct") is not None else _ui("common.na")}</td></tr>'
+            for i in items[:6]
+        )
+
+    return f"""\
+  <section class="section">
+    <div class="section-head">
+      <h2>{_esc(_ui("analytics.discipline_title"))}</h2>
+      <span class="sub">{_esc(_ui("analytics.discipline_subtitle"))}</span>
+    </div>
+    <div class="kpis">
+      <div class="kpi"><div class="k">{_esc(_ui("analytics.deposit_to_buy"))}</div><div class="v">{_esc(str(dc.get("avg_days_deposit_to_buy") if dc.get("avg_days_deposit_to_buy") is not None else _ui("common.na")))}</div><div class="delta">{_esc(_ui("analytics.days"))}</div></div>
+      <div class="kpi"><div class="k">{_esc(_ui("analytics.sell_to_buy"))}</div><div class="v">{_esc(str(dc.get("avg_days_sell_to_buy") if dc.get("avg_days_sell_to_buy") is not None else _ui("common.na")))}</div><div class="delta">{_esc(_ui("analytics.days"))}</div></div>
+      <div class="kpi"><div class="k">{_esc(_ui("analytics.top_weight"))}</div><div class="v">{_esc(weight_label)}</div><div class="delta">{_esc(_ui("analytics.current_open_book"))}</div></div>
+      <div class="kpi"><div class="k">{_esc(_ui("analytics.data_gaps"))}</div><div class="v">{len(gaps)}</div><div class="delta">{_esc(_ui("sources.gaps_heading"))}</div></div>
+    </div>
+    <div class="cols-2" style="margin-top:18px">
+      <div>
+        <div class="eyebrow" style="margin-bottom:10px">{_esc(_ui("analytics.top_position_weights"))}</div>
+        <div class="tbl-wrap scroll-y"><table><tbody>{weight_rows or f'<tr><td>{_esc(_ui("common.na"))}</td></tr>'}</tbody></table></div>
+      </div>
+      <div>
+        <div class="bucket-note"><b>{_esc(_ui("analytics.recent_churn"))}:</b><ul>{_simple_list(recent_items)}</ul></div>
+        <div class="bucket-note"><b>{_esc(_ui("analytics.short_stale"))}:</b><ul>{_simple_list(stale_items)}</ul></div>
+        <div class="bucket-note"><b>{_esc(_ui("analytics.high_cost_adds"))}:</b><ul>{_simple_list(cost_items)}</ul></div>
+      </div>
+    </div>
+    <div class="cols-2" style="margin-top:18px">
+      <div class="tbl-wrap scroll-y"><table><thead><tr><th>{_esc(_ui("analytics.loss_lots"))}</th><th>{_esc(_ui("price_pop.acquired"))}</th><th class="num">{_esc(_ui("price_pop.pnl"))}</th><th class="num">%</th></tr></thead><tbody>{_lot_rows(losses)}</tbody></table></div>
+      <div class="tbl-wrap scroll-y"><table><thead><tr><th>{_esc(_ui("analytics.gain_lots"))}</th><th>{_esc(_ui("price_pop.acquired"))}</th><th class="num">{_esc(_ui("price_pop.pnl"))}</th><th class="num">%</th></tr></thead><tbody>{_lot_rows(gains)}</tbody></table></div>
+    </div>
+  </section>"""
+
+
 _ALLOCATION_PALETTE = [
     "#1f2937",  # ink
     "#15703d",  # pos
@@ -2638,6 +3044,31 @@ def render_sources(prices: Dict[str, Any], context: Dict[str, Any]) -> str:
             f'<li><b>{_esc(g.get("summary", ""))}:</b> {_esc(g.get("detail", ""))}</li>'
         )
 
+    profit_panel_notes = _profit_panel_audit_notes(context)
+    if profit_panel_notes:
+        detail = "；".join(profit_panel_notes[:12])
+        if len(profit_panel_notes) > 12:
+            detail += f"；+{len(profit_panel_notes) - 12} more"
+        gap_items.append(
+            f'<li><b>{_esc(_ui("sources.profit_panel_gap"))}:</b> {_esc(detail)}</li>'
+        )
+    if not _transaction_analytics(context):
+        gap_items.append(
+            f'<li><b>{_esc(_ui("sources.transaction_analytics_gap"))}:</b> '
+            f'{_esc(_ui("sources.transaction_analytics_gap_detail"))}</li>'
+        )
+    else:
+        analytics_gaps = (
+            (_transaction_analytics(context).get("discipline_check") or {}).get("data_gaps") or []
+        )
+        if analytics_gaps:
+            detail = "；".join(str(g) for g in analytics_gaps[:12])
+            if len(analytics_gaps) > 12:
+                detail += f"；+{len(analytics_gaps) - 12} more"
+            gap_items.append(
+                f'<li><b>{_esc(_ui("sources.transaction_analytics_gap"))}:</b> {_esc(detail)}</li>'
+            )
+
     rp_summary_label = _ui("reviewer.summary_label")
     for note in rp["summary"]:
         if isinstance(note, str) and note.strip():
@@ -2704,6 +3135,10 @@ def render_html(
         render_alerts(context),
         render_today_summary(context),                                     # §10.1 #1
         render_dashboard(aggs, total_assets, invested, cash, pnl),         # §10.1 #2
+        render_profit_panel(context),                                      # §10.1.5 profit panel
+        render_performance_attribution(context),                           # transaction history attribution
+        render_trade_quality(context),                                     # transaction history trade review
+        render_discipline_check(context),                                  # transaction history discipline checks
         render_allocation_and_weight(aggs, total_assets, today),           # §10.1 allocation + weight
         render_holdings_table(aggs, total_assets, prices, today, context), # §10.1 #3
         render_pnl_ranking(aggs),                                          # §10.4 chart
@@ -2743,7 +3178,8 @@ def render_html(
 
 def _cli(argv: Optional[List[str]] = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--holdings", default="HOLDINGS.md", type=Path)
+    p.add_argument("--db", default=Path("transactions.db"), type=Path,
+                   help="Path to transactions.db (canonical source for positions; default: ./transactions.db)")
     p.add_argument("--settings", default="SETTINGS.md", type=Path)
     p.add_argument("--prices", required=False, type=Path,
                    help="JSON output from scripts/fetch_prices.py (required unless --self-check)")
@@ -2954,14 +3390,31 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     if args.prices is None:
         print("ERROR: --prices is required (omit only when running --self-check)", file=sys.stderr); return 2
-    if not args.holdings.exists():
-        print(f"ERROR: {args.holdings} not found", file=sys.stderr); return 2
     if not args.prices.exists():
         print(f"ERROR: {args.prices} not found (run fetch_prices.py first)", file=sys.stderr); return 3
 
-    lots = parse_holdings(args.holdings)
+    if args.db and args.db.exists():
+        scripts_dir = Path(__file__).resolve().parent
+        if str(scripts_dir) not in sys.path:
+            sys.path.insert(0, str(scripts_dir))
+        from transactions import load_holdings_lots  # type: ignore[import-not-found]
+        lots = load_holdings_lots(args.db)
+        if not lots:
+            print(f"ERROR: {args.db} has no open_lots / cash_balances. "
+                  f"Run `python scripts/transactions.py db init` and import transactions first.",
+                  file=sys.stderr)
+            return 4
+    else:
+        print(f"ERROR: no positions source found at --db {args.db}. "
+              f"Run `python scripts/transactions.py db init` and import transactions first.",
+              file=sys.stderr)
+        return 2
     aggs = aggregate(lots)
     prices = json.loads(args.prices.read_text(encoding="utf-8"))
+    todo_hard_failures = find_todo_required_hard_failures(prices)
+    if todo_hard_failures:
+        print(format_todo_required_hard_failures(todo_hard_failures), file=sys.stderr)
+        return 5
 
     # §9.0 — editorial context must not supply FX rates. FX conversion rates are
     # auto-fetched by scripts/fetch_prices.py and stored under prices.json["_fx"].
@@ -3010,6 +3463,19 @@ def main(argv: Optional[List[str]] = None) -> int:
     context["fx"] = fx
     context["fx_details"] = fx_details
     merge_prices(aggs, prices, fx=fx, base=base_ccy)
+
+    if not _transaction_analytics(context):
+        try:
+            from transactions import compute_transaction_analytics, load_transactions_db  # type: ignore[import-not-found]
+            txns = load_transactions_db(args.db)
+            context["transaction_analytics"] = compute_transaction_analytics(txns, prices, base=base_ccy)
+        except Exception as e:
+            gaps = context.setdefault("data_gaps", [])
+            if isinstance(gaps, list):
+                gaps.append({
+                    "summary": _ui("sources.transaction_analytics_gap"),
+                    "detail": str(e),
+                })
 
     # §9.0 audit — warn loudly for any non-base currency in the book that lacks
     # an FX rate. Stablecoins pegged 1:1 to USD still need fx[base/USD] when

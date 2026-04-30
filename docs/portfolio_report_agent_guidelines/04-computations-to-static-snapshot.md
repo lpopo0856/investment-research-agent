@@ -24,7 +24,7 @@ Appendix A.5 checks: base prefix on `Value`, `P&L`, KPIs, popover footer; native
 
 - Total assets, invested value, cash/cash-equivalent value, cash ratio.
 - Per-holding weight (% total assets), theme weight, sector weight.
-- Per-holding P&L from `HOLDINGS.md`; cost `?` → P&L `n/a`.
+- Per-holding P&L from `transactions.db.open_lots`; cost `?` → P&L `n/a`.
 - Per-lot P&L for Price popover: `(latest_price − lot_cost) × lot_qty`; skip `?` cost.
 - Per-ticker weighted-average cost over known-cost lots.
 - Per-ticker §8.8 freshness fields.
@@ -52,7 +52,7 @@ Surface in §10.3: cost-weighted avg hold ex-cash; oldest lot ticker/date/durati
 | `—` | Not applicable; metric structurally meaningless. | Cash / cash-equivalent P&L; any structurally undefined row+column. |
 | `n/a` | Missing; metric should exist but input/source missing. | Cost/date `?`; unresolved market data; missing FX pair. |
 
-Cell-level only. Never blank cells; never write "missing/unknown/data gap" inside cells. Sources & data gaps enumerates every `n/a` reason and `HOLDINGS.md` line or URL needed.
+Cell-level only. Never blank cells; never write "missing/unknown/data gap" inside cells. Sources & data gaps enumerates every `n/a` reason and `transactions.db` row id or URL needed.
 
 ---
 
@@ -62,6 +62,14 @@ Cell-level only. Never blank cells; never write "missing/unknown/data gap" insid
 
 1. Today's summary
 2. Portfolio dashboard (KPIs)
+2.5. **Profit panel (§10.1.5)** — period P&L for 1D / 7D / MTD / 1M / YTD / 1Y / ALLTIME, computed from `transactions.db` (the local SQLite event log) via `scripts/transactions.py profit-panel`.
+
+2.6. **Transaction analytics (§10.1.6)** — higher-level sections computed from
+the same event log via `scripts/transactions.py analytics` or automatically by
+`scripts/generate_report.py` when `prices.json` and `transactions.db` are
+available. The optional `context["transaction_analytics"]` payload overrides
+the automatic computation. It renders performance attribution, trade quality,
+and discipline check; computation failure is surfaced as a data gap.
 3. Holdings P&L and weights table (§10.2)
 4. Holding period & pacing (§10.3)
 5. Theme / sector exposure: agent-authored deterministic HTML in `context["theme_sector_html"]`; renderer placeholder if missing; not auto-classified by renderer.
@@ -71,6 +79,67 @@ Cell-level only. Never blank cells; never write "missing/unknown/data gap" insid
 9. Recommended adjustments
 10. Today's action list (translated buckets per §15.3)
 11. Sources and data gaps
+
+### 10.1.5 Profit panel (HARD)
+
+A discrete period-P&L block placed between the Portfolio Dashboard and the
+Holdings table. Sourced from `transactions.db` (the local SQLite event log;
+see `docs/transactions_agent_guidelines.md`) — the renderer reads
+`context["profit_panel"]` (output
+of `python scripts/transactions.py profit-panel`) and, optionally,
+`context["realized_unrealized"]` (output of `python scripts/transactions.py
+pnl`) for the lifetime KPI strip.
+
+Periods rendered (every period has a row, even when `n/a`):
+
+| Key       | Boundary                                                   |
+|-----------|------------------------------------------------------------|
+| `1D`      | Most recent prior trading day                              |
+| `7D`      | 7 calendar days back (closest preceding close per ticker)  |
+| `MTD`     | Last close of previous calendar month                      |
+| `1M`      | Same calendar day -1 month (clamped)                       |
+| `YTD`     | Last close of previous calendar year                       |
+| `1Y`      | Same calendar day -1 year                                  |
+| `ALLTIME` | Earliest transaction date                                  |
+
+Per-row metrics:
+
+```
+period_pnl   = ending_value − starting_value − net_external_flows
+return_pct   = period_pnl / max(starting_value + 0.5 × net_external_flows, ε)
+realized     = Σ realized events (SELL_LOT, DIVIDEND, FEE) in (boundary, today]
+unrealized_Δ = ending open-lot unrealized P&L − boundary open-lot unrealized P&L
+               where each side is mark price − lot cost, base-converted
+net_flows    = Σ DEPOSIT − Σ WITHDRAW in (boundary, today]
+```
+
+The decomposition `period_pnl ≈ realized + unrealized_Δ + cash / FX drift`
+is intentional. `realized` and `unrealized_Δ` are surfaced; the residual
+lives implicitly in `period_pnl` itself and surfaces in Sources & data gaps
+when material.
+
+`starting_value` requires daily closes for every held ticker at the boundary
+date plus FX as-of the boundary. The agent runs `scripts/fetch_history.py`
+to populate `prices.json["_history"]` and `prices.json["_fx_history"]`.
+`scripts/fetch_history.py` uses `market_data_cache.db` cache-first by default,
+then fetches missing or stale ranges from the free API chain and upserts
+successful rows. `transactions.db` remains the only canonical transaction
+store; `market_data_cache.db` is derived and disposable. When history is
+missing after cache + network fallback, the value falls back to the current latest price / FX
+with an explicit `using current` audit note rendered under Sources & data gaps
+(MVP `fx_approx` allowance). Missing data does **not** silently render as clean
+data; it is surfaced as an auditable data gap.
+
+For ALLTIME, `starting_value = 0`, `starting_unrealized = 0`, and
+`net_flows` includes every DEPOSIT − WITHDRAW from the beginning of the DB.
+
+`DIVIDEND` and `FEE` flow into `realized`, **not** `net_flows` — they are
+P&L impacts, not external-cash flows.
+
+Sign coloring uses the existing `pos-txt` / `neg-txt` CSS classes from the
+canonical sample (no new tokens introduced). When `context["profit_panel"]`
+has no rows, the legacy profit-panel section is omitted; the transaction
+analytics sections carry the primary performance view.
 
 HTML is sole deliverable; no companion Markdown/files.
 
@@ -151,7 +220,7 @@ Renderer only formats `context["news"]` / `context["events"]`; `scripts/fetch_pr
 
 Workflow:
 
-1. Cover universe = every `HOLDINGS.md` position except cash/pure cash-equivalents, de-duped, plus extra tickers surfaced in §10.6/§10.9.
+1. Cover universe = every `transactions.db.open_lots` position except cash/pure cash-equivalents, de-duped, plus extra tickers surfaced in §10.6/§10.9.
 2. Per ticker run ≥1 WebSearch: `"<ticker> <company name>" earnings OR guidance OR downgrade OR upgrade OR catalyst <YYYY-MM>` using current and previous report month. TW also query 繁中: `"<code> <公司名>" 法說 OR 營收 OR 財報 OR 重大訊息`. Fetch/read promising URLs; no SERP-only items.
 3. Collect 1-3 material 14-calendar-day items per ticker; older only if thesis-relevant/follow-up. Material = earnings/guidance/M&A/regulator/customer/product/analyst action/capital raise/lawsuit/supply-chain. Skip routine target nudges, recap-only, sponsored. Zero material → audit `news_search:<ticker>:no_material_within_14d` or extended-window reason.
 4. Per ticker identify 30-day dated catalysts from issuer IR, exchange filing/calendar, Yahoo, Nasdaq, MarketWatch, TWSE/TPEx. Verify dates on issuer/exchange/official source; unverifiable → `date:TBD` + tried source in data gaps.

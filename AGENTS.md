@@ -1,6 +1,6 @@
 # Investment Research Agent
 
-**DO NOT EDIT/DELETE SETTINGS.md, HOLDINGS.md UNLESS USER SPECIFICALLY ASK TO**
+**DO NOT EDIT/DELETE SETTINGS.md OR transactions.db UNLESS USER SPECIFICALLY ASK TO**
 
 Refer to `SETTINGS.md` for the user's language, full investment style, and strategy.
 
@@ -196,6 +196,8 @@ The investment-content layer of the report (§10.8 high-risk and high-opportunit
 
 ## Holdings updates via natural language
 
-**MAKE SURE YOU READ FULL CONTENT OF /docs/holdings_update_agent_guidelines.md BY PARTIAL READING**
+**MAKE SURE YOU READ FULL CONTENT OF /docs/transactions_agent_guidelines.md BY PARTIAL READING**
 
-When the user describes a trade, correction, or cash adjustment in natural language ("I bought 30 NVDA at $185 yesterday", "sold 10 TSLA at $400", "fix the GOOG lot from last September"), follow `/docs/holdings_update_agent_guidelines.md` end-to-end. Hard rule: never write to `HOLDINGS.md` without showing a parsed plan, a unified diff, and getting an explicit `yes` from the user in the same turn. Every write is preceded by a backup to `HOLDINGS.md.bak`.
+When the user describes a trade, correction, or cash adjustment in natural language ("I bought 30 NVDA at $185 yesterday", "sold 10 TSLA at $400", "fix the GOOG lot from last September"), follow `/docs/transactions_agent_guidelines.md` §3 (Natural-language workflow) end-to-end. Hard rule: never INSERT into `transactions.db` without showing a parsed plan, the canonical JSON blob(s), and getting an explicit `yes` from the user in the same turn. Every write is preceded by a backup to `transactions.db.bak`.
+
+**`transactions.db` is the only canonical store.** The local SQLite database holds both the append-only event log (every trade, deposit, withdrawal, dividend, fee, and FX conversion with its *operation mindset* — rationale, tags, lot consumption) and two materialized tables (`open_lots`, `cash_balances`) that drive the report renderer, price fetcher, profit panel (1D / 7D / MTD / 1M / YTD / 1Y / ALLTIME), and realized + unrealized P&L. The materialized tables auto-rebuild after every successful insert. The old markdown holdings file is retired and must not be used as a live source. After every write, run `python scripts/transactions.py verify` and report the result; on mismatch restore `transactions.db.bak` and tell the user. Ingestion paths: message-style → `db add --json`, broker file → `db import-csv` / `db import-json`. See `/docs/transactions_agent_guidelines.md` for the full workflow, schema, lot-matching contract, and the profit-panel computation.

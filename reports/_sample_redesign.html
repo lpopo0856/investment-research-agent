@@ -766,7 +766,7 @@ tbody td:has(.price-trigger:is(:hover,:focus-within)){
   <header class="masthead">
     <div class="eyebrow">Portfolio Research Note · 樣式範本（示範資料）</div>
     <h1>投資組合健康檢查 · 樣式範本</h1>
-    <p class="dek">本檔代號、數字、事件均為虛構，僅作為視覺與互動模式參考。實際報告以 <code>HOLDINGS.md</code> 為輸入，依 <code>portfolio_report_agent_guidelines.md</code> 產出。</p>
+    <p class="dek">本檔代號、數字、事件均為虛構，僅作為視覺與互動模式參考。實際報告以 <code>transactions.db</code> 為輸入，依 <code>portfolio_report_agent_guidelines.md</code> 產出。</p>
     <div class="masthead-meta">
       <span><b>產生時間</b>　2099-01-01 09:00 (Asia/Taipei)</span>
       <span><b>基準匯率</b>　USD/XXX 30.000</span>
@@ -899,7 +899,7 @@ tbody td:has(.price-trigger:is(:hover,:focus-within)){
     </div>
   </section>
 
-  <!-- ============ HOLDINGS TABLE ============ -->
+  <!-- ============ POSITIONS TABLE ============ -->
   <section class="section">
 <div class="section-head">
 <h2>持股損益與權重</h2>
@@ -1260,7 +1260,7 @@ tbody td:has(.price-trigger:is(:hover,:focus-within)){
       <b>節奏：</b>KAPA（短線桶）近 60 天加碼 2 次，平均成本較舊倉高 9.5%。在進一步加碼前需驗證投資論點。
     </div>
     <div class="bucket-note">
-      <b>成本缺口：</b>ALPH 已持有 3y 10m 但成本未填。請於 <code>HOLDINGS.md</code> 補上成本，才能解開最大部位的損益與每批分析。
+      <b>成本缺口：</b>ALPH 已持有 3y 10m 但成本未填。請於 <code>transactions.db</code> 補上對應交易成本，才能解開最大部位的損益與每批分析。
     </div>
   </section>
 
@@ -1632,8 +1632,8 @@ tbody td:has(.price-trigger:is(:hover,:focus-within)){
 
     <div class="eyebrow" style="margin-top:22px;margin-bottom:6px">資料缺口（每筆 <code>n/a</code> 對應原因與修補位置）</div>
     <ul class="gap-list">
-      <li><b>ALPH 成本基礎缺失：</b><code>HOLDINGS.md → Long Term</code> 內 <code>ALPH 1 @ ? on 2095-03-12</code>。請補上原始成本以解開損益、平均成本與每批分析。</li>
-      <li><b>COIN2 成本與日期皆缺失：</b><code>HOLDINGS.md → Long Term</code> 內 <code>COIN2 8.78 @ ? on ?</code>。建議查詢交易所匯出記錄補齊。</li>
+      <li><b>ALPH 成本基礎缺失：</b><code>transactions.db → open_lots</code> 內 ALPH 長線批次缺成本。請補上原始交易以解開損益、平均成本與每批分析。</li>
+      <li><b>COIN2 成本與日期皆缺失：</b><code>transactions.db → transactions</code> 內 COIN2 引導交易缺成本與日期。建議查詢交易所匯出記錄補齊。</li>
       <li><b>50 日均線取得失敗：</b>所有標的的 50 日均線於本次未能由公開來源取得；下一輪將優先嘗試 <code>yfinance Ticker.history(period="60d")</code> 後本地計算，作為來源優先。</li>
       <li><b>ZETA 財報正式日期：</b>新聞稿提及「次月公布」但無正式日；下一輪請以 IR 行事曆或 TWSE 公開資訊觀測站交叉驗證。</li>
       <li><b>DELT 分析師目標價：</b>未取得公開共識，已標記 <code>n/a</code>；可選取得來源：StockAnalysis、Yahoo Finance Estimates。</li>
