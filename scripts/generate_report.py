@@ -2462,13 +2462,19 @@ def render_news(context: Dict[str, Any]) -> str:
                 "neg": _ui("news.negative"),
                 "neu": _ui("news.neutral"),
             }.get(impact, _ui("news.neutral"))
-            url = _esc(n.get("url", "#"))
+            raw_url = n.get("url", "#")
+            safe_url = raw_url if (
+                isinstance(raw_url, str)
+                and (raw_url.startswith(("http://", "https://", "mailto:"))
+                     or raw_url == "#")
+            ) else "#"
+            url = _esc(safe_url)
             rows.append(f"""\
       <div class="item">
         <div class="meta"><span class="tk">{_esc(n.get('ticker', _ui("common.dash")))}</span>{_esc(n.get('date', ''))}</div>
         <div class="body">
           <div class="head">{_esc(n.get('headline', ''))}</div>
-          <div class="src">{_esc(_ui("news.source_prefix"))}<a href="{url}">{_esc(n.get('source', ''))}</a></div>
+          <div class="src">{_esc(_ui("news.source_prefix"))}<a href="{url}" target="_blank" rel="noopener noreferrer">{_esc(n.get('source', ''))}</a></div>
         </div>
         <span class="impact {impact}">{label}</span>
       </div>""")
@@ -2793,8 +2799,9 @@ def _enrich_adjustment_why(
             pm_bits.append(f"{_ui('pm.kill')}：{a['kill_trigger']}")
         if a.get("kill_action"):
             pm_bits.append(f"{_ui('pm.kill_action')}：{a['kill_action']}")
-        if pm_bits:
-            extras.append("；".join(pm_bits))
+        # Each pm_bit is its own <br>-separated line in the why cell so a long
+        # kill_action / failure_mode never produces a single overflowing string.
+        extras.extend(pm_bits)
 
     # Portfolio fit (§15.6)
     sized_pp = _resolved_sized_pp_delta(a, current_pct)
@@ -2936,7 +2943,8 @@ def _render_action_item(item: Any) -> str:
         meta.append(f"{_ui('pm.sized')} {float(sized):+.1f}{_ui('pm.pp_nav')}")
     if not meta:
         return _esc(main)
-    return f"{_esc(main)}<br><span class=\"pm-meta\">{_esc('；'.join(meta))}</span>"
+    meta_html = "<br>".join(_esc(m) for m in meta)
+    return f'{_esc(main)}<br><span class="pm-meta">{meta_html}</span>'
 
 
 def render_actions(context: Dict[str, Any]) -> str:
@@ -2984,7 +2992,7 @@ def render_sources(prices: Dict[str, Any], context: Dict[str, Any]) -> str:
         if pr.get("yfinance_retry_count"):
             notes.append(_ui("sources.retry", count=pr.get("yfinance_retry_count")))
         if pr.get("yfinance_failure_reason"):
-            notes.append(_esc(pr.get("yfinance_failure_reason"))[:60])
+            notes.append(str(pr.get("yfinance_failure_reason"))[:60])
         rows.append(f"""\
           <tr>
             <td>{_esc(ticker)}</td>
@@ -2992,7 +3000,7 @@ def render_sources(prices: Dict[str, Any], context: Dict[str, Any]) -> str:
             <td>{_esc(market_state_label)}</td>
             <td class="num">{_esc(pr.get('price_as_of') or _ui("common.na"))}</td>
             <td><span class="freshness {fresh_cls}">{_esc(fresh_label)}</span></td>
-            <td>{_esc('; '.join(notes)) or _esc(_ui("common.dash"))}</td>
+            <td>{('<br>'.join(_esc(n) for n in notes)) or _esc(_ui("common.dash"))}</td>
           </tr>""")
     fx_payload = prices.get("_fx") if isinstance(prices.get("_fx"), dict) else {}
     fx_details = fx_payload.get("details") if isinstance(fx_payload.get("details"), dict) else {}
@@ -3008,7 +3016,7 @@ def render_sources(prices: Dict[str, Any], context: Dict[str, Any]) -> str:
         if detail.get("latest_price") not in (None, ""):
             notes.append(f"rate={detail.get('latest_price')}")
         if detail.get("yfinance_failure_reason"):
-            notes.append(_esc(detail.get("yfinance_failure_reason"))[:60])
+            notes.append(str(detail.get("yfinance_failure_reason"))[:60])
         rows.append(f"""\
           <tr>
             <td>FX {_esc(pair)}</td>
@@ -3016,7 +3024,7 @@ def render_sources(prices: Dict[str, Any], context: Dict[str, Any]) -> str:
             <td>{_esc(market_state_label)}</td>
             <td class="num">{_esc(detail.get('price_as_of') or _ui("common.na"))}</td>
             <td><span class="freshness {fresh_cls}">{_esc(fresh_label)}</span></td>
-            <td>{_esc('; '.join(notes)) or _esc(_ui("common.dash"))}</td>
+            <td>{('<br>'.join(_esc(n) for n in notes)) or _esc(_ui("common.dash"))}</td>
           </tr>""")
     gaps = context.get("data_gaps") or []
     gap_items: List[str] = []
@@ -3583,14 +3591,35 @@ def main(argv: Optional[List[str]] = None) -> int:
     try:
         m = re.search(r"(\d{4}-\d{2}-\d{2}_\d{4})", args.output.name)
         report_id = m.group(1) if m else args.output.stem
+        # Demo-isolation guard: if the HTML lands under a `demo/` directory,
+        # archive into `demo/transactions.db` so synthetic runs do not pollute
+        # the production `report_archive` table. Mirrors the cache-isolation
+        # discipline in fetch_history.py.
+        archive_db = args.db if args.db else Path("transactions.db")
+        out_parts = {p.lower() for p in args.output.resolve().parts}
+        if "demo" in out_parts and Path(archive_db).resolve().name == "transactions.db" \
+                and Path(archive_db).resolve().parent.name != "demo":
+            demo_db = Path("demo/transactions.db")
+            if demo_db.exists():
+                print(
+                    f"WARNING: --output is under demo/ but --db resolves to root "
+                    f"{archive_db}; routing report_archive to {demo_db} so demo "
+                    f"runs do not pollute production. Pass --db demo/transactions.db "
+                    "explicitly to silence this warning.",
+                    file=sys.stderr,
+                )
+                archive_db = demo_db
         _archive_report(
             report_id=report_id,
             snapshot_path=args.snapshot,
             context_path=args.context,
             html_path=args.output,
-            db_path=args.db if args.db else Path("transactions.db"),
+            db_path=archive_db,
         )
     except Exception as exc:  # noqa: BLE001 — never let archival block delivery
+        # Surface to stderr in addition to the log so an agent running this in
+        # a terminal sees the failure even if logging is muted.
+        print(f"WARN: report_archive failed for {args.output}: {exc}", file=sys.stderr)
         logging.warning("report_archive: failed to persist %s: %s", args.output, exc)
     return 0
 

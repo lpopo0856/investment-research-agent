@@ -42,6 +42,11 @@ DEFAULT_DB_PATH = Path("transactions.db")
 REPORT_ID_RE = re.compile(r"(\d{4}-\d{2}-\d{2}_\d{4})")
 
 _SCHEMA_SQL = """
+CREATE TABLE IF NOT EXISTS schema_meta (
+  key   TEXT PRIMARY KEY,
+  value TEXT
+);
+
 CREATE TABLE IF NOT EXISTS report_archive (
   report_id              TEXT PRIMARY KEY,
   generated_at           TEXT NOT NULL,
