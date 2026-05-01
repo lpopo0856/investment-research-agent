@@ -2,7 +2,6 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <!-- GitHub Pages project sites live at /REPO/; relative "demo/..." breaks if the URL has no trailing slash. Resolve all relative URLs against the directory that contains this index. -->
   <script>
     (function () {
       function siteRootPath() {
@@ -291,31 +290,6 @@
       background: var(--paper, #f7f5ef);
     }
 
-    footer {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 0.75rem 1.5rem;
-      align-items: center;
-      justify-content: space-between;
-      font-size: 0.75rem;
-      color: var(--muted);
-      padding-top: 0.25rem;
-    }
-
-    footer a {
-      color: var(--accent);
-      text-decoration: none;
-    }
-
-    footer a:hover {
-      text-decoration: underline;
-    }
-
-    .hint {
-      max-width: 55ch;
-      line-height: 1.5;
-    }
-
     @media (max-width: 640px) {
       .lang-btn {
         min-width: calc(50% - 0.25rem);
@@ -343,9 +317,6 @@
           </svg>
           Open in new tab
         </a>
-        <a class="btn" href="./demo/README.md" title="Demo isolation and pipeline flags">
-          Demo README
-        </a>
       </div>
     </header>
 
@@ -367,26 +338,16 @@
         referrerpolicy="no-referrer"
       ></iframe>
     </section>
-
-    <footer>
-      <p class="hint">
-        Built for <strong style="color: var(--text); font-weight: 600;">GitHub Pages</strong> (project site <code style="color: var(--text);">/repo/</code> or <code style="color: var(--text);">/repo</code>): links resolve from this page’s directory. Locally, open via <code style="color: var(--text);">python3 -m http.server</code> from the repo root if the iframe is blocked on <code style="color: var(--text);">file://</code>.
-      </p>
-      <span>Regenerate reports under <a href="./demo/README.md"><code>demo/reports/</code></a> — add a row in this page’s <code>REPORT_LOCALES</code> when you add a new file.</span>
-    </footer>
   </div>
 
   <script>
-    /**
-     * Each entry maps to demo/reports/{file}.html
-     * Add a line here when you drop a new locale HTML next to the others.
-     */
+    /** Each entry maps to demo/reports/{file}.html */
     const REPORT_LOCALES = [
       { id: "zh-Hant", file: "zh-Hant", native: "繁體中文", en: "Traditional Chinese" },
       { id: "eng", file: "eng", native: "English", en: "en" },
     ];
 
-    // Repo-relative paths; the early base element in head fixes GitHub Pages /repo URLs.
+    // Paths are repo-relative; early <base> in head handles subpath hosting.
     const reportsDir = "demo/reports/";
     const frame = document.getElementById("report-frame");
     const pathFile = document.getElementById("path-file");

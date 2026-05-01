@@ -8,6 +8,10 @@
 
 **模型建议：** 请使用 **Claude Sonnet 4.6**，并将推理强度设为 **High**，或选用同等或更强的更新模型。较轻的模型容易跳过步骤或拉低分析深度。
 
+## Report Demo
+
+**[Report Demo](https://lpopo0856.github.io/investment-research-agent/)**
+
 ## 直接跟助手说就行
 
 不必先背命令、字段格式或目录结构。按你想做的事，复制下面任意一块发给助手即可。

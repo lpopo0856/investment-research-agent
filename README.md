@@ -8,6 +8,10 @@ A local workspace for an AI investment research assistant. Open this repo in **C
 
 **Model tier:** Use **Claude Sonnet 4.6** with **High** reasoning effort, or any newer model at least as capable. Lighter models may skip steps or shallow out the analysis.
 
+## Report Demo
+
+**[Report Demo](https://lpopo0856.github.io/investment-research-agent/)**
+
 ## Just ask the agent
 
 You don't need to learn any commands, schemas, or files. Pick whichever line below matches what you want and paste it.

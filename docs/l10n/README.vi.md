@@ -8,6 +8,10 @@ Repo này là không gian làm việc **trợ lý nghiên cứu đầu tư AI** 
 
 **Gợi ý model:** Dùng **Claude Sonnet 4.6** với mức suy luận **High**, hoặc model mới hơn có năng lực tương đương trở lên. Model nhẹ hơn dễ bỏ bước hoặc làm phần phân tích nông hơn.
 
+## Report Demo
+
+**[Report Demo](https://lpopo0856.github.io/investment-research-agent/)**
+
 ## Cứ nhờ trợ lý
 
 Bạn không cần học lệnh, schema hay cấu trúc file trước. Chọn đoạn nào đúng việc bạn muốn và dán vào.
