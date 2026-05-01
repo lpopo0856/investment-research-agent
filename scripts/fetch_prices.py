@@ -79,13 +79,16 @@ DEPENDENCIES
 
 Per spec §8.0, the **latest-price subagent owns the install step** — it must verify
 that `yfinance` and `requests` are importable (and install them if not) *before*
-invoking this script. The script does not self-install: it imports yfinance lazily
-inside the batch function so the parser, freshness gate, and JSON shape can still be
-unit-tested via `--skip-yfinance` even when the package is absent.
+invoking this script. yfinance is imported lazily so the parser, freshness gate,
+and JSON shape can still be unit-tested via `--skip-yfinance` even when the
+package is absent.
 
-If `import yfinance` fails at runtime, every ticker is recorded with
-`price_source = "n/a"` and `yfinance_failure_reason = "yfinance_not_installed"`,
-and the agent should re-read §8.0, complete the install, and re-run.
+If yfinance is not installed and the run is interactive (TTY), the script
+asks once whether to `pip install yfinance` and caches the answer for the
+rest of the run. Decline (or running non-interactively) skips yfinance
+silently — every ticker records `yfinance_failure_reason="yfinance_not_installed"`
+and the chain falls through to keyed APIs / web pages / no-token sources
+per §8.3.1. `--skip-yfinance` forces the skip path without prompting.
 """
 
 from __future__ import annotations
@@ -118,6 +121,98 @@ YF_HTTP_TIMEOUT_SEC: int = 12                      # per-request HTTP timeout
 # response tiers down to the next source in the fallback chain immediately.
 # Retrying yfinance during the limiter window prolongs the throttle and
 # defeats the chain's purpose.
+
+
+# --------------------------------------------------------------------------- #
+# yfinance availability — install-prompt with cached decision
+# --------------------------------------------------------------------------- #
+
+# Module-global decision cache:
+#   None  = not yet probed
+#   "use" = imported successfully (or installed on demand)
+#   "skip" = user declined / non-interactive shell / install failed
+# We never prompt twice in one run; non-interactive contexts (CI, agents
+# piping stdin) skip silently with a stderr note so automation never blocks.
+_YF_DECISION: Optional[str] = None
+
+
+def _force_skip_yfinance() -> None:
+    """Force the skip path without prompting (e.g., from `--skip-yfinance`)."""
+    global _YF_DECISION
+    _YF_DECISION = "skip"
+
+
+def _try_import_yfinance() -> Optional[Any]:
+    """Return the `yfinance` module if available, else None.
+
+    On the first miss in an interactive shell, asks whether to
+    `pip install yfinance`. The decision is cached for the rest of the run.
+    Non-interactive contexts skip silently with a stderr note.
+    """
+    global _YF_DECISION
+    # Honor an explicit skip (e.g., from --skip-yfinance) before any import
+    # attempt — otherwise we'd return the module on systems where yfinance
+    # happens to be installed and silently override the operator's choice.
+    if _YF_DECISION == "skip":
+        return None
+    try:
+        import yfinance as yf  # type: ignore[import-not-found]
+        if _YF_DECISION is None:
+            _YF_DECISION = "use"
+        return yf
+    except ImportError:
+        pass
+
+    if not (sys.stdin and sys.stdin.isatty() and sys.stderr.isatty()):
+        print(
+            "yfinance is not installed; running without it (non-interactive "
+            "shell). Install with `python -m pip install yfinance` and re-run "
+            "if you want it.",
+            file=sys.stderr,
+        )
+        _YF_DECISION = "skip"
+        return None
+
+    try:
+        print(
+            "yfinance is not installed. Install it now via `pip install "
+            "yfinance`? [y/N] ",
+            file=sys.stderr,
+            end="",
+            flush=True,
+        )
+        ans = sys.stdin.readline().strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        ans = ""
+
+    if ans in ("y", "yes"):
+        print("Installing yfinance via pip ...", file=sys.stderr)
+        try:
+            import subprocess
+            subprocess.run(
+                [sys.executable, "-m", "pip", "install", "yfinance"],
+                check=True,
+            )
+            import yfinance as yf  # type: ignore[import-not-found]
+            _YF_DECISION = "use"
+            return yf
+        except Exception as exc:  # noqa: BLE001
+            print(
+                f"yfinance install failed: {exc}. Continuing without it; "
+                "the fetch chain will fall through to the next source.",
+                file=sys.stderr,
+            )
+            _YF_DECISION = "skip"
+            return None
+
+    _YF_DECISION = "skip"
+    print(
+        "Continuing without yfinance; the fetch chain will fall through "
+        "to the next source.",
+        file=sys.stderr,
+    )
+    return None
+
 
 # §8.4 — auto-correction budget
 YF_MAX_CORRECTION_ATTEMPTS: int = 3
@@ -592,9 +687,8 @@ def _yfinance_batch(
       results_by_symbol[symbol] = (latest_price, prior_close, currency)
     Failure reason is non-None when the entire batch errored.
     """
-    try:
-        import yfinance as yf  # type: ignore[import-not-found]
-    except ImportError:
+    yf = _try_import_yfinance()
+    if yf is None:
         return {}, "yfinance_not_installed"
 
     pacer.wait()
@@ -642,9 +736,8 @@ def _yfinance_batch(
 
 def _yfinance_per_ticker_history(symbol: str, pacer: Pacer, session: Optional[Any]) -> Optional[Tuple[float, Optional[float], Optional[str], Optional[str]]]:
     """Fallback per-symbol history call. Returns (latest, prior_close, currency, exchange) or None."""
-    try:
-        import yfinance as yf  # type: ignore[import-not-found]
-    except ImportError:
+    yf = _try_import_yfinance()
+    if yf is None:
         return None
 
     pacer.wait()
@@ -724,9 +817,8 @@ def _auto_correct(
             break
         result.yfinance_retry_count += 1
         out: Optional[Tuple[float, Optional[float], Optional[str], Optional[str]]] = None
-        try:
-            import yfinance as yf  # type: ignore[import-not-found]
-        except ImportError:
+        yf = _try_import_yfinance()
+        if yf is None:
             break
         pacer.wait()
         try:
@@ -1356,29 +1448,28 @@ def _verify_currency_via_internet(
     # is a `FastInfo` object — not a dict — so we use attribute/key access via the
     # suppress block.
     if sym and session is not None:
-        try:
-            import yfinance as yf  # type: ignore[import-not-found]
-            pacer.wait()
-            tk = yf.Ticker(sym, session=session)
-            ccy: Optional[str] = None
-            with contextlib.suppress(Exception):
-                fi = tk.fast_info
-                if fi is not None:
-                    ccy = getattr(fi, "currency", None)
-                    if ccy is None:
-                        try:
-                            ccy = fi["currency"]                  # type: ignore[index]
-                        except (KeyError, TypeError):
-                            ccy = None
-            if ccy:
-                pr.currency = str(ccy).upper()
-                _CURRENCY_CACHE[sym] = pr.currency
-                pr.fallback_chain.append("currency_verify:yfinance_fast_info")
-                return
-        except ImportError:
-            pass
-        except Exception:                                         # noqa: BLE001
-            pass
+        yf = _try_import_yfinance()
+        if yf is not None:
+            try:
+                pacer.wait()
+                tk = yf.Ticker(sym, session=session)
+                ccy: Optional[str] = None
+                with contextlib.suppress(Exception):
+                    fi = tk.fast_info
+                    if fi is not None:
+                        ccy = getattr(fi, "currency", None)
+                        if ccy is None:
+                            try:
+                                ccy = fi["currency"]              # type: ignore[index]
+                            except (KeyError, TypeError):
+                                ccy = None
+                if ccy:
+                    pr.currency = str(ccy).upper()
+                    _CURRENCY_CACHE[sym] = pr.currency
+                    pr.fallback_chain.append("currency_verify:yfinance_fast_info")
+                    return
+            except Exception:                                     # noqa: BLE001
+                pass
 
     # 4. TW-specific exchange metadata (MIS endpoint always returns TWD)
     if pr.market in (MarketType.TW, MarketType.TWO):
@@ -1754,6 +1845,14 @@ def main(argv: Optional[List[str]] = None) -> int:
         level=logging.INFO if args.verbose else logging.WARNING,
         format="%(asctime)s [%(levelname)s] %(message)s",
     )
+
+    # Decide once, upfront — so the install prompt fires before any pipeline
+    # work, not deep inside the fetch loop. `--skip-yfinance` short-circuits
+    # the prompt entirely for test / no-network runs.
+    if args.skip_yfinance:
+        _force_skip_yfinance()
+    else:
+        _try_import_yfinance()
 
     lots, source = _load_lots_from_db(args)
     if not lots:

@@ -93,6 +93,7 @@ from fetch_prices import (  # type: ignore[import-not-found]
     KNOWN_CRYPTO_SYMBOLS,
     Lot,
     MarketType,
+    _try_import_yfinance,
     parse_base_currency,
     to_yfinance_symbol,
 )
@@ -352,9 +353,8 @@ def _yahoo_chart_history(symbol: str, lookback_days: int) -> List[Dict[str, Any]
 
 def _yf_history(symbol: str, lookback_days: int) -> List[Dict[str, Any]]:
     """Return [{date, close}] from yfinance, or [] on failure."""
-    try:
-        import yfinance as yf  # type: ignore[import-not-found]
-    except ImportError:
+    yf = _try_import_yfinance()
+    if yf is None:
         return []
     period = _yf_period_for(lookback_days)
     _yf_pace()
@@ -957,6 +957,11 @@ def main(argv: Optional[List[str]] = None) -> int:
             "to keep demo and production caches separate.",
             file=sys.stderr,
         )
+
+    # Probe yfinance once upfront so the install prompt fires before any
+    # fetch work. If the user declines (or stdin isn't a TTY), the chain
+    # falls through to other sources without prompting again per ticker.
+    _try_import_yfinance()
 
     if args.db and args.db.exists():
         # Use the fetch *universe* (current holdings + sold-off tickers) so

@@ -2,7 +2,9 @@
 
 ### 8.0 Subagent prerequisites — `yfinance` + `requests` (HARD)
 
-Before `scripts/fetch_prices.py`, ad-hoc yfinance code, or a REPL quote probe:
+`requests` is required (HTTP for the no-token tiers). `yfinance` is *preferred* but no longer required: when missing, both `scripts/fetch_prices.py` and `scripts/fetch_history.py` ask the operator once whether to `pip install yfinance` (interactive shells only); decline (or non-interactive) tiers down to keyed APIs / web pages / no-token sources per §8.3.1 without aborting. `--skip-yfinance` on `fetch_prices.py` forces the skip path.
+
+Before ad-hoc yfinance code or a REPL quote probe (NOT needed when running the scripts themselves — they self-probe):
 
 1. Probe: `python3 -c "import yfinance, requests"`.
 2. If missing, run first successful command and audit log it:
@@ -10,10 +12,10 @@ Before `scripts/fetch_prices.py`, ad-hoc yfinance code, or a REPL quote probe:
    - `pip install --quiet --upgrade yfinance requests`
    - `uv pip install --quiet yfinance requests`
 3. Re-probe. If still failing: report install error; mark unresolved tickers `price_source="n/a"` only after §8.5 tiers are walked; do not retry yfinance.
-4. Log `yfinance.__version__`.
-5. Add `subagent_prerequisites`: `installed=<bool>`, `version=<version|n/a>`, `install_command=<command|skipped>`.
+4. Log `yfinance.__version__` when present (`n/a` is acceptable when the operator declined install).
+5. Add `subagent_prerequisites`: `installed=<bool>`, `version=<version|n/a>`, `install_command=<command|skipped|declined>`.
 
-Do not: swallow `ImportError`; use non-quiet install; use `sudo` / `--user`; pin versions unless user asks; assume a previous install; stop at script `price_source="n/a"`. `n/a` or `agent_web_search:TODO_required` from the script is a handoff to the agent for tier 3 / tier 4; `fetch_prices.py` and `generate_report.py` must hard-fail on that marker unless the operator explicitly passes `--allow-incomplete-fallbacks` for debugging.
+Do not: swallow `ImportError` in ad-hoc code; use non-quiet install; use `sudo` / `--user`; pin versions unless user asks; assume a previous install; stop at script `price_source="n/a"`. `n/a` or `agent_web_search:TODO_required` from the script is a handoff to the agent for tier 3 / tier 4; `fetch_prices.py` and `generate_report.py` must hard-fail on that marker unless the operator explicitly passes `--allow-incomplete-fallbacks` for debugging. A run with yfinance declined is **not** a hard fail by itself — the chain still produces values from the other tiers.
 
 ### 8.1 Source hierarchy + workflow gate
 
