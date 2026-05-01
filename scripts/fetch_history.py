@@ -42,12 +42,20 @@ CLI
 ---
     python scripts/fetch_history.py \\
         --settings SETTINGS.md \\
-        --output prices_history.json [--lookback-days 400] [--merge-into prices.json]
+        [--output /tmp/prices_history.json] [--lookback-days 400] [--merge-into prices.json]
         [--cache market_data_cache.db] [--no-cache]
 
-By default the script uses `market_data_cache.db` as a cache-first store for
-daily closes and FX rates. `transactions.db` remains the canonical user-action
-ledger; the market-data cache is derived and disposable.
+With ``--merge-into`` and **no** ``--output``, the script does **not** write a
+separate history-only JSON (history is merged into the merge target only).
+Without ``--merge-into``, the default standalone output is under the system
+temp directory, not the repository root.
+
+By default the script uses `market_data_cache.db` (in the current working
+directory) as a cache-first store for daily closes and FX rates.
+`transactions.db` remains the canonical user-action ledger; the market-data
+cache is derived and disposable. **Demo runs** (`--db demo/transactions.db`)
+should pass ``--cache demo/market_data_cache.db`` so the repo-root cache is not
+shared with production; see ``demo/README.md``.
 """
 
 from __future__ import annotations
@@ -59,6 +67,7 @@ import logging
 import random
 import sqlite3
 import sys
+import tempfile
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -888,7 +897,15 @@ def main(argv: Optional[List[str]] = None) -> int:
     p.add_argument("--db", default=Path("transactions.db"), type=Path,
                    help="Path to transactions.db (canonical source; default: ./transactions.db)")
     p.add_argument("--settings", default="SETTINGS.md", type=Path)
-    p.add_argument("--output", default=Path("prices_history.json"), type=Path)
+    p.add_argument(
+        "--output",
+        default=None,
+        type=Path,
+        help="Standalone history JSON path. Default when no --merge-into: "
+             f"{tempfile.gettempdir()}/investments_prices_history.json . "
+             "When --merge-into is set, a standalone file is written only if "
+             "you pass --output explicitly (otherwise only the merge target is updated).",
+    )
     p.add_argument("--lookback-days", default=400, type=int,
                    help="How many trading days of history to fetch (default: 400)")
     p.add_argument("--cache", default=DEFAULT_CACHE_PATH, type=Path,
@@ -909,6 +926,20 @@ def main(argv: Optional[List[str]] = None) -> int:
     logging.basicConfig(level=logging.INFO if args.verbose else logging.WARNING,
                         format="%(asctime)s [%(levelname)s] %(message)s")
 
+    # Defense-in-depth: warn if a demo db is paired with the root cache.
+    if (
+        not args.no_cache
+        and args.db is not None
+        and Path(args.db).resolve().parent.name == "demo"
+        and Path(args.cache).resolve() == DEFAULT_CACHE_PATH.resolve()
+    ):
+        print(
+            f"WARNING: --db {args.db} appears to be a demo ledger but --cache is the "
+            f"root default ({DEFAULT_CACHE_PATH}). Pass --cache demo/market_data_cache.db "
+            "to keep demo and production caches separate.",
+            file=sys.stderr,
+        )
+
     if args.db and args.db.exists():
         # Use the fetch *universe* (current holdings + sold-off tickers) so
         # historical-boundary valuations in compute_profit_panel can resolve
@@ -927,11 +958,21 @@ def main(argv: Optional[List[str]] = None) -> int:
         cache_path=None if args.no_cache else args.cache,
         cache_max_stale_days=args.cache_max_stale_days,
     )
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(json.dumps(history, indent=2, ensure_ascii=False), encoding="utf-8")
-    print(f"Wrote {args.output}: "
-          f"{len(history.get('_history', {}))} tickers, "
-          f"{len(history.get('_fx_history', {}))} FX pairs.")
+    if args.merge_into is not None and args.output is None:
+        standalone_out: Optional[Path] = None
+    elif args.output is not None:
+        standalone_out = args.output
+    else:
+        standalone_out = Path(tempfile.gettempdir()) / "investments_prices_history.json"
+    if standalone_out is not None:
+        standalone_out.parent.mkdir(parents=True, exist_ok=True)
+        standalone_out.write_text(json.dumps(history, indent=2, ensure_ascii=False), encoding="utf-8")
+        print(f"Wrote {standalone_out}: "
+              f"{len(history.get('_history', {}))} tickers, "
+              f"{len(history.get('_fx_history', {}))} FX pairs.")
+    elif args.merge_into is not None:
+        print("Standalone history JSON skipped (--merge-into without --output); "
+              f"merged payload only: {args.merge_into}")
     if args.merge_into:
         merge_into_prices(args.merge_into, history)
         print(f"Merged history into {args.merge_into}.")
