@@ -114,7 +114,10 @@ YF_MIN_GAP_SEC: Tuple[float, float] = (1.5, 2.5)   # random.uniform(*range) betw
 YF_BATCH_SIZE: int = 25                            # max tickers per batch
 YF_BATCH_GAP_SEC: float = 3.0                      # gap between batches
 YF_HTTP_TIMEOUT_SEC: int = 12                      # per-request HTTP timeout
-YF_RATE_LIMIT_BACKOFF: Tuple[int, ...] = (30, 60, 120, 300)  # exponential, max 3 retries
+# Rate-limit policy (§8.3 / §8.3.1): no retry on yfinance. A 429 / empty
+# response tiers down to the next source in the fallback chain immediately.
+# Retrying yfinance during the limiter window prolongs the throttle and
+# defeats the chain's purpose.
 
 # §8.4 — auto-correction budget
 YF_MAX_CORRECTION_ATTEMPTS: int = 3
@@ -541,14 +544,6 @@ class Pacer:
     def reset_after_batch(self) -> None:
         time.sleep(YF_BATCH_GAP_SEC)
         self._last_call_ts = time.monotonic()
-
-
-def _backoff_sleep(retry_idx: int) -> None:
-    if retry_idx >= len(YF_RATE_LIMIT_BACKOFF):
-        retry_idx = len(YF_RATE_LIMIT_BACKOFF) - 1
-    delay = YF_RATE_LIMIT_BACKOFF[retry_idx]
-    logging.warning("Rate-limited / empty result; backoff %ss (retry %d).", delay, retry_idx + 1)
-    time.sleep(delay)
 
 
 # ----------------------------------------------------------------------------- #

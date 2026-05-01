@@ -49,27 +49,25 @@ Applies only when yfinance fires (listed secondary or FX primary).
 | Per-ticker only | Use `yf.Ticker(symbol, session=session).history(period="5d", interval="1d", auto_adjust=False, timeout=12)`. No `yf.download(...)` batches. |
 | Sequential | No internal threading / concurrent Yahoo calls. |
 | Gap | `time.sleep(random.uniform(1.5, 2.5))`; never below 1.0s between Yahoo HTTP calls. |
-| 429 / `YFRateLimitError` / empty history | Backoff 30s → 60s → 120s → 300s, max 3 retries; then mark `yfinance_rate_limited` and tier down. |
+| 429 / `YFRateLimitError` / empty history | **No retry on yfinance.** Mark `yfinance_rate_limited` immediately and tier down to the next source in §8.3.1. |
 | Session | Reuse one `requests.Session`; Yahoo v8 currency probe reuses it. |
 | Timeout | 10-15s. |
-| Audit | `yfinance_request_started_at`, `yfinance_request_latency_ms`, `yfinance_retry_count`. |
+| Audit | `yfinance_request_started_at`, `yfinance_request_latency_ms`, `yfinance_retry_count` (counts §8.4 auto-correction attempts only — rate-limit failures never increment it). |
 
-Rate-limit backoff has its own max-3 retry ceiling and never enters §8.4 symbol/format auto-correction. If limiter trips, surface offending request count + inter-call gap in Sources & data gaps and include a `建議更新 agent spec` pacing note.
+Rate-limit failures **do not** retry yfinance and never enter §8.4 symbol/format auto-correction; they tier down immediately. If the limiter trips, surface the offending request count + inter-call gap in Sources & data gaps and include a `建議更新 agent spec` pacing note so the next run widens the gap.
 
 ### 8.3.1 Rate-limit tier-down (HARD)
 
 ```
 yfinance 429 / YFRateLimitError / throttled empty history
-→ §8.3 backoff max 3
-→ if success: accept + audit retry_count
-→ if fail: failure_reason=rate_limited, skip §8.4
+→ failure_reason=rate_limited (no retry on yfinance), skip §8.4
 → tier 2 keyed APIs
 → tier 3 web quote pages
 → tier 4 no-token APIs
 → only then price_source="n/a"
 ```
 
-Rules: distinguish `rate_limited` from `symbol_not_found` / `empty_history` / `exception`; process per ticker; never treat batch failure as whole-book degradation; each walked tier appends `fallback_chain` (`tier3:yahoo_quote_page`, `tier4:stooq_json`, etc.) and updates `price_source`, `price_as_of`, `price_freshness`. Exhaustive `n/a` audit example: `yfinance:rate_limited(3 backoff) · keyed:no key · web:yahoo/google/nasdaq page-not-found · no-token:stooq empty,yahoo chart 401 · price_freshness:stale_after_exhaustive_search`.
+Rules: distinguish `rate_limited` from `symbol_not_found` / `empty_history` / `exception`; process per ticker; never treat batch failure as whole-book degradation; each walked tier appends `fallback_chain` (`tier3:yahoo_quote_page`, `tier4:stooq_json`, etc.) and updates `price_source`, `price_as_of`, `price_freshness`. Exhaustive `n/a` audit example: `yfinance:rate_limited · keyed:no key · web:yahoo/google/nasdaq page-not-found · no-token:stooq empty,yahoo chart 401 · price_freshness:stale_after_exhaustive_search`.
 
 ### 8.4 yfinance symbol/format recovery (3 attempts)
 
