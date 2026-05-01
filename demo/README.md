@@ -13,6 +13,7 @@ For demo work, keep **all durable demo-side artifacts under `demo/`**:
 | Concern | What to pass |
 |--------|----------------|
 | Transaction store | `--db demo/transactions.db` on `fetch_prices.py`, `fetch_history.py`, `transactions.py snapshot` (already required). |
+| Strategy / language / API keys | **`--settings demo/SETTINGS.md`** on `fetch_prices.py`, `fetch_history.py`, and `generate_report.py` so demo runs do **not** read the user's real strategy, base currency, or API keys from the root `SETTINGS.md`. |
 | History / gap-fill cache | **`--cache demo/market_data_cache.db`** on `fetch_history.py` and on **`fill_history_gap.py`** whenever you inject rows for that demo run. |
 | Pipeline JSON | Still only under `/tmp/$REPORT_RUN_DIR` per `docs/portfolio_report_agent_guidelines.md` — never `prices.json` at repo root. |
 | Delivered HTML (optional) | Write `generate_report.py --output demo/reports/YYYY-MM-DD_HHMM_demo_portfolio_report.html` so the file is not next to user reports under `reports/` (create `demo/reports/` if missing). |
@@ -26,6 +27,7 @@ Do **not** write `prices_history.json` or a merge-target `prices.json` in the re
 | `transactions_history.json` | Canonical synthetic transaction seed. Safe to commit. |
 | `bootstrap_demo_ledger.py` | Regenerates the JSON and materializes `demo/transactions.db`. |
 | `transactions.db` | Gitignored SQLite ledger built from the JSON. |
+| `SETTINGS.md` | Synthetic strategy / language / base-currency / empty-keys profile for the demo. Pass via `--settings demo/SETTINGS.md`. Safe to commit. |
 | `market_data_cache.db` | Optional gitignored cache created when you pass `--cache demo/market_data_cache.db` during demo history runs. |
 | `reports/` | Optional output directory for demo-only HTML (gitignored); create as needed. |
 
@@ -38,21 +40,23 @@ python3 demo/bootstrap_demo_ledger.py --apply
 
 ## Generate A Demo Report
 
-Follow the normal portfolio-report workflow exactly as if generating a real report, with **two** differences from a default root run:
+Follow the normal portfolio-report workflow exactly as if generating a real report, with **three** differences from a default root run:
 
 1. **Transaction DB:** anywhere the workflow reads the transaction database, use `demo/transactions.db` instead of the root `transactions.db`.
-2. **Market-data cache:** pass **`--cache demo/market_data_cache.db`** to `fetch_history.py` and to `fill_history_gap.py` so the root `market_data_cache.db` is not used.
+2. **Settings profile:** pass **`--settings demo/SETTINGS.md`** to `fetch_prices.py`, `fetch_history.py`, and `generate_report.py` so demo runs do not read the user's real strategy / language / API keys.
+3. **Market-data cache:** pass **`--cache demo/market_data_cache.db`** to `fetch_history.py` and to `fill_history_gap.py` so the root `market_data_cache.db` is not used.
 
 Example (after `export REPORT_RUN_DIR=...` under `/tmp`):
 
 ```bash
-python3 scripts/fetch_prices.py --db demo/transactions.db --output "$REPORT_RUN_DIR/prices.json"
-python3 scripts/fetch_history.py --db demo/transactions.db --cache demo/market_data_cache.db \
-  --merge-into "$REPORT_RUN_DIR/prices.json"
+python3 scripts/fetch_prices.py --db demo/transactions.db --settings demo/SETTINGS.md \
+  --output "$REPORT_RUN_DIR/prices.json"
+python3 scripts/fetch_history.py --db demo/transactions.db --settings demo/SETTINGS.md \
+  --cache demo/market_data_cache.db --merge-into "$REPORT_RUN_DIR/prices.json"
 python3 scripts/transactions.py snapshot --db demo/transactions.db --prices "$REPORT_RUN_DIR/prices.json" \
   --output "$REPORT_RUN_DIR/report_snapshot.json"
 # … author and validate report_context.json, then:
-python3 scripts/generate_report.py --settings SETTINGS.md \
+python3 scripts/generate_report.py --settings demo/SETTINGS.md \
   --snapshot "$REPORT_RUN_DIR/report_snapshot.json" \
   --context "$REPORT_RUN_DIR/report_context.json" \
   --output demo/reports/$(date +%Y-%m-%d_%H%M)_demo_portfolio_report.html

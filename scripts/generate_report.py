@@ -3450,6 +3450,24 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.self_check:
         return _run_self_check()
 
+    # Defense-in-depth: warn if --output lands under demo/ but --settings is
+    # the root default. Mirrors the cache + archive demo-isolation guards.
+    output_under_demo = (
+        args.output is not None
+        and "demo" in {p.lower() for p in args.output.resolve().parts}
+    )
+    if (
+        output_under_demo
+        and Path(args.settings).resolve().name == "SETTINGS.md"
+        and Path(args.settings).resolve().parent.name != "demo"
+    ):
+        print(
+            f"WARNING: --output {args.output} appears to be a demo report but --settings "
+            f"is the root default ({args.settings}). Pass --settings demo/SETTINGS.md to "
+            "keep the demo run from reading your real strategy / language / API keys.",
+            file=sys.stderr,
+        )
+
     # ----------------------------------------------------------------------- #
     # Resolve the snapshot. Canonical path: --snapshot (built upstream by
     # `python scripts/transactions.py snapshot`). Legacy path: --prices + --db

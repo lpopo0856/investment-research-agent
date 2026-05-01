@@ -944,17 +944,32 @@ def main(argv: Optional[List[str]] = None) -> int:
     logging.basicConfig(level=logging.INFO if args.verbose else logging.WARNING,
                         format="%(asctime)s [%(levelname)s] %(message)s")
 
-    # Defense-in-depth: warn if a demo db is paired with the root cache.
-    if (
-        not args.no_cache
-        and args.db is not None
+    # Defense-in-depth: warn if a demo db is paired with the root cache or
+    # with the root SETTINGS.md.
+    db_under_demo = (
+        args.db is not None
         and Path(args.db).resolve().parent.name == "demo"
+    )
+    if (
+        db_under_demo
+        and not args.no_cache
         and Path(args.cache).resolve() == DEFAULT_CACHE_PATH.resolve()
     ):
         print(
             f"WARNING: --db {args.db} appears to be a demo ledger but --cache is the "
             f"root default ({DEFAULT_CACHE_PATH}). Pass --cache demo/market_data_cache.db "
             "to keep demo and production caches separate.",
+            file=sys.stderr,
+        )
+    if (
+        db_under_demo
+        and Path(args.settings).resolve().name == "SETTINGS.md"
+        and Path(args.settings).resolve().parent.name != "demo"
+    ):
+        print(
+            f"WARNING: --db {args.db} appears to be a demo ledger but --settings is the "
+            f"root default ({args.settings}). Pass --settings demo/SETTINGS.md to keep "
+            "the demo run from reading your real strategy / base currency / API keys.",
             file=sys.stderr,
         )
 

@@ -1854,6 +1854,20 @@ def main(argv: Optional[List[str]] = None) -> int:
     else:
         _try_import_yfinance()
 
+    # Defense-in-depth: warn if a demo db is paired with the root SETTINGS.md.
+    if (
+        args.db is not None
+        and Path(args.db).resolve().parent.name == "demo"
+        and Path(args.settings).resolve().name == "SETTINGS.md"
+        and Path(args.settings).resolve().parent.name != "demo"
+    ):
+        print(
+            f"WARNING: --db {args.db} appears to be a demo ledger but --settings is the "
+            f"root default ({args.settings}). Pass --settings demo/SETTINGS.md to keep "
+            "the demo run from reading your real strategy / base currency / API keys.",
+            file=sys.stderr,
+        )
+
     lots, source = _load_lots_from_db(args)
     if not lots:
         print(f"ERROR: no lots resolved from --db {args.db}. "
