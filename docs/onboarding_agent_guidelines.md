@@ -243,7 +243,9 @@ After successful onboarding:
 2. Remind the user of the three normal workflows from `README.md`:
    research questions, portfolio report, transaction recording.
 3. Mention that `SETTINGS.md`, `transactions.db`, and generated reports
-   are gitignored and stay local.
+   are gitignored and stay local. Portfolio-report runs also keep pipeline
+   JSON under `/tmp` only (`docs/portfolio_report_agent_guidelines.md` —
+   Intermediate files); nothing ephemeral belongs in the repo root.
 4. Clean up any `/tmp/` files the agent wrote during the session.
 
 Do **not** offer to generate a portfolio report immediately — that

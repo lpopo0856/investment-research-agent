@@ -92,7 +92,9 @@ rows.
 - **Agent does:** runs the full Gather → Think → Review → Render
   pipeline (`fetch_prices` → `fetch_history` → `transactions.py
   snapshot` → editorial `report_context.json` → `validate_report_context.py`
-  → `generate_report.py`). Output: a standalone HTML under `reports/`.
+  → `generate_report.py`). Intermediate JSON lives under `/tmp` in a per-run
+  `$REPORT_RUN_DIR` and is deleted after success; output: a standalone HTML
+  under `reports/` only.
   In auto / unattended environments, the agent should obtain explicit
   consent before sending tickers to external market-data sources.
   Contract: `docs/portfolio_report_agent_guidelines.md` and every

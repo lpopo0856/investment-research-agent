@@ -9,6 +9,8 @@
 > inspect the snapshot to see the prepared numbers before drafting editorial
 > context; the renderer never re-derives them.
 
+**Path convention (HARD):** Unqualified filenames `report_snapshot.json`, `report_context.json`, and `prices.json` in this part file refer to those **basenames inside** `$REPORT_RUN_DIR` under `/tmp` for a normal report run (see `/docs/portfolio_report_agent_guidelines.md` — Intermediate files). Do not write these artifacts to the repository root.
+
 ### 9.0 Currency canonicalization — base-currency basis (HARD)
 
 Base currency = `SETTINGS.md` `Base currency:`; default `USD`. Every aggregate/chart axis is base-denominated; native trade currency is display-only. No manual FX in `SETTINGS.md` or `report_context.json`. `scripts/fetch_prices.py` populates `prices.json["_fx"]`.
@@ -86,7 +88,7 @@ Cell-level only. Never blank cells; never write "missing/unknown/data gap" insid
    2. Read `SETTINGS.md ## Investment Style And Strategy` to anchor improvements.
    3. Synthesize patterns (not enumerate datapoints) into the schema below.
    4. Merge into `report_context.json` under `"trading_psychology"`.
-   5. Run the full pre-render gate `python scripts/validate_report_context.py --snapshot report_snapshot.json --context report_context.json`; `generate_report.py` must not be invoked until this passes.
+   5. Run the full pre-render gate `python scripts/validate_report_context.py --snapshot "$REPORT_RUN_DIR/report_snapshot.json" --context "$REPORT_RUN_DIR/report_context.json"`; `generate_report.py` must not be invoked until this passes.
 
    Demo reports use the same authoring rule. `demo/` only supplies an alternate synthetic transaction DB; the agent generating the report still authors and validates this section during the normal report run.
 

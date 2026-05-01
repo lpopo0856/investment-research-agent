@@ -80,7 +80,7 @@ Every actionable §10.9 row requires renderer-formatted Portfolio fit:
 
 `Portfolio fit — sized Xpp of NAV; correlated with {top-3 overlaps}; theme overlap with {themes} → {pushes/does not push} {single-name|theme|high-vol bucket} cap toward warn ({current% vs warn%}); cash floor after action {Y%} vs floor {Z%}.`
 
-NAV basis = total NAV including cash. Renderer computes `Current` from `transactions.db.open_lots + cash_balances + prices.json`; pass numeric `sized_pp_delta` or `target_pct` (renderer derives delta). No prose NAV math, risk-asset denominator, or share-count trim without converting through current price/total NAV.
+NAV basis = total NAV including cash. Renderer computes `Current` from `transactions.db.open_lots + cash_balances +` the prices snapshot path supplied on the CLI (deliverable runs: `$REPORT_RUN_DIR/prices.json` under `/tmp`); pass numeric `sized_pp_delta` or `target_pct` (renderer derives delta). No prose NAV math, risk-asset denominator, or share-count trim without converting through current price/total NAV.
 
 Default rails, overridden by SETTINGS: single-name cap 10%, theme cap 30%, high-vol bucket cap 30%, cash floor 10%, single-day move alert ±8%. Rail breach requires one of: accompanying correlated trim with named lot, downsize, or §10.6 alert + reduced conviction.
 
@@ -180,6 +180,7 @@ Reply in SETTINGS language with absolute HTML path, most important alerts, data 
 ### A.2 File output
 
 - [ ] HTML only at `reports/YYYY-MM-DD_HHMM_portfolio_report.html`; local-clock timestamp; no companion Markdown/files.
+- [ ] Portfolio pipeline JSON (`prices.json`, `report_snapshot.json`, `report_context.json`, gap-fill merge target, optional `--ui-dict` overlay) written only under `$REPORT_RUN_DIR` in `/tmp`; `rm -rf "$REPORT_RUN_DIR"` after successful render + this appendix (no root-dir litter).
 
 ### A.3 Self-containment
 

@@ -21,8 +21,17 @@ Read this file first, then read **every** part file below in order on every port
 - Phase A gathers files, prices, metrics, full-universe news, dated catalysts, and follow-up research before any judgment is drafted.
 - Phase B drafts all alerts, watchlists, adjustments, action items, scoring, mandatory `trading_psychology`, Strategy readout, and summary while continuously anchoring to `SETTINGS.md` `## Investment Style And Strategy`.
 - Phase C switches hat to a senior PM reviewer, annotates issues, reviews `trading_psychology`, and sends serious defects back to the relevant earlier phase before render.
-- Phase D renders one self-contained HTML file only after `scripts/validate_report_context.py --snapshot report_snapshot.json --context report_context.json` passes, runs Appendix A self-checks, removes temp files, and replies with the absolute path plus required audit notes.
+- Phase D renders one self-contained HTML file only after `scripts/validate_report_context.py --snapshot "$REPORT_RUN_DIR/report_snapshot.json" --context "$REPORT_RUN_DIR/report_context.json"` passes, runs Appendix A self-checks, **deletes `$REPORT_RUN_DIR`** (`rm -rf`), and replies with the absolute HTML path plus required audit notes.
 - `SETTINGS.md` and `transactions.db` are read-only unless the user explicitly asks to edit them.
+
+### Intermediate files and cleanup (HARD)
+
+Aligns with `CLAUDE.md` **Temp files**: nothing ephemeral in the repo working tree.
+
+- **Pick one directory per report run:** e.g. `export REPORT_RUN_DIR="/tmp/investments_portfolio_report_$(date +%Y%m%d_%H%M)"` (wall-clock, one stamp per run), then `mkdir -p "$REPORT_RUN_DIR"`. Use `export` so subprocess-spawned CLI steps inherit the variable when the runner wraps each command separately.
+- **Write only under `$REPORT_RUN_DIR`:** `prices.json` (including merged `_history` / `_fx_history`), `report_snapshot.json`, `report_context.json`, any `fill_history_gap.py --merge-into` target, and optional `--ui-dict` JSON. **Do not** place these files at the repository root.
+- **After success:** HTML lives under `reports/` only; then `rm -rf "$REPORT_RUN_DIR"`. On repeated failed renders you may keep the directory for debugging, but never leave successful-run debris in the repo root.
+- **Basenames in part files:** unqualified names like `report_snapshot.json` / `prices.json` mean those files **inside** `$REPORT_RUN_DIR`, not cwd-relative to the repo.
 
 ### Pipeline order (HARD)
 
@@ -31,24 +40,24 @@ upstream snapshot — it does no aggregation, no FX conversion, no pacing /
 heat scoring / special checks, and does not auto-run analytics. Every numeric
 or structural field is materialized once, in this order:
 
-1. `python scripts/fetch_prices.py --output prices.json` — populates
+1. `python scripts/fetch_prices.py --output "$REPORT_RUN_DIR/prices.json"` — populates
    per-ticker latest-price metadata + `prices.json["_fx"]` (§8 + §9.0).
-2. `python scripts/fetch_history.py --merge-into prices.json` — adds
+2. `python scripts/fetch_history.py --merge-into "$REPORT_RUN_DIR/prices.json"` — adds
    `_history` + `_fx_history` for the profit-panel boundary lookups (§10.1.5).
-3. `python scripts/transactions.py snapshot --prices prices.json
-   --output report_snapshot.json` — runs the canonical math
+3. `python scripts/transactions.py snapshot --prices "$REPORT_RUN_DIR/prices.json"
+   --output "$REPORT_RUN_DIR/report_snapshot.json"` — runs the canonical math
    (`portfolio_snapshot.compute_snapshot`): aggregates, totals, FX-converted
    market value / P&L, book pacing, risk-heat scoring, §11 special checks,
    profit panel, realized + unrealized, transaction analytics. The snapshot
    is the single source of truth for every numeric field downstream.
-4. Agent authors `report_context.json` with editorial-only content (news,
+4. Agent authors `"$REPORT_RUN_DIR/report_context.json"` with editorial-only content (news,
    events, alerts, adjustments, action list, theme/sector HTML,
    `trading_psychology`, Strategy readout, reviewer notes). The agent **must
    not** re-derive any numeric field that the snapshot already exposes. The
    entire context must be linted with `python scripts/validate_report_context.py
-   --snapshot report_snapshot.json --context report_context.json` before render.
-5. `python scripts/generate_report.py --snapshot report_snapshot.json
-   --context report_context.json --settings SETTINGS.md` — projects the
+   --snapshot "$REPORT_RUN_DIR/report_snapshot.json" --context "$REPORT_RUN_DIR/report_context.json"` before render.
+5. `python scripts/generate_report.py --snapshot "$REPORT_RUN_DIR/report_snapshot.json"
+   --context "$REPORT_RUN_DIR/report_context.json" --settings SETTINGS.md` — projects the
    snapshot + context onto the §10 HTML.
 
 The renderer's legacy `--prices --db` path remains for backwards compatibility
@@ -59,13 +68,18 @@ but emits a deprecation warning; new agent runs must use `--snapshot`.
 To exercise the **same pipeline** without reading or writing the user’s root
 `transactions.db`, use **`demo/`**: seed `demo/transactions_history.json` →
 `demo/transactions.db` via `python demo/bootstrap_demo_ledger.py --apply`.
-There is no demo report pipeline script and no demo `report_context.json`.
-The demo ledger is an **alternate `--db` path** only: run the normal
-portfolio-report workflow, pass **`--db demo/transactions.db`** to
-`fetch_prices.py`, `fetch_history.py`, and `transactions.py snapshot`, then
-author the context from the snapshot, latest public data, `SETTINGS.md`, and
-these guidelines exactly as for a production report. Only the transaction
-ledger is synthetic; price retrieval, FX, history, snapshot math, analytics,
+There is no demo report pipeline script and no committed demo editorial JSON; context is authored per run under `$REPORT_RUN_DIR` like production.
+The demo ledger is an **alternate `--db` path** plus **alternate history cache**:
+run the normal portfolio-report workflow, pass **`--db demo/transactions.db`**
+to `fetch_prices.py`, `fetch_history.py`, and `transactions.py snapshot`, and
+pass **`--cache demo/market_data_cache.db`** to **`fetch_history.py` and
+`fill_history_gap.py`** so demo fetches do not read or write the root
+`market_data_cache.db`. Then author the context from the snapshot, latest
+public data, `SETTINGS.md`, and these guidelines exactly as for a production
+report. Prefer writing deliverable demo HTML under **`demo/reports/`** (same
+filename pattern) instead of `reports/` so user production reports stay
+separated. Only the transaction ledger is synthetic; price retrieval, FX,
+history, snapshot math, analytics,
 mandatory `trading_psychology`, theme/sector classification, news, catalysts,
 consensus, recommendations, reviewer pass, and HTML rendering must all be real
 run outputs.

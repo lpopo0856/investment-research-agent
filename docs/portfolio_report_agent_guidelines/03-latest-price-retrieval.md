@@ -136,11 +136,11 @@ Persist FX under `prices.json["_fx"]`: `base`, `required_currencies`, `rates` ke
 
 `fetch_history.py` runs the same tier-1/tier-2 chain (Stooq, yfinance, Binance, CoinGecko, Frankfurter, etc.) for the multi-day OHLC and FX series feeding §10.1.5 boundary lookups, and writes through `market_data_cache.db` so subsequent runs see hits. When a ticker or FX pair lands in `_history_meta.tickers_failed` / `fx_failed` AND has zero rows in the merged `_history` / `_fx_history` (i.e. no API result and no prior cache), the script exits 5 with a per-symbol gap list — same failure semantics as `fetch_prices.py` exit 5 in §8.0.
 
-The agent must close every gap before downstream pipeline steps run:
+The agent must close every gap before downstream pipeline steps run. Use the **same** absolute `prices.json` path as the rest of the run — for deliverable reports that path is `$REPORT_RUN_DIR/prices.json` under `/tmp` (never the repo root); see main `portfolio_report_agent_guidelines.md` — Intermediate files.
 
 1. Read the stderr block; for each failing ticker/FX pair, web-search the missing OHLC closes / FX rates for the lookback window using the source priorities in §8.5 (`Yahoo → Google → Stooq` for US, `TWSE/TPEx → Yahoo TW` for TW, `Binance/CoinGecko` for crypto, `Frankfurter / Open ER / central bank` for FX).
 2. Apply the §8.7 Freshness gate to every researched value (no stale closes when a fresher credible source is reachable).
-3. Inject the rows via `python scripts/fill_history_gap.py ticker --ticker <T> --market <MKT> --rows-json '[{"date":"YYYY-MM-DD","close":N}, ...]' --merge-into prices.json` (or `fx --pair BASE/QUOTE --rows-json '[{"date":"...","rate":N}, ...]'`). The helper writes through `market_data_cache.db` with `source=agent_web_search` and merges the rows into the active `prices.json`.
-4. Re-run `python scripts/fetch_history.py --merge-into prices.json`. Repeat until exit 0.
+3. Inject the rows via `python scripts/fill_history_gap.py ticker --ticker <T> --market <MKT> --rows-json '[{"date":"YYYY-MM-DD","close":N}, ...]' --merge-into "$REPORT_RUN_DIR/prices.json"` (or `fx --pair BASE/QUOTE --rows-json '[{"date":"...","rate":N}, ...]'`). The helper writes through `market_data_cache.db` with `source=agent_web_search` and merges the rows into the active prices file.
+4. Re-run `python scripts/fetch_history.py --merge-into "$REPORT_RUN_DIR/prices.json"`. Repeat until exit 0.
 
 `--allow-incomplete` on `fetch_history.py` is debug-only (parallel to `--allow-incomplete-fallbacks` on `fetch_prices.py`); using it for a deliverable run is a workflow violation because §10.1.5 boundary scoring silently degrades to 0 for tickers without history. Manual rows must carry real source provenance: when the agent edits `_history_meta.tickers_ok` after a fill, the underlying cache row already records `source=agent_web_search` and the retrieval timestamp — that is the audit trail consumers should rely on.

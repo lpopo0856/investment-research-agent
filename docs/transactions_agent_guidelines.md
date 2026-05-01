@@ -338,13 +338,16 @@ rows, so it is safe against double-bootstrapping.
 The periodic profit panel is computed from the DB. In the automated portfolio
 report pipeline this is produced by `python scripts/transactions.py snapshot`
 and embedded in `report_snapshot.json["profit_panel"]`; do not manually merge a
-separate `profit_panel.json` into `report_context.json`. The standalone command
-below is for inspection/debugging:
+separate `profit_panel.json` into `report_context.json`. For that pipeline,
+`--prices` points at `$REPORT_RUN_DIR/prices.json` under `/tmp` (see
+`/docs/portfolio_report_agent_guidelines.md` — Intermediate files), not the
+repo root. The standalone command below is for inspection/debugging; write
+`--output` under `/tmp` unless the user explicitly wants a file in the repo:
 
 ```
 python scripts/transactions.py profit-panel \
-    --db transactions.db --prices prices.json \
-    --settings SETTINGS.md --output profit_panel.json
+    --db transactions.db --prices /tmp/investments_debug_prices.json \
+    --settings SETTINGS.md --output /tmp/investments_debug_profit_panel.json
 ```
 
 Periods covered: `1D / 7D / MTD / 1M / YTD / 1Y / ALLTIME`.
@@ -361,8 +364,9 @@ net_flows    = Σ DEPOSIT − Σ WITHDRAW       # flows external to the portfoli
 ```
 
 `starting_value` requires daily closing prices and FX as of the boundary
-date. Run `scripts/fetch_history.py` once per report run to populate
-`prices.json` (or `prices_history.json`) with `_history` and `_fx_history`.
+date. Run `scripts/fetch_history.py` once per report run to populate the
+run’s prices file (typically `$REPORT_RUN_DIR/prices.json` under `/tmp`; or
+`prices_history.json` only if you deliberately use that path) with `_history` and `_fx_history`.
 The script uses `market_data_cache.db` by default: it reads cached daily
 closes / FX first, fetches missing or stale ranges from free APIs, and upserts
 successful rows back into the cache. Use `--no-cache` only for debugging a
@@ -383,8 +387,8 @@ standalone command is for inspection/debugging or intentional override review:
 
 ```
 python scripts/transactions.py analytics \
-    --db transactions.db --prices prices.json \
-    --settings SETTINGS.md --output transaction_analytics.json
+    --db transactions.db --prices /tmp/investments_debug_prices.json \
+    --settings SETTINGS.md --output /tmp/investments_debug_transaction_analytics.json
 ```
 
 The output is a JSON object with three top-level groups (`performance_attribution`,
@@ -414,7 +418,7 @@ unrealized P&L (open lots vs latest price) are produced by:
 
 ```
 python scripts/transactions.py pnl \
-    --db transactions.db --prices prices.json --settings SETTINGS.md
+    --db transactions.db --prices /tmp/investments_debug_prices.json --settings SETTINGS.md
 ```
 
 In the automated report pipeline this output is embedded by
