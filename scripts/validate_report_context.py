@@ -263,15 +263,36 @@ def _validate_research_coverage(
         event_count, event_audit = _coverage_entry_counts(entry, "events")
         has_news_item = any(_news_matches_ticker(item, ticker) for item in news)
         has_event_item = any(_event_matches_ticker(item, ticker) for item in events)
-        has_news_audit = _is_nonempty_str(news_audit) or _contains_ticker_audit(data_gaps, "news_search", ticker)
-        has_event_audit = _is_nonempty_str(event_audit) or _contains_ticker_audit(data_gaps, "event_search", ticker)
+        # Per §10.5/§10.6 of docs/portfolio_report_agent_guidelines, when a
+        # ticker has no news / events the audit trail must demonstrate the
+        # live search actually happened. We accept either:
+        #   1. a `data_gaps` entry tagged `news_search:<ticker>` /
+        #      `event_search:<ticker>`, or
+        #   2. an audit string on the coverage entry that starts with the
+        #      structured tag (e.g. `news_search:NVDA:no_material_within_14d`).
+        # A freeform string like `news_audit:"no news"` no longer counts —
+        # that bypassed the live-research workflow contract.
+        news_tag_prefix = f"news_search:{ticker}"
+        event_tag_prefix = f"event_search:{ticker}"
+        has_news_audit = (
+            _contains_ticker_audit(data_gaps, "news_search", ticker)
+            or news_audit.strip().lower().startswith(news_tag_prefix.lower())
+        )
+        has_event_audit = (
+            _contains_ticker_audit(data_gaps, "event_search", ticker)
+            or event_audit.strip().lower().startswith(event_tag_prefix.lower())
+        )
         if not has_news_item and not (news_count == 0 and has_news_audit):
             errors.append(
-                f"{ticker} needs a news item or explicit no-material-news audit in research_coverage"
+                f"{ticker} needs a news item, an audit string starting "
+                f"`news_search:{ticker}:...`, or a data_gaps entry tagged "
+                f"`news_search:{ticker}`"
             )
         if not has_event_item and not (event_count == 0 and has_event_audit):
             errors.append(
-                f"{ticker} needs a dated event or explicit no-dated-catalyst audit in research_coverage"
+                f"{ticker} needs a dated event, an audit string starting "
+                f"`event_search:{ticker}:...`, or a data_gaps entry tagged "
+                f"`event_search:{ticker}`"
             )
 
 
