@@ -4,6 +4,21 @@ This directory exists only to provide a synthetic transaction ledger for generat
 
 The demo does **not** provide a report pipeline script, report context template, fake news, fake catalysts, fake consensus, fake recommendations, or prefilled theme/sector output. An agent generating a demo report must run the normal portfolio-report workflow end to end and use `demo/transactions.db` only as the transaction database.
 
+## Isolation from the repo root (HARD)
+
+Running the pipeline from the repository root **without** extra flags still defaults `scripts/fetch_history.py` and `scripts/fill_history_gap.py` to **`./market_data_cache.db`** — the same SQLite cache as production. That **does** touch root-level gitignored state and mixes demo fetches with your real ledger’s cache.
+
+For demo work, keep **all durable demo-side artifacts under `demo/`**:
+
+| Concern | What to pass |
+|--------|----------------|
+| Transaction store | `--db demo/transactions.db` on `fetch_prices.py`, `fetch_history.py`, `transactions.py snapshot` (already required). |
+| History / gap-fill cache | **`--cache demo/market_data_cache.db`** on `fetch_history.py` and on **`fill_history_gap.py`** whenever you inject rows for that demo run. |
+| Pipeline JSON | Still only under `/tmp/$REPORT_RUN_DIR` per `docs/portfolio_report_agent_guidelines.md` — never `prices.json` at repo root. |
+| Delivered HTML (optional) | Write `generate_report.py --output demo/reports/YYYY-MM-DD_HHMM_demo_portfolio_report.html` so the file is not next to user reports under `reports/` (create `demo/reports/` if missing). |
+
+Do **not** write `prices_history.json` or a merge-target `prices.json` in the repo root for demo; use `$REPORT_RUN_DIR` only.
+
 ## Files
 
 | File | Role |
@@ -11,6 +26,8 @@ The demo does **not** provide a report pipeline script, report context template,
 | `transactions_history.json` | Canonical synthetic transaction seed. Safe to commit. |
 | `bootstrap_demo_ledger.py` | Regenerates the JSON and materializes `demo/transactions.db`. |
 | `transactions.db` | Gitignored SQLite ledger built from the JSON. |
+| `market_data_cache.db` | Optional gitignored cache created when you pass `--cache demo/market_data_cache.db` during demo history runs. |
+| `reports/` | Optional output directory for demo-only HTML (gitignored); create as needed. |
 
 ## Refresh The Demo DB
 
@@ -21,6 +38,24 @@ python3 demo/bootstrap_demo_ledger.py --apply
 
 ## Generate A Demo Report
 
-Follow the normal portfolio-report workflow exactly as if generating a real report. The only difference is transaction source selection: anywhere the workflow reads the transaction database, use `demo/transactions.db` instead of the root `transactions.db`.
+Follow the normal portfolio-report workflow exactly as if generating a real report, with **two** differences from a default root run:
 
-Only the transaction ledger is fake. Everything else is generated or researched during the normal report run, including the mandatory `trading_psychology` block.
+1. **Transaction DB:** anywhere the workflow reads the transaction database, use `demo/transactions.db` instead of the root `transactions.db`.
+2. **Market-data cache:** pass **`--cache demo/market_data_cache.db`** to `fetch_history.py` and to `fill_history_gap.py` so the root `market_data_cache.db` is not used.
+
+Example (after `export REPORT_RUN_DIR=...` under `/tmp`):
+
+```bash
+python3 scripts/fetch_prices.py --db demo/transactions.db --output "$REPORT_RUN_DIR/prices.json"
+python3 scripts/fetch_history.py --db demo/transactions.db --cache demo/market_data_cache.db \
+  --merge-into "$REPORT_RUN_DIR/prices.json"
+python3 scripts/transactions.py snapshot --db demo/transactions.db --prices "$REPORT_RUN_DIR/prices.json" \
+  --output "$REPORT_RUN_DIR/report_snapshot.json"
+# … author and validate report_context.json, then:
+python3 scripts/generate_report.py --settings SETTINGS.md \
+  --snapshot "$REPORT_RUN_DIR/report_snapshot.json" \
+  --context "$REPORT_RUN_DIR/report_context.json" \
+  --output demo/reports/$(date +%Y-%m-%d_%H%M)_demo_portfolio_report.html
+```
+
+Only the transaction ledger is synthetic. Everything else is generated or researched during the normal report run, including the mandatory `trading_psychology` block. Intermediate pipeline files (`prices.json`, snapshot, context, etc.) belong under `/tmp` in `$REPORT_RUN_DIR` and are removed after the HTML is written and checks pass — same as production (`/docs/portfolio_report_agent_guidelines.md`). Prefer **`demo/reports/`** for the final HTML so user-facing `reports/` stays for production runs.

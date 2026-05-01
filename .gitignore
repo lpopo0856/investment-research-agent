@@ -17,6 +17,11 @@ market_data_cache.db-shm
 .claude/
 /scripts/__pycache__/
 /demo/__pycache__/
+demo/market_data_cache.db
+demo/market_data_cache.db-journal
+demo/market_data_cache.db-wal
+demo/market_data_cache.db-shm
+demo/reports/
 prices.json
 prices_history.json
 report_snapshot.json

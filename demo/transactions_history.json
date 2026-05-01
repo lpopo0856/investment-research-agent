@@ -1,207 +1,386 @@
 [
   {
-    "date": "2024-01-08",
+    "date": "2024-01-04",
     "type": "DEPOSIT",
-    "amount": 820000,
+    "amount": 248760.55,
     "currency": "USD",
     "cash_account": "USD",
-    "market": "US"
+    "market": "US",
+    "rationale": "海外券商首次匯入（留學結餘＋部分定存解約）",
+    "tags": [
+      "資金",
+      "onboarding"
+    ]
+  },
+  {
+    "date": "2024-01-05",
+    "type": "DEPOSIT",
+    "amount": 980000,
+    "currency": "TWD",
+    "cash_account": "TWD",
+    "market": "TW",
+    "rationale": "台股複委託子帳戶—首期配置資金",
+    "tags": [
+      "資金",
+      "TWD"
+    ]
+  },
+  {
+    "date": "2024-01-08",
+    "type": "DEPOSIT",
+    "amount": 312418.0,
+    "currency": "USD",
+    "cash_account": "USD",
+    "market": "US",
+    "rationale": "年終獎金入帳—拆兩筆降低單日匯率風險",
+    "tags": [
+      "資金",
+      "salary"
+    ]
   },
   {
     "date": "2024-01-09",
     "type": "DEPOSIT",
-    "amount": 3200000,
+    "amount": 1128500.0,
     "currency": "TWD",
     "cash_account": "TWD",
-    "market": "TW"
+    "market": "TW",
+    "rationale": "定存到期轉入（含利息）",
+    "tags": [
+      "資金",
+      "TWD"
+    ]
+  },
+  {
+    "date": "2024-01-11",
+    "type": "DEPOSIT",
+    "amount": 273921.12,
+    "currency": "USD",
+    "cash_account": "USD",
+    "market": "US",
+    "rationale": "配偶帳戶合併整理後轉入",
+    "tags": [
+      "資金"
+    ]
   },
   {
     "date": "2024-01-12",
+    "type": "DEPOSIT",
+    "amount": 1095200.0,
+    "currency": "TWD",
+    "cash_account": "TWD",
+    "market": "TW",
+    "rationale": "年終獎金新台幣部分",
+    "tags": [
+      "資金",
+      "TWD",
+      "salary"
+    ]
+  },
+  {
+    "date": "2024-01-16",
     "type": "BUY",
     "ticker": "QQQ",
     "qty": 120,
-    "price": 428.0,
+    "price": 427.63,
     "bucket": "Long Term",
     "market": "US",
     "currency": "USD",
-    "cash_account": "USD"
+    "cash_account": "USD",
+    "fees": 0.35,
+    "rationale": "先用大盤 ETF 建立核心，避免一開始選股過度集中",
+    "tags": [
+      "core",
+      "ETF"
+    ]
   },
   {
-    "date": "2024-01-18",
+    "date": "2024-01-19",
     "type": "BUY",
     "ticker": "MSFT",
     "qty": 80,
-    "price": 378.0,
+    "price": 377.42,
     "bucket": "Long Term",
     "market": "US",
     "currency": "USD",
-    "cash_account": "USD"
+    "cash_account": "USD",
+    "fees": 0.35,
+    "rationale": "雲＋企業軟體現金流可預測，當核心科技倉",
+    "tags": [
+      "core",
+      "quality"
+    ]
   },
   {
-    "date": "2024-01-25",
+    "date": "2024-01-26",
     "type": "BUY",
     "ticker": "NVDA",
     "qty": 140,
-    "price": 56.5,
+    "price": 56.12,
     "bucket": "Mid Term",
     "market": "US",
     "currency": "USD",
-    "cash_account": "USD"
+    "cash_account": "USD",
+    "fees": 0.35,
+    "rationale": "AI 資本循環受惠，部位放在中期桶—接受波動",
+    "tags": [
+      "AI",
+      "semi"
+    ]
   },
   {
-    "date": "2024-02-01",
+    "date": "2024-02-02",
     "type": "BUY",
     "ticker": "AMD",
     "qty": 160,
-    "price": 148.0,
+    "price": 147.88,
     "bucket": "Mid Term",
     "market": "US",
     "currency": "USD",
-    "cash_account": "USD"
+    "cash_account": "USD",
+    "fees": 0.35,
+    "rationale": "資料中心 CPU／GPU 交替敘事，與 NVDA 同主題但較高 beta",
+    "tags": [
+      "semi",
+      "satellite"
+    ]
   },
   {
     "date": "2024-02-06",
     "type": "DIVIDEND",
     "ticker": "MSFT",
-    "amount": 140.0,
+    "amount": 136.4,
     "currency": "USD",
     "cash_account": "USD",
-    "market": "US"
+    "market": "US",
+    "rationale": "現金股利入帳",
+    "tags": [
+      "dividend"
+    ]
   },
   {
     "date": "2024-02-14",
     "type": "BUY",
     "ticker": "2330.TW",
     "qty": 500,
-    "price": 718.0,
+    "price": 718.5,
     "bucket": "Long Term",
     "market": "TW",
     "currency": "TWD",
-    "cash_account": "TWD"
+    "cash_account": "TWD",
+    "rationale": "台積長期產能／製程領先，用台幣子帳直接買進",
+    "tags": [
+      "core",
+      "TW"
+    ]
   },
   {
-    "date": "2024-02-22",
+    "date": "2024-02-21",
     "type": "BUY",
     "ticker": "GOOGL",
     "qty": 70,
-    "price": 141.0,
+    "price": 140.85,
     "bucket": "Mid Term",
     "market": "US",
     "currency": "USD",
-    "cash_account": "USD"
+    "cash_account": "USD",
+    "fees": 0.35,
+    "rationale": "搜尋＋雲＋資本配置紀律，估值相對同業中庸",
+    "tags": [
+      "mega-cap"
+    ]
   },
   {
     "date": "2024-03-05",
     "type": "SELL",
     "ticker": "NVDA",
     "qty": 45,
-    "price": 88.5,
+    "price": 88.2,
     "market": "US",
     "currency": "USD",
-    "cash_account": "USD"
-  },
-  {
-    "date": "2024-03-06",
-    "type": "FEE",
-    "amount": 6.25,
-    "currency": "USD",
     "cash_account": "USD",
-    "market": "US"
+    "fees": 0.35,
+    "rationale": "第一波獲利了結—降槓桿式集中，保留多數部位續抱",
+    "tags": [
+      "trim",
+      "discipline"
+    ]
   },
   {
     "date": "2024-03-18",
     "type": "BUY",
     "ticker": "BTC",
     "qty": 1.2,
-    "price": 67200.0,
+    "price": 67240.0,
     "bucket": "Mid Term",
     "market": "crypto",
     "currency": "USD",
-    "cash_account": "USD"
+    "cash_account": "USD",
+    "fees": 2.99,
+    "rationale": "小部位非相關資產，上限嚴格，不當主倉位",
+    "tags": [
+      "crypto",
+      "satellite"
+    ]
   },
   {
     "date": "2024-04-02",
     "type": "BUY",
     "ticker": "QQQ",
     "qty": 50,
-    "price": 436.0,
+    "price": 435.9,
     "bucket": "Long Term",
     "market": "US",
     "currency": "USD",
-    "cash_account": "USD"
+    "cash_account": "USD",
+    "fees": 0.35,
+    "rationale": "拉回時加碼核心 beta",
+    "tags": [
+      "core",
+      "DCA"
+    ]
   },
   {
     "date": "2024-04-16",
     "type": "SELL",
     "ticker": "QQQ",
     "qty": 30,
-    "price": 448.0,
+    "price": 447.75,
     "market": "US",
     "currency": "USD",
-    "cash_account": "USD"
+    "cash_account": "USD",
+    "fees": 0.35,
+    "rationale": "稅前獲利了結一小段，調整現金比例",
+    "tags": [
+      "rebalance"
+    ]
   },
   {
     "date": "2024-04-22",
     "type": "DIVIDEND",
     "ticker": "QQQ",
-    "amount": 210.0,
+    "amount": 208.33,
     "currency": "USD",
     "cash_account": "USD",
-    "market": "US"
+    "market": "US",
+    "rationale": "ETF 配息",
+    "tags": [
+      "dividend",
+      "ETF"
+    ]
   },
   {
     "date": "2024-05-03",
     "type": "BUY",
     "ticker": "MSFT",
     "qty": 50,
-    "price": 408.0,
+    "price": 407.65,
     "bucket": "Long Term",
     "market": "US",
     "currency": "USD",
-    "cash_account": "USD"
+    "cash_account": "USD",
+    "fees": 0.35,
+    "rationale": "財報後拉回加碼長期桶",
+    "tags": [
+      "core",
+      "DCA"
+    ]
   },
   {
     "date": "2024-05-20",
     "type": "BUY",
     "ticker": "NVDA",
     "qty": 60,
-    "price": 95.2,
+    "price": 95.05,
     "bucket": "Mid Term",
     "market": "US",
     "currency": "USD",
-    "cash_account": "USD"
+    "cash_account": "USD",
+    "fees": 0.35,
+    "rationale": "短線修正後補回衛星部位",
+    "tags": [
+      "AI",
+      "DCA"
+    ]
   },
   {
     "date": "2024-06-07",
     "type": "SELL",
     "ticker": "AMD",
     "qty": 70,
-    "price": 152.0,
+    "price": 151.6,
     "market": "US",
     "currency": "USD",
-    "cash_account": "USD"
+    "cash_account": "USD",
+    "fees": 0.35,
+    "rationale": "題材過熱、先降半導體衛星曝險",
+    "tags": [
+      "trim",
+      "semi"
+    ]
+  },
+  {
+    "date": "2024-06-14",
+    "type": "FX_CONVERT",
+    "from_amount": 8420.0,
+    "from_currency": "USD",
+    "from_cash_account": "USD",
+    "to_amount": 264788.0,
+    "to_currency": "TWD",
+    "to_cash_account": "TWD",
+    "rate": 31.4477,
+    "rationale": "台股加碼前換匯—比單次大額匯出略分散",
+    "tags": [
+      "FX",
+      "TWD"
+    ]
   },
   {
     "date": "2024-06-18",
     "type": "BUY",
     "ticker": "2330.TW",
     "qty": 350,
-    "price": 868.0,
+    "price": 867.5,
     "bucket": "Long Term",
     "market": "TW",
     "currency": "TWD",
-    "cash_account": "TWD"
+    "cash_account": "TWD",
+    "rationale": "除息前後波動承接，仍屬長期製程紅利",
+    "tags": [
+      "TW",
+      "DCA"
+    ]
   },
   {
     "date": "2024-07-01",
     "type": "BUY",
     "ticker": "GOOGL",
     "qty": 40,
-    "price": 168.0,
+    "price": 167.55,
     "bucket": "Mid Term",
     "market": "US",
     "currency": "USD",
-    "cash_account": "USD"
+    "cash_account": "USD",
+    "fees": 0.35,
+    "rationale": "Split 後流動性佳，分批建立中期倉",
+    "tags": [
+      "mega-cap",
+      "DCA"
+    ]
+  },
+  {
+    "date": "2024-07-08",
+    "type": "DIVIDEND",
+    "ticker": "2330.TW",
+    "amount": 182500.0,
+    "currency": "TWD",
+    "cash_account": "TWD",
+    "market": "TW",
+    "rationale": "2023 下半年現金股利發放（示範金額）",
+    "tags": [
+      "dividend",
+      "TW"
+    ]
   },
   {
     "date": "2024-07-15",
@@ -209,7 +388,12 @@
     "amount": 55000,
     "currency": "USD",
     "cash_account": "USD",
-    "market": "US"
+    "market": "US",
+    "rationale": "大型醫療自費＋家庭現金池補強",
+    "tags": [
+      "life",
+      "withdraw"
+    ]
   },
   {
     "date": "2024-07-22",
@@ -217,213 +401,327 @@
     "amount": 180000,
     "currency": "USD",
     "cash_account": "USD",
-    "market": "US"
+    "market": "US",
+    "rationale": "年中獎金與專案分紅",
+    "tags": [
+      "資金",
+      "salary"
+    ]
   },
   {
     "date": "2024-08-01",
     "type": "BUY",
     "ticker": "SMR",
     "qty": 600,
-    "price": 7.8,
+    "price": 7.82,
     "bucket": "Short Term",
     "market": "US",
     "currency": "USD",
-    "cash_account": "USD"
+    "cash_account": "USD",
+    "fees": 0.35,
+    "rationale": "小型模組化反應爐題材—嚴格放在短線桶，停損預先想好",
+    "tags": [
+      "speculation",
+      "nuclear"
+    ]
   },
   {
     "date": "2024-08-20",
     "type": "BUY",
     "ticker": "BTC",
     "qty": 0.9,
-    "price": 69800.0,
+    "price": 69750.0,
     "bucket": "Mid Term",
     "market": "crypto",
     "currency": "USD",
-    "cash_account": "USD"
+    "cash_account": "USD",
+    "fees": 2.49,
+    "rationale": "波動下降後小額加碼（仍遠低於股票核心）",
+    "tags": [
+      "crypto"
+    ]
   },
   {
     "date": "2024-09-03",
     "type": "SELL",
     "ticker": "GOOGL",
     "qty": 35,
-    "price": 162.0,
+    "price": 161.9,
     "market": "US",
     "currency": "USD",
-    "cash_account": "USD"
+    "cash_account": "USD",
+    "fees": 0.35,
+    "rationale": "調整 mega-cap 集中度，轉現金觀望其他標的",
+    "tags": [
+      "trim"
+    ]
   },
   {
     "date": "2024-09-16",
     "type": "BUY",
     "ticker": "AMD",
     "qty": 100,
-    "price": 158.0,
+    "price": 157.4,
     "bucket": "Mid Term",
     "market": "US",
     "currency": "USD",
-    "cash_account": "USD"
+    "cash_account": "USD",
+    "fees": 0.35,
+    "rationale": "拉回後重新進場，部位小於先前高峰",
+    "tags": [
+      "semi",
+      "swing"
+    ]
   },
   {
     "date": "2024-09-30",
     "type": "DIVIDEND",
     "ticker": "MSFT",
-    "amount": 95.0,
+    "amount": 93.15,
     "currency": "USD",
     "cash_account": "USD",
-    "market": "US"
+    "market": "US",
+    "rationale": "季度股利",
+    "tags": [
+      "dividend"
+    ]
   },
   {
     "date": "2024-10-10",
     "type": "BUY",
     "ticker": "NVDA",
     "qty": 40,
-    "price": 132.0,
+    "price": 131.85,
     "bucket": "Mid Term",
     "market": "US",
     "currency": "USD",
-    "cash_account": "USD"
+    "cash_account": "USD",
+    "fees": 0.35,
+    "rationale": "Blackwell 敘事前的部位微調",
+    "tags": [
+      "AI"
+    ]
   },
   {
     "date": "2024-10-28",
     "type": "SELL",
     "ticker": "SMR",
     "qty": 250,
-    "price": 9.4,
+    "price": 9.38,
     "market": "US",
     "currency": "USD",
-    "cash_account": "USD"
+    "cash_account": "USD",
+    "fees": 0.35,
+    "rationale": "題材股第一波出場—遵守短線桶紀律",
+    "tags": [
+      "trim",
+      "speculation"
+    ]
   },
   {
     "date": "2024-11-05",
     "type": "BUY",
     "ticker": "QQQ",
     "qty": 35,
-    "price": 488.0,
+    "price": 487.9,
     "bucket": "Long Term",
     "market": "US",
     "currency": "USD",
-    "cash_account": "USD"
-  },
-  {
-    "date": "2024-11-12",
-    "type": "FEE",
-    "amount": 4.99,
-    "currency": "USD",
     "cash_account": "USD",
-    "market": "US"
+    "fees": 0.35,
+    "rationale": "大選後波動加碼核心 beta",
+    "tags": [
+      "core",
+      "event"
+    ]
   },
   {
     "date": "2024-12-02",
     "type": "BUY",
     "ticker": "MSFT",
     "qty": 25,
-    "price": 418.0,
+    "price": 417.3,
     "bucket": "Long Term",
     "market": "US",
     "currency": "USD",
-    "cash_account": "USD"
+    "cash_account": "USD",
+    "fees": 0.35,
+    "rationale": "年底再平衡—略增現金流標的",
+    "tags": [
+      "core",
+      "year-end"
+    ]
   },
   {
     "date": "2024-12-15",
     "type": "DIVIDEND",
     "ticker": "AMD",
-    "amount": 18.0,
+    "amount": 17.5,
     "currency": "USD",
     "cash_account": "USD",
-    "market": "US"
+    "market": "US",
+    "rationale": "持股配息（稅後示範）",
+    "tags": [
+      "dividend"
+    ]
   },
   {
     "date": "2025-01-08",
     "type": "BUY",
     "ticker": "GOOGL",
     "qty": 55,
-    "price": 188.0,
+    "price": 187.65,
     "bucket": "Mid Term",
     "market": "US",
     "currency": "USD",
-    "cash_account": "USD"
+    "cash_account": "USD",
+    "fees": 0.35,
+    "rationale": "年初資金回流 mega-cap",
+    "tags": [
+      "mega-cap"
+    ]
   },
   {
     "date": "2025-01-20",
     "type": "SELL",
     "ticker": "MSFT",
     "qty": 40,
-    "price": 434.0,
+    "price": 433.8,
     "market": "US",
     "currency": "USD",
-    "cash_account": "USD"
+    "cash_account": "USD",
+    "fees": 0.35,
+    "rationale": "獲利調節—MSFT 佔比過高，先降一段",
+    "tags": [
+      "trim",
+      "risk"
+    ]
   },
   {
     "date": "2025-02-03",
     "type": "BUY",
     "ticker": "SMR",
     "qty": 450,
-    "price": 14.2,
+    "price": 14.18,
     "bucket": "Short Term",
     "market": "US",
     "currency": "USD",
-    "cash_account": "USD"
+    "cash_account": "USD",
+    "fees": 0.35,
+    "rationale": "短線第二波（仍小部位）",
+    "tags": [
+      "speculation"
+    ]
   },
   {
     "date": "2025-02-18",
     "type": "SELL",
     "ticker": "NVDA",
     "qty": 55,
-    "price": 138.0,
+    "price": 137.9,
     "market": "US",
     "currency": "USD",
-    "cash_account": "USD"
+    "cash_account": "USD",
+    "fees": 0.35,
+    "rationale": "波動過大先降曝險，長線多頭結構未否定",
+    "tags": [
+      "trim",
+      "risk"
+    ]
   },
   {
     "date": "2025-03-01",
     "type": "BUY",
     "ticker": "BTC",
     "qty": 0.55,
-    "price": 84200.0,
+    "price": 84180.0,
     "bucket": "Mid Term",
     "market": "crypto",
     "currency": "USD",
-    "cash_account": "USD"
+    "cash_account": "USD",
+    "fees": 1.99,
+    "rationale": "現金略多，小額配置非相關",
+    "tags": [
+      "crypto"
+    ]
+  },
+  {
+    "date": "2025-03-10",
+    "type": "FX_CONVERT",
+    "from_amount": 11200.0,
+    "from_currency": "USD",
+    "from_cash_account": "USD",
+    "to_amount": 347872.0,
+    "to_currency": "TWD",
+    "to_cash_account": "TWD",
+    "rate": 31.06,
+    "rationale": "台股加碼前先換台幣",
+    "tags": [
+      "FX",
+      "TWD"
+    ]
   },
   {
     "date": "2025-03-14",
     "type": "BUY",
     "ticker": "2330.TW",
     "qty": 220,
-    "price": 942.0,
+    "price": 941.5,
     "bucket": "Long Term",
     "market": "TW",
     "currency": "TWD",
-    "cash_account": "TWD"
+    "cash_account": "TWD",
+    "rationale": "外資買超段拉回承接",
+    "tags": [
+      "TW",
+      "DCA"
+    ]
   },
   {
     "date": "2025-03-28",
     "type": "DIVIDEND",
     "ticker": "QQQ",
-    "amount": 165.0,
+    "amount": 163.88,
     "currency": "USD",
     "cash_account": "USD",
-    "market": "US"
+    "market": "US",
+    "rationale": "ETF 季配",
+    "tags": [
+      "dividend"
+    ]
   },
   {
     "date": "2025-04-08",
     "type": "BUY",
     "ticker": "AMD",
     "qty": 120,
-    "price": 144.0,
+    "price": 143.55,
     "bucket": "Mid Term",
     "market": "US",
     "currency": "USD",
-    "cash_account": "USD"
+    "cash_account": "USD",
+    "fees": 0.35,
+    "rationale": "關稅恐慌殺錯價？小試中期桶",
+    "tags": [
+      "semi",
+      "contrarian"
+    ]
   },
   {
     "date": "2025-04-22",
     "type": "SELL",
     "ticker": "BTC",
     "qty": 0.35,
-    "price": 71200.0,
+    "price": 71180.0,
     "market": "crypto",
     "currency": "USD",
-    "cash_account": "USD"
+    "cash_account": "USD",
+    "fees": 1.49,
+    "rationale": "加密資產波動—先鎖利降低衛星比重",
+    "tags": [
+      "trim",
+      "crypto"
+    ]
   },
   {
     "date": "2025-05-01",
@@ -431,232 +729,358 @@
     "amount": 260000,
     "currency": "USD",
     "cash_account": "USD",
-    "market": "US"
+    "market": "US",
+    "rationale": "專案尾款入帳",
+    "tags": [
+      "資金",
+      "contract"
+    ]
   },
   {
     "date": "2025-05-12",
     "type": "BUY",
     "ticker": "NVDA",
     "qty": 35,
-    "price": 114.0,
+    "price": 113.9,
     "bucket": "Mid Term",
     "market": "US",
     "currency": "USD",
-    "cash_account": "USD"
+    "cash_account": "USD",
+    "fees": 0.35,
+    "rationale": "修正後補回 AI 龍頭曝險",
+    "tags": [
+      "AI",
+      "DCA"
+    ]
   },
   {
     "date": "2025-06-01",
     "type": "SELL",
     "ticker": "QQQ",
     "qty": 25,
-    "price": 502.0,
+    "price": 501.4,
     "market": "US",
     "currency": "USD",
-    "cash_account": "USD"
+    "cash_account": "USD",
+    "fees": 0.35,
+    "rationale": "現金比率過低—賣出一小段 ETF",
+    "tags": [
+      "rebalance"
+    ]
   },
   {
     "date": "2025-06-20",
     "type": "BUY",
     "ticker": "MSFT",
     "qty": 30,
-    "price": 440.0,
+    "price": 439.25,
     "bucket": "Long Term",
     "market": "US",
     "currency": "USD",
-    "cash_account": "USD"
+    "cash_account": "USD",
+    "fees": 0.35,
+    "rationale": "Copilot 定價與 Azure 能見度改善後加碼",
+    "tags": [
+      "core",
+      "cloud"
+    ]
   },
   {
     "date": "2025-07-08",
     "type": "BUY",
     "ticker": "SMR",
     "qty": 320,
-    "price": 17.6,
+    "price": 17.55,
     "bucket": "Short Term",
     "market": "US",
     "currency": "USD",
-    "cash_account": "USD"
+    "cash_account": "USD",
+    "fees": 0.35,
+    "rationale": "短線動能再起—仍嚴守衛星上限",
+    "tags": [
+      "speculation"
+    ]
   },
   {
     "date": "2025-07-25",
     "type": "SELL",
     "ticker": "AMD",
     "qty": 90,
-    "price": 168.0,
+    "price": 167.8,
     "market": "US",
     "currency": "USD",
-    "cash_account": "USD"
+    "cash_account": "USD",
+    "fees": 0.35,
+    "rationale": "半導體 beta 過高，先實現部分獲利",
+    "tags": [
+      "trim"
+    ]
   },
   {
     "date": "2025-08-05",
     "type": "DIVIDEND",
     "ticker": "MSFT",
-    "amount": 125.0,
+    "amount": 122.4,
     "currency": "USD",
     "cash_account": "USD",
-    "market": "US"
+    "market": "US",
+    "rationale": "季度股利",
+    "tags": [
+      "dividend"
+    ]
   },
   {
     "date": "2025-08-18",
     "type": "BUY",
     "ticker": "GOOGL",
     "qty": 30,
-    "price": 164.0,
+    "price": 163.9,
     "bucket": "Mid Term",
     "market": "US",
     "currency": "USD",
-    "cash_account": "USD"
+    "cash_account": "USD",
+    "fees": 0.35,
+    "rationale": "估值回落後小額加碼",
+    "tags": [
+      "mega-cap",
+      "DCA"
+    ]
   },
   {
     "date": "2025-09-02",
     "type": "BUY",
     "ticker": "BTC",
     "qty": 0.4,
-    "price": 91500.0,
+    "price": 91480.0,
     "bucket": "Mid Term",
     "market": "crypto",
     "currency": "USD",
-    "cash_account": "USD"
+    "cash_account": "USD",
+    "fees": 1.99,
+    "rationale": "現金池偏高，加密維持低個位數占比",
+    "tags": [
+      "crypto"
+    ]
   },
   {
     "date": "2025-09-16",
     "type": "SELL",
     "ticker": "SMR",
     "qty": 400,
-    "price": 16.8,
+    "price": 16.75,
     "market": "US",
     "currency": "USD",
-    "cash_account": "USD"
+    "cash_account": "USD",
+    "fees": 0.35,
+    "rationale": "題材熄火跡象—清掉大部分短線倉",
+    "tags": [
+      "trim",
+      "discipline"
+    ]
   },
   {
     "date": "2025-10-01",
     "type": "BUY",
     "ticker": "QQQ",
     "qty": 40,
-    "price": 512.0,
+    "price": 511.6,
     "bucket": "Long Term",
     "market": "US",
     "currency": "USD",
-    "cash_account": "USD"
-  },
-  {
-    "date": "2025-10-15",
-    "type": "FEE",
-    "amount": 8.0,
-    "currency": "USD",
     "cash_account": "USD",
-    "market": "US"
+    "fees": 0.35,
+    "rationale": "季線附近加碼核心",
+    "tags": [
+      "core"
+    ]
   },
   {
     "date": "2025-11-04",
     "type": "BUY",
     "ticker": "NVDA",
     "qty": 25,
-    "price": 192.0,
+    "price": 191.85,
     "bucket": "Mid Term",
     "market": "US",
     "currency": "USD",
-    "cash_account": "USD"
+    "cash_account": "USD",
+    "fees": 0.35,
+    "rationale": "財報後若拉回再加碼—此為預先小額掛單成交",
+    "tags": [
+      "AI"
+    ]
   },
   {
     "date": "2025-11-22",
     "type": "SELL",
     "ticker": "GOOGL",
     "qty": 40,
-    "price": 178.0,
+    "price": 177.95,
     "market": "US",
     "currency": "USD",
-    "cash_account": "USD"
+    "cash_account": "USD",
+    "fees": 0.35,
+    "rationale": "調節 mega-cap 重疊（與 MSFT／NVDA 同因子）",
+    "tags": [
+      "trim",
+      "factor"
+    ]
   },
   {
     "date": "2025-12-08",
     "type": "BUY",
     "ticker": "AMD",
     "qty": 80,
-    "price": 122.0,
+    "price": 121.65,
     "bucket": "Mid Term",
     "market": "US",
     "currency": "USD",
-    "cash_account": "USD"
+    "cash_account": "USD",
+    "fees": 0.35,
+    "rationale": "年底作帳行情／評價修復博弈，小部位",
+    "tags": [
+      "semi",
+      "swing"
+    ]
+  },
+  {
+    "date": "2025-12-18",
+    "type": "DIVIDEND",
+    "ticker": "2330.TW",
+    "amount": 96800.0,
+    "currency": "TWD",
+    "cash_account": "TWD",
+    "market": "TW",
+    "rationale": "現金股利（示範）—再投入台股長線",
+    "tags": [
+      "dividend",
+      "TW"
+    ]
   },
   {
     "date": "2026-01-06",
     "type": "BUY",
     "ticker": "MSFT",
     "qty": 18,
-    "price": 428.0,
+    "price": 427.9,
     "bucket": "Long Term",
     "market": "US",
     "currency": "USD",
-    "cash_account": "USD"
+    "cash_account": "USD",
+    "fees": 0.35,
+    "rationale": "新年度再平衡—略增核心品質股",
+    "tags": [
+      "core",
+      "year-open"
+    ]
   },
   {
     "date": "2026-01-24",
     "type": "SELL",
     "ticker": "BTC",
     "qty": 0.5,
-    "price": 102000.0,
+    "price": 101850.0,
     "market": "crypto",
     "currency": "USD",
-    "cash_account": "USD"
+    "cash_account": "USD",
+    "fees": 2.25,
+    "rationale": "加密衛星達標獲利—降回目標權重",
+    "tags": [
+      "trim",
+      "crypto"
+    ]
   },
   {
     "date": "2026-02-03",
     "type": "BUY",
     "ticker": "SMR",
     "qty": 280,
-    "price": 21.4,
+    "price": 21.35,
     "bucket": "Short Term",
     "market": "US",
     "currency": "USD",
-    "cash_account": "USD"
+    "cash_account": "USD",
+    "fees": 0.35,
+    "rationale": "波動交易—僅短線桶，與長線 thesis 分開",
+    "tags": [
+      "speculation"
+    ]
   },
   {
     "date": "2026-02-14",
     "type": "DIVIDEND",
     "ticker": "MSFT",
-    "amount": 88.0,
+    "amount": 86.2,
     "currency": "USD",
     "cash_account": "USD",
-    "market": "US"
+    "market": "US",
+    "rationale": "股利入帳",
+    "tags": [
+      "dividend"
+    ]
+  },
+  {
+    "date": "2026-02-24",
+    "type": "FX_CONVERT",
+    "from_amount": 6800.0,
+    "from_currency": "USD",
+    "from_cash_account": "USD",
+    "to_amount": 214080.0,
+    "to_currency": "TWD",
+    "to_cash_account": "TWD",
+    "rate": 31.48235,
+    "rationale": "台股加碼換匯",
+    "tags": [
+      "FX",
+      "TWD"
+    ]
   },
   {
     "date": "2026-03-03",
     "type": "BUY",
     "ticker": "2330.TW",
     "qty": 150,
-    "price": 988.0,
+    "price": 987.0,
     "bucket": "Long Term",
     "market": "TW",
     "currency": "TWD",
-    "cash_account": "TWD"
+    "cash_account": "TWD",
+    "rationale": "長線持有不猜高點—僅機械式加碼",
+    "tags": [
+      "TW",
+      "DCA"
+    ]
   },
   {
     "date": "2026-03-18",
     "type": "SELL",
     "ticker": "NVDA",
     "qty": 30,
-    "price": 118.0,
+    "price": 117.6,
     "market": "US",
     "currency": "USD",
-    "cash_account": "USD"
+    "cash_account": "USD",
+    "fees": 0.35,
+    "rationale": "評價與情緒過熱—減碼但保留主倉",
+    "tags": [
+      "trim",
+      "valuation"
+    ]
   },
   {
     "date": "2026-04-01",
     "type": "BUY",
     "ticker": "GOOGL",
     "qty": 25,
-    "price": 154.0,
+    "price": 153.85,
     "bucket": "Mid Term",
     "market": "US",
     "currency": "USD",
-    "cash_account": "USD"
-  },
-  {
-    "date": "2026-04-10",
-    "type": "FEE",
-    "amount": 5.5,
-    "currency": "USD",
     "cash_account": "USD",
-    "market": "US"
+    "fees": 0.35,
+    "rationale": "關稅／反壟斷雜音下分批接",
+    "tags": [
+      "mega-cap"
+    ]
   }
 ]
