@@ -28,7 +28,9 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import datetime as _dt
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -45,16 +47,37 @@ from fetch_prices import MarketType  # noqa: E402
 AGENT_SOURCE = "agent_web_search"
 
 
+_ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def _validate_iso_date(date: Any, row: Dict[str, Any]) -> str:
+    if not isinstance(date, str) or not _ISO_DATE_RE.match(date):
+        raise ValueError(
+            f"row date must be ISO 'YYYY-MM-DD' string; got {date!r} in {row!r}"
+        )
+    try:
+        _dt.date.fromisoformat(date)
+    except ValueError as exc:
+        raise ValueError(f"row date is not a valid calendar date: {date!r}") from exc
+    return date
+
+
+def _validate_numeric(value: Any, field: str, row: Dict[str, Any]) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(
+            f"row {field} must be a number; got {type(value).__name__} {value!r} in {row!r}"
+        )
+    return float(value)
+
+
 def _validate_price_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     clean: List[Dict[str, Any]] = []
     for r in rows:
         if not isinstance(r, dict):
             raise ValueError(f"row must be a dict, got: {r!r}")
-        date = r.get("date")
-        close = r.get("close")
-        if not date or close is None:
-            raise ValueError(f"price row missing date/close: {r!r}")
-        clean.append({"date": str(date), "close": float(close)})
+        date = _validate_iso_date(r.get("date"), r)
+        close = _validate_numeric(r.get("close"), "close", r)
+        clean.append({"date": date, "close": close})
     if not clean:
         raise ValueError("--rows-json produced zero usable rows")
     return clean
@@ -65,11 +88,9 @@ def _validate_fx_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     for r in rows:
         if not isinstance(r, dict):
             raise ValueError(f"row must be a dict, got: {r!r}")
-        date = r.get("date")
-        rate = r.get("rate")
-        if not date or rate is None:
-            raise ValueError(f"fx row missing date/rate: {r!r}")
-        clean.append({"date": str(date), "rate": float(rate)})
+        date = _validate_iso_date(r.get("date"), r)
+        rate = _validate_numeric(r.get("rate"), "rate", r)
+        clean.append({"date": date, "rate": rate})
     if not clean:
         raise ValueError("--rows-json produced zero usable rows")
     return clean

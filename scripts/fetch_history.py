@@ -151,6 +151,11 @@ DEFAULT_CACHE_PATH = Path("market_data_cache.db")
 def cache_init(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(path) as conn:
+        # WAL + 30s busy_timeout: lets a second pipeline run share the cache
+        # without "database is locked" under typical agent parallelism.
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA synchronous=NORMAL")
+        conn.execute("PRAGMA busy_timeout=30000")
         conn.execute("""
             CREATE TABLE IF NOT EXISTS price_history (
                 ticker     TEXT NOT NULL,
@@ -241,10 +246,16 @@ def cache_put_price_rows(
             INSERT INTO price_history (ticker, market, date, close, currency, source, fetched_at)
             VALUES (?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(ticker, market, date) DO UPDATE SET
-                close = excluded.close,
-                currency = COALESCE(excluded.currency, price_history.currency),
-                source = excluded.source,
-                fetched_at = excluded.fetched_at
+                close      = CASE WHEN price_history.source = 'agent_web_search'
+                                   AND excluded.source != 'agent_web_search'
+                                  THEN price_history.close ELSE excluded.close END,
+                currency   = COALESCE(excluded.currency, price_history.currency),
+                source     = CASE WHEN price_history.source = 'agent_web_search'
+                                   AND excluded.source != 'agent_web_search'
+                                  THEN price_history.source ELSE excluded.source END,
+                fetched_at = CASE WHEN price_history.source = 'agent_web_search'
+                                   AND excluded.source != 'agent_web_search'
+                                  THEN price_history.fetched_at ELSE excluded.fetched_at END
             """,
             [
                 (ticker, market.value, r["date"], float(r["close"]), currency, source, fetched_at)
@@ -285,9 +296,15 @@ def cache_put_fx_rows(path: Path, pair: str, rows: List[Dict[str, Any]], *, sour
             INSERT INTO fx_history (base, quote, date, rate, source, fetched_at)
             VALUES (?, ?, ?, ?, ?, ?)
             ON CONFLICT(base, quote, date) DO UPDATE SET
-                rate = excluded.rate,
-                source = excluded.source,
-                fetched_at = excluded.fetched_at
+                rate       = CASE WHEN fx_history.source = 'agent_web_search'
+                                   AND excluded.source != 'agent_web_search'
+                                  THEN fx_history.rate ELSE excluded.rate END,
+                source     = CASE WHEN fx_history.source = 'agent_web_search'
+                                   AND excluded.source != 'agent_web_search'
+                                  THEN fx_history.source ELSE excluded.source END,
+                fetched_at = CASE WHEN fx_history.source = 'agent_web_search'
+                                   AND excluded.source != 'agent_web_search'
+                                  THEN fx_history.fetched_at ELSE excluded.fetched_at END
             """,
             [
                 (base, quote, r["date"], float(r["rate"]), source, fetched_at)
@@ -815,6 +832,7 @@ def collect_history(
 
 
 def merge_into_prices(prices_path: Path, history: Dict[str, Any]) -> None:
+    prices_path.parent.mkdir(parents=True, exist_ok=True)
     if not prices_path.exists():
         prices_path.write_text(json.dumps(history, indent=2, ensure_ascii=False), encoding="utf-8")
         return

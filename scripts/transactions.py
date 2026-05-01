@@ -485,8 +485,14 @@ def _apply_one(t: Transaction, state: ReplayState) -> None:
         to_ccy = (t.fields.get("to_currency") or "").strip().upper()
         from_acct = (t.fields.get("from_cash_account") or from_ccy).strip().upper()
         to_acct = (t.fields.get("to_cash_account") or to_ccy).strip().upper()
-        if None in (from_amount, to_amount) or not (from_ccy and to_ccy):
+        if from_amount is None or to_amount is None or not (from_ccy and to_ccy):
             state.issues.append(f"{t.date} FX_CONVERT incomplete")
+            return
+        if from_amount <= 0 or to_amount <= 0:
+            state.issues.append(
+                f"{t.date} FX_CONVERT requires positive from_amount and to_amount "
+                f"(got from={from_amount}, to={to_amount})"
+            )
             return
         _bump_cash(state, from_acct, -from_amount)
         _bump_cash(state, to_acct, to_amount)
@@ -1077,7 +1083,7 @@ def compute_profit_panel(
                 "ending_position_value": round(e_m, 2),
                 "net_flows": None,
             }
-            if abs(value) < 0.01 and k != "us":  # drop noise except for the dominant US bucket
+            if abs(value) < 0.01:
                 continue
             per_market[k] = round(value, 2)
 
