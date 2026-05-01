@@ -177,6 +177,7 @@ from fetch_prices import (                                    # noqa: E402
 # legacy `--prices --db` fallback share one implementation.
 from portfolio_snapshot import (                              # noqa: E402
     BASE_CURRENCY_PATTERN,
+    BUILTIN_UI_LOCALES,
     BookPacing,
     CASH_STABLECOIN_USD,
     CheckResult,
@@ -679,7 +680,6 @@ __all__ = [
 # --ui-dict or context["ui_dictionary"].
 # ----------------------------------------------------------------------------- #
 
-BUILTIN_UI_LOCALES = ("en", "zh-Hant", "zh-Hans")
 I18N_DIR = Path(__file__).resolve().parent / "i18n"
 
 
@@ -3503,6 +3503,27 @@ def main(argv: Optional[List[str]] = None) -> int:
     # stays uniform across both paths.
     settings = settings_profile_for_snapshot(snapshot)
 
+    # Defense-in-depth: when --snapshot is the source, --settings is ignored
+    # for locale / display_name / raw_language (they were baked into the
+    # snapshot upstream by `transactions.py snapshot`). Surface a loud warning
+    # if the explicitly-passed --settings disagrees, so demo runs that forgot
+    # `--settings demo/SETTINGS.md` on the snapshot step do not silently
+    # render in the root profile's language.
+    if args.snapshot is not None and args.settings and Path(args.settings).exists():
+        try:
+            file_settings = parse_settings_profile(Path(args.settings))
+        except Exception:  # noqa: BLE001 — never block render on a sanity check
+            file_settings = None
+        if file_settings is not None and file_settings.locale != settings.locale:
+            print(
+                f"WARNING: --settings {args.settings} resolves to locale "
+                f"'{file_settings.locale}' ({file_settings.display_name}) but the "
+                f"snapshot baked locale '{settings.locale}' ({settings.display_name}). "
+                "Render uses the snapshot's locale; pass --settings to "
+                "`transactions.py snapshot` upstream to change it.",
+                file=sys.stderr,
+            )
+
     ui_dict_override: Optional[Dict[str, Any]] = None
     if args.ui_dict and args.ui_dict.exists():
         ui_dict_override = _load_json_ui_dict(args.ui_dict)
@@ -3518,13 +3539,31 @@ def main(argv: Optional[List[str]] = None) -> int:
             logging.warning("Context UI dictionary path %s not found; ignoring.", candidate)
 
     if settings.locale not in STABLE_UI_TEXT and ui_dict_override is None:
-        logging.warning(
-            "Locale %s has no built-in UI dictionary. Falling back to English chrome. "
-            "The executing agent should translate %s and pass it via --ui-dict "
-            "or context['ui_dictionary'].",
-            settings.raw_language,
-            I18N_DIR / "report_ui.en.json",
+        # Spec contract (docs/portfolio_report_agent_guidelines/02-inputs-to-self-containment.md
+        # §5.1): SETTINGS language is honored end-to-end. For locales that
+        # don't have a built-in UI dictionary the executing agent MUST
+        # translate scripts/i18n/report_ui.en.json to a JSON file under
+        # $REPORT_RUN_DIR and pass it via --ui-dict (or merge it into
+        # context["ui_dictionary"]). Without that the report would render
+        # with English chrome bleeding through every section header, KPI
+        # label, action chip, news badge, and pm-meta label — silently
+        # violating §5.1 ("Bilingual labels forbidden"). Fail loudly here
+        # instead of warning, so the broken report can never ship.
+        print(
+            f"ERROR: locale '{settings.locale}' (from SETTINGS Language: "
+            f"{settings.raw_language!r}) has no built-in UI dictionary "
+            f"({sorted(STABLE_UI_TEXT.keys())}) and no --ui-dict / "
+            "context['ui_dictionary'] override was supplied.\n"
+            "  Per docs/portfolio_report_agent_guidelines/02-inputs-to-self-containment.md "
+            "§5.1, the executing agent must translate "
+            f"{I18N_DIR / 'report_ui.en.json'} to e.g. "
+            f"$REPORT_RUN_DIR/report_ui.{settings.locale}.json and rerun with "
+            f"--ui-dict $REPORT_RUN_DIR/report_ui.{settings.locale}.json. "
+            "Refusing to render with English chrome under a non-English "
+            "SETTINGS language.",
+            file=sys.stderr,
         )
+        return 8
     _set_active_ui(resolve_ui_bundle(settings, ui_dict_override))
     if settings.missing:
         logging.warning("SETTINGS.md not found; defaulting report UI language to English.")

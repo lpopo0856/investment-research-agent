@@ -66,30 +66,109 @@ BASE_CURRENCY_PATTERN = r"Base currency:\s*([A-Za-z]{3})"
 LANGUAGE_QUOTE_CHARS = "\"'“”‘’「」『』〈〉《》"
 
 LANGUAGE_ALIASES: Dict[str, str] = {
-    "en": "en",
-    "eng": "en",
-    "english": "en",
-    "zh-hant": "zh-Hant",
-    "zh-tw": "zh-Hant",
+    # English
+    "en": "en", "eng": "en", "english": "en",
+
+    # Chinese
+    "zh": "zh", "chinese": "zh", "中文": "zh",
+    "zh-hant": "zh-Hant", "zh-tw": "zh-Hant", "zh-hk": "zh-Hant",
     "traditional chinese": "zh-Hant",
     "traditional chinese (taiwan)": "zh-Hant",
-    "繁體中文": "zh-Hant",
-    "繁体中文": "zh-Hant",
-    "zh-hans": "zh-Hans",
-    "zh-cn": "zh-Hans",
+    "繁體中文": "zh-Hant", "繁体中文": "zh-Hant",
+    "zh-hans": "zh-Hans", "zh-cn": "zh-Hans", "zh-sg": "zh-Hans",
     "simplified chinese": "zh-Hans",
-    "簡體中文": "zh-Hans",
-    "简体中文": "zh-Hans",
-    "ja": "ja",
-    "jp": "ja",
-    "japanese": "ja",
-    "日本語": "ja",
-    "ko": "ko",
-    "korean": "ko",
-    "한국어": "ko",
-    "vi": "vi",
-    "vietnamese": "vi",
-    "tiếng việt": "vi",
+    "簡體中文": "zh-Hans", "简体中文": "zh-Hans",
+
+    # Japanese
+    "ja": "ja", "jp": "ja", "japanese": "ja", "日本語": "ja", "nihongo": "ja",
+
+    # Korean
+    "ko": "ko", "kr": "ko", "korean": "ko", "한국어": "ko", "hangul": "ko",
+
+    # Vietnamese
+    "vi": "vi", "vietnamese": "vi", "tiếng việt": "vi", "tieng viet": "vi",
+
+    # French
+    "fr": "fr", "french": "fr", "français": "fr", "francais": "fr",
+    "fr-ca": "fr-CA", "canadian french": "fr-CA",
+    "fr-fr": "fr-FR",
+
+    # German
+    "de": "de", "german": "de", "deutsch": "de",
+    "de-at": "de-AT", "de-ch": "de-CH",
+
+    # Spanish
+    "es": "es", "spanish": "es", "español": "es", "espanol": "es",
+    "castellano": "es",
+    "es-mx": "es-MX", "mexican spanish": "es-MX",
+    "es-419": "es-419", "latin american spanish": "es-419",
+
+    # Portuguese
+    "pt": "pt", "portuguese": "pt", "português": "pt", "portugues": "pt",
+    "pt-br": "pt-BR", "brazilian portuguese": "pt-BR",
+    "português brasileiro": "pt-BR", "portugues brasileiro": "pt-BR",
+    "pt-pt": "pt-PT", "european portuguese": "pt-PT",
+
+    # Italian
+    "it": "it", "italian": "it", "italiano": "it",
+
+    # Dutch
+    "nl": "nl", "dutch": "nl", "nederlands": "nl",
+
+    # Russian
+    "ru": "ru", "russian": "ru", "русский": "ru",
+
+    # Arabic
+    "ar": "ar", "arabic": "ar", "العربية": "ar",
+
+    # Hebrew
+    "he": "he", "iw": "he", "hebrew": "he", "עברית": "he",
+
+    # Persian / Farsi
+    "fa": "fa", "persian": "fa", "farsi": "fa", "فارسی": "fa",
+
+    # Urdu
+    "ur": "ur", "urdu": "ur", "اردو": "ur",
+
+    # Hindi
+    "hi": "hi", "hindi": "hi", "हिन्दी": "hi",
+
+    # Bengali
+    "bn": "bn", "bengali": "bn", "bangla": "bn",
+
+    # Thai
+    "th": "th", "thai": "th", "ไทย": "th",
+
+    # Indonesian / Malay
+    "id": "id", "indonesian": "id", "bahasa indonesia": "id",
+    "ms": "ms", "malay": "ms", "bahasa melayu": "ms",
+
+    # Filipino / Tagalog
+    "tl": "tl", "tagalog": "tl",
+    "fil": "fil", "filipino": "fil",
+
+    # Turkish
+    "tr": "tr", "turkish": "tr", "türkçe": "tr", "turkce": "tr",
+
+    # Polish, Czech, Hungarian, Romanian, Ukrainian, Greek, Bulgarian
+    "pl": "pl", "polish": "pl", "polski": "pl",
+    "cs": "cs", "czech": "cs", "čeština": "cs", "cestina": "cs",
+    "sk": "sk", "slovak": "sk", "slovenčina": "sk",
+    "hu": "hu", "hungarian": "hu", "magyar": "hu",
+    "ro": "ro", "romanian": "ro", "română": "ro", "romana": "ro",
+    "uk": "uk", "ukrainian": "uk", "українська": "uk",
+    "el": "el", "greek": "el", "ελληνικά": "el",
+    "bg": "bg", "bulgarian": "bg", "български": "bg",
+    "hr": "hr", "croatian": "hr", "hrvatski": "hr",
+    "sr": "sr", "serbian": "sr", "српски": "sr",
+
+    # Nordic
+    "sv": "sv", "swedish": "sv", "svenska": "sv",
+    "no": "no", "norwegian": "no", "norsk": "no",
+    "nb": "nb", "nn": "nn",
+    "da": "da", "danish": "da", "dansk": "da",
+    "fi": "fi", "finnish": "fi", "suomi": "fi",
+    "is": "is", "icelandic": "is", "íslenska": "is",
 }
 
 DISPLAY_NAME_BY_LOCALE: Dict[str, str] = {
@@ -100,6 +179,14 @@ DISPLAY_NAME_BY_LOCALE: Dict[str, str] = {
     "ko": "한국어",
     "vi": "Tiếng Việt",
 }
+
+# Locales whose chrome dictionaries (`scripts/i18n/report_ui.<locale>.json`)
+# ship with the repo. For any other locale the executing agent must translate
+# `report_ui.en.json` into `$REPORT_RUN_DIR/report_ui.<locale>.json` and pass
+# it to `generate_report.py --ui-dict` (or merge into `context["ui_dictionary"]`)
+# — the renderer hard-fails otherwise. See
+# `docs/portfolio_report_agent_guidelines/02-inputs-to-self-containment.md` §5.1.
+BUILTIN_UI_LOCALES: Tuple[str, ...] = ("en", "zh-Hant", "zh-Hans")
 
 RAIL_PATTERNS: Dict[str, str] = {
     "single_name_weight_warn_pct": r"Single-name weight cap:\s*([0-9]*\.?[0-9]+)%",
@@ -171,11 +258,53 @@ def _extract_settings_section_bullets(text: str, heading: str) -> List[str]:
     return bullets
 
 
+_BCP47_RE = re.compile(
+    r"^([A-Za-z]{2,3})"            # primary language subtag (ISO 639-1/2/3)
+    r"(?:-([A-Za-z]{4}))?"         # optional script subtag (ISO 15924)
+    r"(?:-([A-Za-z]{2}|\d{3}))?$"  # optional region subtag (ISO 3166-1 alpha-2 or UN M.49)
+)
+
+
+def _normalize_bcp47(tag: str) -> Optional[str]:
+    """Recognize and case-normalize a basic BCP-47 language tag.
+
+    Accepts shapes like `fr`, `pt-BR`, `zh-Hant`, `zh-Hant-TW`, `es-419`.
+    Returns the canonical-cased tag (lang lowercase, script TitleCase,
+    region UPPERCASE) or None if the input doesn't match.
+    """
+    m = _BCP47_RE.match(tag)
+    if not m:
+        return None
+    lang, script, region = m.groups()
+    parts = [lang.lower()]
+    if script:
+        parts.append(script.title())
+    if region:
+        parts.append(region.upper())
+    return "-".join(parts)
+
+
 def _normalize_language(raw_language: str) -> str:
-    normalized = raw_language.strip().strip(LANGUAGE_QUOTE_CHARS).strip().lower()
-    if normalized in LANGUAGE_ALIASES:
-        return LANGUAGE_ALIASES[normalized]
-    return normalized or "en"
+    """Resolve a SETTINGS `Language:` value to a BCP-47 locale tag.
+
+    Resolution order:
+      1. Curated alias table (natural-language names like `français`,
+         `german`, `ไทย`, plus common code variants like `zh-tw`).
+      2. BCP-47 syntax passthrough — any well-formed `lang[-Script][-REGION]`
+         tag is accepted and case-normalized, so unlisted locales like
+         `mk`, `ka`, `sw`, `et`, `lv`, `lt`, `pt-AO`, `en-IN` work as-is.
+      3. Fallback to `en` for empty / unrecognized input — emitting an
+         invalid `<html lang>` is worse than a sane default.
+    """
+    cleaned = raw_language.strip().strip(LANGUAGE_QUOTE_CHARS).strip()
+    if not cleaned:
+        return "en"
+    if cleaned.lower() in LANGUAGE_ALIASES:
+        return LANGUAGE_ALIASES[cleaned.lower()]
+    passthrough = _normalize_bcp47(cleaned)
+    if passthrough is not None:
+        return passthrough
+    return "en"
 
 
 def parse_settings_profile(path: Path) -> SettingsProfile:
@@ -1211,6 +1340,7 @@ __all__ = [
     "LANGUAGE_QUOTE_CHARS",
     "LANGUAGE_ALIASES",
     "DISPLAY_NAME_BY_LOCALE",
+    "BUILTIN_UI_LOCALES",
     "RAIL_PATTERNS",
     "MARKET_DEFAULT_CCY",
     "CASH_STABLECOIN_USD",

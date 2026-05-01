@@ -91,7 +91,59 @@ Every user-facing HTML string uses SETTINGS language; no bilingual labels or Eng
 - Translate visible tag chips (`High vol`, `Long`, `Mid`, `Rich val`); CSS class hooks stay English.
 - Missing/unparseable `SETTINGS.md` → English default and masthead meta `n/a`.
 - Renderer loads stable dictionaries for English / Traditional Chinese / Simplified Chinese from `scripts/i18n/`.
-- Other single language → executing agent translates `scripts/i18n/report_ui.en.json` to a JSON file under `$REPORT_RUN_DIR` and passes `--ui-dict` (or `context["ui_dictionary"]`); renderer does not call translation services.
+- **Any other language is honored.** `SETTINGS.md` `Language:` accepts (a) curated natural-language names and endonyms — `français`, `Deutsch`, `Português`, `Brazilian Portuguese`, `Español`, `Italiano`, `Nederlands`, `Русский`, `العربية`, `日本語`, `한국어`, `ไทย`, `Türkçe`, `Polski`, `Bahasa Indonesia`, `हिन्दी`, etc. — and (b) any well-formed BCP-47 code (`fr`, `de-CH`, `pt-BR`, `es-419`, `zh-Hant-TW`, `en-IN`). The renderer normalizes casing (`fr-fr` → `fr-FR`, `zh-hant` → `zh-Hant`) so `<html lang>` is always valid. Unrecognized input falls back to `en` rather than emitting an invalid tag.
+
+#### 5.1.1 Phase 0 — UI dictionary translation (HARD GATE)
+
+When `transactions.py snapshot` finishes, it inspects the resolved locale.
+If the locale is **not** in the built-in set (`en`, `zh-Hant`, `zh-Hans`),
+it prints a `NEXT STEP REQUIRED` block to stderr naming the source file,
+target file, and the `--ui-dict` flag the renderer needs. The executing
+agent **must** complete this before rendering.
+
+**Translator identity (HARD):** the executing agent translates the
+dictionary **itself**, in-context, with the same model running the rest
+of the pipeline. Do **not** call Google Translate, DeepL, Bing
+Translator, Papago, Yandex, or any other external translation service /
+HTTP API / CLI wrapper. The dictionary is small (~245 keys, ~5 KB) and
+domain-specific (`R:R`, `MWR annualized`, `Profit Factor`, `Kill
+action`, `Portfolio fit`, `pp of NAV`, `Variant`, `Anchor`, action
+buckets `Must` / `May` / `Avoid` / `Fix Data`); a generic translator
+mangles these terms, drops `{format}` placeholders, escapes special
+chars (`<`, `>`, `&`, `Δ`), and ignores the §5.1 token-codes
+allow-list. The agent already authors news, alerts, and
+`trading_psychology` in the target language — the chrome dictionary is
+the same kind of work and belongs in the same hand.
+
+**The procedure:**
+
+1. Read `scripts/i18n/report_ui.en.json` (≈245 keys, single self-contained
+   JSON object).
+2. Translate **every value** into the target language inside the agent's
+   own context — no external HTTP / SDK / shell call to a translation
+   service. Keep every key unchanged. Preserve every `{format}`
+   placeholder (`{base}`, `{pct:.1f}`, `{count}`, `{value:,.0f}` …)
+   byte-for-byte. Preserve `<`, `>`, `&`, `Δ`, `·`, `—`, `+`, `−`
+   exactly as they appear in the source.
+3. Token values stay English as codes (per §5.1 allow-list and §15
+   PM-meta): `consensus-aligned`, `variant`, `contrarian`, `rebalance`,
+   `cut`, `add`, `trim`, `hold`, `exit`, `watch`. Action labels like
+   `Must` / `May` / `Avoid` / `Fix Data` (`actions.must_do`, etc.) are
+   chrome **and must be translated**.
+4. Write the translated JSON to
+   `$REPORT_RUN_DIR/report_ui.<locale>.json` (basename inside the run
+   directory, not at the repo root).
+5. Pass `--ui-dict $REPORT_RUN_DIR/report_ui.<locale>.json` to
+   `generate_report.py`. Equivalently, merge it into
+   `report_context.json` as `context["ui_dictionary"]`.
+
+`generate_report.py` exits with code **8** if it loads a snapshot whose
+locale has no built-in dictionary and no `--ui-dict` /
+`context["ui_dictionary"]` override is supplied. There is no English
+fallback for non-English `SETTINGS.md` `Language:` — chrome and content
+must agree. The renderer never calls a translation service either; the
+agent owns the translation step the same way it owns news, alerts, and
+psychology authoring.
 
 ### 5.2 Allow-list
 

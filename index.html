@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <!-- GitHub Pages project sites live at /REPO/; relative "demo/..." breaks if the URL has no trailing slash. Resolve all relative URLs against the directory that contains this index. -->
+  <script>
+    (function () {
+      function siteRootPath() {
+        var path = decodeURIComponent(location.pathname);
+        var parts = path.split("/").filter(function (s) {
+          return s.length > 0;
+        });
+        if (parts.length && /\.html?$/i.test(parts[parts.length - 1])) {
+          parts.pop();
+        }
+        var out = "/" + parts.join("/");
+        if (out === "/") return "/";
+        return out.endsWith("/") ? out : out + "/";
+      }
+      var href = siteRootPath();
+      var el = document.createElement("base");
+      el.setAttribute("href", href);
+      var head = document.head;
+      var charset = head.querySelector("meta[charset]");
+      if (charset && charset.parentNode) {
+        charset.parentNode.insertBefore(el, charset.nextSibling);
+      } else {
+        head.insertBefore(el, head.firstChild);
+      }
+    })();
+  </script>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <title>Demo reports — portfolio HTML previews</title>
+  <style>
+    :root {
+      --bg0: #0c0e12;
+      --bg1: #12151c;
+      --panel: #161a22;
+      --stroke: rgba(255, 255, 255, 0.08);
+      --stroke-strong: rgba(255, 255, 255, 0.14);
+      --text: #e8eaef;
+      --muted: #8b93a7;
+      --accent: #c9a227;
+      --accent-dim: rgba(201, 162, 39, 0.15);
+      --glow: rgba(201, 162, 39, 0.35);
+      --ok: #3dd68c;
+      --radius-lg: 20px;
+      --radius-md: 12px;
+      --shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
+      --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", sans-serif;
+      --mono: ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html, body {
+      height: 100%;
+      margin: 0;
+      font-family: var(--font);
+      background: var(--bg0);
+      color: var(--text);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* Ambient background */
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background:
+        radial-gradient(ellipse 120% 80% at 10% -20%, rgba(201, 162, 39, 0.12), transparent 55%),
+        radial-gradient(ellipse 90% 60% at 100% 0%, rgba(88, 120, 255, 0.08), transparent 50%),
+        radial-gradient(ellipse 70% 50% at 50% 100%, rgba(61, 214, 140, 0.05), transparent 45%);
+      z-index: 0;
+    }
+
+    .shell {
+      position: relative;
+      z-index: 1;
+      min-height: 100%;
+      display: flex;
+      flex-direction: column;
+      max-width: 1440px;
+      margin: 0 auto;
+      padding: clamp(1rem, 3vw, 2rem);
+      gap: 1.25rem;
+    }
+
+    header {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 1.5rem;
+      padding-bottom: 0.25rem;
+    }
+
+    .brand {
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+    }
+
+    .eyebrow {
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      color: var(--accent);
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(1.35rem, 2.5vw, 1.85rem);
+      font-weight: 650;
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+    }
+
+    .lede {
+      margin: 0;
+      max-width: 42ch;
+      font-size: 0.9rem;
+      line-height: 1.55;
+      color: var(--muted);
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.65rem;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.55rem 0.95rem;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--text);
+      text-decoration: none;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--stroke-strong);
+      background: var(--panel);
+      transition: border-color 0.2s, background 0.2s, transform 0.15s;
+    }
+
+    .btn:hover {
+      border-color: rgba(201, 162, 39, 0.45);
+      background: rgba(22, 26, 34, 0.95);
+    }
+
+    .btn:active {
+      transform: scale(0.98);
+    }
+
+    .btn svg {
+      width: 14px;
+      height: 14px;
+      opacity: 0.85;
+    }
+
+    .lang-panel {
+      background: linear-gradient(145deg, var(--panel) 0%, rgba(18, 21, 28, 0.92) 100%);
+      border: 1px solid var(--stroke);
+      border-radius: var(--radius-lg);
+      padding: 1rem 1.1rem;
+      box-shadow: var(--shadow);
+    }
+
+    .lang-panel label {
+      display: block;
+      font-size: 0.65rem;
+      font-weight: 600;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 0.65rem;
+    }
+
+    .lang-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+
+    .lang-btn {
+      position: relative;
+      appearance: none;
+      border: 1px solid var(--stroke);
+      background: rgba(255, 255, 255, 0.03);
+      color: var(--text);
+      padding: 0.65rem 1rem;
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      font: inherit;
+      font-size: 0.85rem;
+      font-weight: 600;
+      text-align: left;
+      min-width: 8.5rem;
+      transition: border-color 0.2s, background 0.2s, box-shadow 0.25s;
+    }
+
+    .lang-btn:hover {
+      border-color: var(--stroke-strong);
+      background: rgba(255, 255, 255, 0.06);
+    }
+
+    .lang-btn[aria-pressed="true"] {
+      border-color: rgba(201, 162, 39, 0.55);
+      background: var(--accent-dim);
+      box-shadow: 0 0 0 1px rgba(201, 162, 39, 0.2), 0 0 28px var(--glow);
+    }
+
+    .lang-btn .sub {
+      display: block;
+      margin-top: 0.2rem;
+      font-size: 0.72rem;
+      font-weight: 500;
+      color: var(--muted);
+    }
+
+    .viewer-wrap {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-height: min(70vh, 900px);
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--stroke);
+      overflow: hidden;
+      background: var(--bg1);
+      box-shadow: var(--shadow);
+    }
+
+    .viewer-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      padding: 0.65rem 1rem;
+      border-bottom: 1px solid var(--stroke);
+      background: rgba(12, 14, 18, 0.6);
+      backdrop-filter: blur(8px);
+    }
+
+    .path {
+      font-family: var(--mono);
+      font-size: 0.72rem;
+      color: var(--muted);
+      word-break: break-all;
+    }
+
+    .path strong {
+      color: var(--ok);
+      font-weight: 600;
+    }
+
+    .status {
+      font-size: 0.72rem;
+      color: var(--muted);
+    }
+
+    .status.loading::after {
+      content: "";
+      display: inline-block;
+      width: 0.5rem;
+      height: 0.5rem;
+      margin-left: 0.35rem;
+      border: 2px solid var(--stroke-strong);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      vertical-align: middle;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    iframe {
+      flex: 1;
+      width: 100%;
+      border: 0;
+      background: var(--paper, #f7f5ef);
+    }
+
+    footer {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem 1.5rem;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 0.75rem;
+      color: var(--muted);
+      padding-top: 0.25rem;
+    }
+
+    footer a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    footer a:hover {
+      text-decoration: underline;
+    }
+
+    .hint {
+      max-width: 55ch;
+      line-height: 1.5;
+    }
+
+    @media (max-width: 640px) {
+      .lang-btn {
+        min-width: calc(50% - 0.25rem);
+        flex: 1 1 calc(50% - 0.25rem);
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header>
+      <div class="brand">
+        <span class="eyebrow">Investments repo</span>
+        <h1>Portfolio report demos</h1>
+        <p class="lede">
+          Static HTML samples from the demo ledger. Pick a locale to preview the same pipeline output in another language.
+        </p>
+      </div>
+      <div class="actions">
+        <a class="btn" id="open-tab" href="./demo/reports/zh-Hant.html" target="_blank" rel="noopener">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+            <polyline points="15 3 21 3 21 9"/>
+            <line x1="10" y1="14" x2="21" y2="3"/>
+          </svg>
+          Open in new tab
+        </a>
+        <a class="btn" href="./demo/README.md" title="Demo isolation and pipeline flags">
+          Demo README
+        </a>
+      </div>
+    </header>
+
+    <section class="lang-panel" aria-labelledby="lang-heading">
+      <label id="lang-heading">Language</label>
+      <div class="lang-grid" id="lang-grid" role="tablist" aria-label="Report locale"></div>
+    </section>
+
+    <section class="viewer-wrap" aria-label="Report preview">
+      <div class="viewer-toolbar">
+        <code class="path" id="path-line">demo/reports/<strong id="path-file">zh-Hant.html</strong></code>
+        <span class="status" id="iframe-status" aria-live="polite"></span>
+      </div>
+      <iframe
+        id="report-frame"
+        title="Portfolio report preview"
+        src="./demo/reports/zh-Hant.html"
+        loading="lazy"
+        referrerpolicy="no-referrer"
+      ></iframe>
+    </section>
+
+    <footer>
+      <p class="hint">
+        Built for <strong style="color: var(--text); font-weight: 600;">GitHub Pages</strong> (project site <code style="color: var(--text);">/repo/</code> or <code style="color: var(--text);">/repo</code>): links resolve from this page’s directory. Locally, open via <code style="color: var(--text);">python3 -m http.server</code> from the repo root if the iframe is blocked on <code style="color: var(--text);">file://</code>.
+      </p>
+      <span>Regenerate reports under <a href="./demo/README.md"><code>demo/reports/</code></a> — add a row in this page’s <code>REPORT_LOCALES</code> when you add a new file.</span>
+    </footer>
+  </div>
+
+  <script>
+    /**
+     * Each entry maps to demo/reports/{file}.html
+     * Add a line here when you drop a new locale HTML next to the others.
+     */
+    const REPORT_LOCALES = [
+      { id: "zh-Hant", file: "zh-Hant", native: "繁體中文", en: "Traditional Chinese" },
+      { id: "eng", file: "eng", native: "English", en: "en" },
+    ];
+
+    // Repo-relative paths; the early base element in head fixes GitHub Pages /repo URLs.
+    const reportsDir = "demo/reports/";
+    const frame = document.getElementById("report-frame");
+    const pathFile = document.getElementById("path-file");
+    const openTab = document.getElementById("open-tab");
+    const grid = document.getElementById("lang-grid");
+    const statusEl = document.getElementById("iframe-status");
+
+    function hrefFor(file) {
+      return reportsDir + file + ".html";
+    }
+
+    function setActive(id) {
+      const entry = REPORT_LOCALES.find((l) => l.id === id) || REPORT_LOCALES[0];
+      const url = hrefFor(entry.file);
+      pathFile.textContent = entry.file + ".html";
+      openTab.href = url;
+      grid.querySelectorAll(".lang-btn").forEach((btn) => {
+        const pressed = btn.dataset.locale === entry.id;
+        btn.setAttribute("aria-pressed", pressed ? "true" : "false");
+        btn.setAttribute("tabindex", pressed ? "0" : "-1");
+      });
+      if (frame.getAttribute("src") !== url) {
+        statusEl.textContent = "Loading…";
+        statusEl.classList.add("loading");
+        frame.setAttribute("src", url);
+      }
+      try {
+        history.replaceState(null, "", "#" + entry.id);
+      } catch (_) {}
+    }
+
+    frame.addEventListener("load", () => {
+      statusEl.textContent = "";
+      statusEl.classList.remove("loading");
+    });
+
+    REPORT_LOCALES.forEach((loc, i) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "lang-btn";
+      btn.dataset.locale = loc.id;
+      btn.setAttribute("role", "tab");
+      btn.setAttribute("id", "tab-" + loc.id);
+      btn.setAttribute("aria-controls", "report-frame");
+      btn.innerHTML =
+        "<span>" + loc.native + "</span><span class=\"sub\">" + loc.en + "</span>";
+      btn.addEventListener("click", () => setActive(loc.id));
+      grid.appendChild(btn);
+    });
+
+    const hash = (location.hash || "").replace(/^#/, "");
+    const initial = REPORT_LOCALES.some((l) => l.id === hash) ? hash : REPORT_LOCALES[0].id;
+    setActive(initial);
+
+    grid.addEventListener("keydown", (e) => {
+      const keys = ["ArrowRight", "ArrowLeft", "Home", "End"];
+      if (!keys.includes(e.key)) return;
+      const tabs = [...grid.querySelectorAll(".lang-btn")];
+      const i = tabs.findIndex((t) => t.getAttribute("aria-pressed") === "true");
+      if (i < 0) return;
+      let next = i;
+      if (e.key === "ArrowRight") next = (i + 1) % tabs.length;
+      if (e.key === "ArrowLeft") next = (i - 1 + tabs.length) % tabs.length;
+      if (e.key === "Home") next = 0;
+      if (e.key === "End") next = tabs.length - 1;
+      e.preventDefault();
+      tabs[next].focus();
+      setActive(tabs[next].dataset.locale);
+    });
+  </script>
+</body>
+</html>

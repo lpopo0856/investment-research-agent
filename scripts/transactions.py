@@ -3069,6 +3069,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         # theme/sector HTML) and runs `generate_report.py --snapshot`.
         try:
             from portfolio_snapshot import (              # noqa: WPS433
+                BUILTIN_UI_LOCALES,
                 compute_snapshot,
                 parse_settings_profile,
                 write_snapshot,
@@ -3078,6 +3079,28 @@ def main(argv: Optional[List[str]] = None) -> int:
                   "Make sure scripts/portfolio_snapshot.py exists alongside transactions.py.",
                   file=sys.stderr)
             return 5
+        # Defense-in-depth: the snapshot bakes settings_locale / display_name /
+        # raw_language / base_currency into the JSON; the renderer reads them
+        # from the snapshot and ignores its own --settings flag for those
+        # fields. So a demo --db with the root --settings default silently
+        # renders the report in the root profile's language. Mirror the
+        # generate_report.py guard but trigger off --db instead of --output.
+        db_under_demo = (
+            args.db is not None
+            and "demo" in {p.lower() for p in Path(args.db).resolve().parts}
+        )
+        if (
+            db_under_demo
+            and Path(args.settings).resolve().name == "SETTINGS.md"
+            and Path(args.settings).resolve().parent.name != "demo"
+        ):
+            print(
+                f"WARNING: --db {args.db} appears to be the demo ledger but --settings "
+                f"is the root default ({args.settings}). Pass --settings demo/SETTINGS.md "
+                "so the snapshot bakes the demo locale / base currency — generate_report.py "
+                "reads those from the snapshot, not from its own --settings flag.",
+                file=sys.stderr,
+            )
         if not args.prices.exists():
             print(f"ERROR: --prices file {args.prices} not found "
                   "(run scripts/fetch_prices.py first).", file=sys.stderr)
@@ -3112,6 +3135,49 @@ def main(argv: Optional[List[str]] = None) -> int:
         )
         for g in gaps:
             print(f"  - gap: {g}")
+        # Phase-0 hard gate (early surface, complements the renderer's hard
+        # exit-8): when the SETTINGS locale has no built-in UI dictionary, the
+        # executing agent MUST translate `scripts/i18n/report_ui.en.json` into
+        # `$REPORT_RUN_DIR/report_ui.<locale>.json` and pass it via
+        # `--ui-dict` to `generate_report.py`. We surface the instruction
+        # right here — before context authoring begins — so the agent can
+        # do the translation in parallel with Phase A research instead of
+        # discovering the requirement at render time. See
+        # `docs/portfolio_report_agent_guidelines/02-inputs-to-self-containment.md`
+        # §5.1 for the contract.
+        if snap.settings_locale and snap.settings_locale not in BUILTIN_UI_LOCALES:
+            run_dir = Path(args.output).resolve().parent
+            target = run_dir / f"report_ui.{snap.settings_locale}.json"
+            source = Path(__file__).resolve().parent / "i18n" / "report_ui.en.json"
+            print(
+                "\n" + "=" * 72 + "\n"
+                f"NEXT STEP REQUIRED — locale '{snap.settings_locale}' "
+                f"({snap.settings_display_name}) has no built-in UI dictionary.\n"
+                f"Built-in locales: {list(BUILTIN_UI_LOCALES)}.\n"
+                "\n"
+                "Translate the dictionary YOURSELF (in-context), with the same\n"
+                "model running this pipeline. Do NOT call Google Translate /\n"
+                "DeepL / Bing / Papago / any external translation service or\n"
+                "HTTP API — generic translators mangle finance terms (R:R,\n"
+                "MWR annualized, Profit Factor, pp of NAV) and drop {format}\n"
+                "placeholders. The dictionary is small (~245 keys, ~5 KB).\n"
+                "\n"
+                "Read every value in:\n"
+                f"  {source}\n"
+                "translate it into the target language, and write the result to:\n"
+                f"  {target}\n"
+                "Preserve every key, every `{format}` placeholder, every special\n"
+                "character (<, >, &, Δ, ·, —). Token values stay English\n"
+                "(e.g. `consensus-aligned`, `variant`, `contrarian`, `rebalance`).\n"
+                "Then pass `--ui-dict " + str(target) + "` to "
+                "`generate_report.py`.\n"
+                "Without this, `generate_report.py` will exit with code 8 and "
+                "refuse to render — chrome must match SETTINGS language.\n"
+                "Spec: docs/portfolio_report_agent_guidelines/"
+                "02-inputs-to-self-containment.md §5.1.1.\n"
+                + "=" * 72,
+                file=sys.stderr,
+            )
         return 0
 
     if args.cmd == "analytics":

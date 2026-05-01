@@ -49,7 +49,18 @@ or structural field is materialized once, in this order:
    (`portfolio_snapshot.compute_snapshot`): aggregates, totals, FX-converted
    market value / P&L, book pacing, risk-heat scoring, §11 special checks,
    profit panel, realized + unrealized, transaction analytics. The snapshot
-   is the single source of truth for every numeric field downstream.
+   is the single source of truth for every numeric field downstream. The
+   snapshot also bakes in the resolved locale and prints a `NEXT STEP
+   REQUIRED` block on stderr if that locale has no built-in UI dictionary.
+3.5. **UI dictionary translation (only when `SETTINGS.md` `Language:`
+   resolves to a locale outside `en` / `zh-Hant` / `zh-Hans`)** — the agent
+   reads `scripts/i18n/report_ui.en.json`, translates every value into the
+   target language preserving keys and `{format}` placeholders, writes the
+   result to `$REPORT_RUN_DIR/report_ui.<locale>.json`, and passes it to
+   `generate_report.py` via `--ui-dict $REPORT_RUN_DIR/report_ui.<locale>.json`.
+   Skipping this step makes `generate_report.py` exit with code **8** —
+   there is no English-chrome fallback for non-English settings. See §5.1.1
+   in `02-inputs-to-self-containment.md` for the full contract.
 4. Agent authors `"$REPORT_RUN_DIR/report_context.json"` with editorial-only content (news,
    events, alerts, adjustments, action list, theme/sector HTML,
    `trading_psychology`, Strategy readout, reviewer notes). The agent **must
