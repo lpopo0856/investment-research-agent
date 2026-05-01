@@ -1812,8 +1812,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     payload["_audit"]["allow_incomplete_fallbacks"] = args.allow_incomplete_fallbacks
 
     if hard_failures and not args.allow_incomplete_fallbacks:
+        # Exit 6 (latest-price hard failure). Exit 5 is reserved across the
+        # pipeline for `fetch_history.py`'s gap signal that the agent forwards
+        # to `fill_history_gap.py`; using 5 here too would collide and confuse
+        # rc-based automation.
         print(format_todo_required_hard_failures(hard_failures), file=sys.stderr)
-        return 5
+        return 6
 
     serialized = json.dumps(payload, indent=2, ensure_ascii=False)
 
