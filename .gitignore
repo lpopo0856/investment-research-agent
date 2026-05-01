@@ -21,7 +21,9 @@ demo/market_data_cache.db
 demo/market_data_cache.db-journal
 demo/market_data_cache.db-wal
 demo/market_data_cache.db-shm
-demo/reports/
+# Demo HTML for root index + GitHub Pages — track *.html; ignore other artifacts in this folder.
+demo/reports/*
+!demo/reports/*.html
 prices.json
 prices_history.json
 report_snapshot.json
