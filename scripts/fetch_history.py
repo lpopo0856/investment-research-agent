@@ -810,10 +810,77 @@ def merge_into_prices(prices_path: Path, history: Dict[str, Any]) -> None:
         prices_path.write_text(json.dumps(history, indent=2, ensure_ascii=False), encoding="utf-8")
         return
     existing = json.loads(prices_path.read_text(encoding="utf-8"))
-    existing["_history"] = history.get("_history", {})
-    existing["_fx_history"] = history.get("_fx_history", {})
-    existing["_history_meta"] = history.get("_history_meta", {})
+    # Per-ticker merge: a run that fails some symbols (rate limits, empty API)
+    # must not wipe `_history` entries that succeeded on an earlier merge. Latest
+    # run wins per key when both sides have that ticker.
+    old_hist = existing.get("_history") if isinstance(existing.get("_history"), dict) else {}
+    new_hist = history.get("_history") if isinstance(history.get("_history"), dict) else {}
+    merged_hist = {**old_hist, **new_hist}
+    old_fx = existing.get("_fx_history") if isinstance(existing.get("_fx_history"), dict) else {}
+    new_fx = history.get("_fx_history") if isinstance(history.get("_fx_history"), dict) else {}
+    merged_fx = {**old_fx, **new_fx}
+    existing["_history"] = merged_hist
+    existing["_fx_history"] = merged_fx
+    # Re-derive meta to match the merged data: a wholesale replace would advertise
+    # only this run's tickers and mark prior-cached symbols as "failed".
+    new_meta = history.get("_history_meta") or {}
+    merged_meta = dict(new_meta)
+    merged_meta["tickers_ok"] = sorted(merged_hist.keys())
+    merged_meta["fx_ok"] = sorted(merged_fx.keys())
+    merged_meta["tickers_failed"] = [
+        f for f in (new_meta.get("tickers_failed") or [])
+        if f.get("ticker") not in merged_hist
+    ]
+    merged_meta["fx_failed"] = [
+        f for f in (new_meta.get("fx_failed") or [])
+        if f.get("pair") not in merged_fx
+    ]
+    existing["_history_meta"] = merged_meta
     prices_path.write_text(json.dumps(existing, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
+def find_history_gaps(payload: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """Return (ticker_gaps, fx_gaps) — entries with NO rows in _history/_fx_history.
+
+    A "gap" is a ticker or FX pair that this run reports as failed AND that has
+    no prior-cache fallback row in the merged payload. These are the items the
+    agent must web-research and fill via fill_history_gap.py before downstream
+    pipeline steps can proceed.
+    """
+    meta = payload.get("_history_meta") or {}
+    history = payload.get("_history") or {}
+    fx = payload.get("_fx_history") or {}
+    ticker_gaps = [
+        f for f in (meta.get("tickers_failed") or [])
+        if f.get("ticker") not in history
+    ]
+    fx_gaps = [
+        f for f in (meta.get("fx_failed") or [])
+        if f.get("pair") not in fx
+    ]
+    return ticker_gaps, fx_gaps
+
+
+def format_history_gaps(ticker_gaps: List[Dict[str, Any]],
+                        fx_gaps: List[Dict[str, Any]]) -> str:
+    """Agent-actionable stderr message; mirrors fetch_prices.py's format."""
+    lines = [
+        "ERROR: fetch_history.py has unfilled history gaps.",
+        "Per the agent protocol (AGENTS.md, docs/portfolio_report_agent_guidelines"
+        "/03-latest-price-retrieval.md), web-search each missing entry, inject "
+        "the rows via `python scripts/fill_history_gap.py`, then re-run "
+        "fetch_history.py until exit 0. Pass --allow-incomplete only for "
+        "debugging the JSON shape.",
+    ]
+    for f in ticker_gaps[:25]:
+        lines.append(f"  - ticker {f.get('ticker')}: reason={f.get('reason')}")
+    if len(ticker_gaps) > 25:
+        lines.append(f"  - ... +{len(ticker_gaps) - 25} more tickers")
+    for f in fx_gaps[:25]:
+        lines.append(f"  - fx {f.get('pair')}: reason={f.get('reason')}")
+    if len(fx_gaps) > 25:
+        lines.append(f"  - ... +{len(fx_gaps) - 25} more FX pairs")
+    return "\n".join(lines)
 
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -832,6 +899,11 @@ def main(argv: Optional[List[str]] = None) -> int:
                    help="Use cache without network when latest cached row is within this many days (default: 5)")
     p.add_argument("--merge-into", default=None, type=Path,
                    help="Optional: merge _history/_fx_history into this existing prices.json")
+    p.add_argument("--allow-incomplete", action="store_true",
+                   help="Debug only: write output even when tickers/FX pairs still have "
+                        "zero rows. Without this flag, fetch_history.py exits 5 and lists "
+                        "each gap so the agent can web-research them and inject rows via "
+                        "scripts/fill_history_gap.py before re-running.")
     p.add_argument("--verbose", "-v", action="store_true")
     args = p.parse_args(argv)
     logging.basicConfig(level=logging.INFO if args.verbose else logging.WARNING,
@@ -863,6 +935,18 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.merge_into:
         merge_into_prices(args.merge_into, history)
         print(f"Merged history into {args.merge_into}.")
+
+    # Hard step: gap check against the *effective* payload. When --merge-into
+    # was used the merged prices.json is the source of truth (a ticker missing
+    # from this run but already cached in prices.json is not a gap).
+    if args.merge_into and args.merge_into.exists():
+        effective = json.loads(args.merge_into.read_text(encoding="utf-8"))
+    else:
+        effective = history
+    ticker_gaps, fx_gaps = find_history_gaps(effective)
+    if (ticker_gaps or fx_gaps) and not args.allow_incomplete:
+        print(format_history_gaps(ticker_gaps, fx_gaps), file=sys.stderr)
+        return 5
     return 0
 
 

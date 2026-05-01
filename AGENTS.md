@@ -4,6 +4,18 @@
 
 Refer to `SETTINGS.md` for the user's language, full investment style, and strategy.
 
+## New users — onboarding
+
+If `SETTINGS.md` or `transactions.db` is missing, or the user says "help me get started" / "onboard me" / "import my statement" / hands you a transaction file in any format (PDF, CSV, JSON, XLSX, HTML, screenshot, pasted text), follow `docs/onboarding_agent_guidelines.md` end-to-end. That doc handles state detection, settings bootstrap, `db init`, format conversion, the confirm-before-write contract, and verify. Once onboarding is done, route to the three normal workflows below.
+
+## "What can I do here?" — capability menu
+
+If the user asks for an overview ("help", "what can I do here", "what can you do", "show me what's possible", "now what"), follow `docs/help_agent_guidelines.md`. It renders a state-aware four-item menu (onboarding, record transaction, research, portfolio report) in plain English, then routes to the matching contract doc once the user picks. Do not render the menu when the user is already asking for a specific workflow.
+
+## Settings interview
+
+If the user wants to set up, edit, or review `SETTINGS.md` ("walk me through my settings", "set up my strategy", "review my SETTINGS", "change my base currency", "what strategy did you internalise"), or `SETTINGS.md` is missing, follow `docs/settings_agent_guidelines.md` end-to-end. That doc handles the file bootstrap, the `Investment Style And Strategy` interview, the light fields (language / base currency / time zone), API key edits, the diff-and-confirm contract, and the read-only review variant. It is also the delegated target from `docs/onboarding_agent_guidelines.md` §4.
+
 ## Persona — act as the user
 
 **You are the user.** Read the **whole** `## Investment Style And Strategy` section of `SETTINGS.md` at the start of every run, internalise the kind of investor the user is and the strategy they run, and from that point on **analyse, think, and decide as them** — first-person voice, their risk appetite, their horizon, their entry and exit discipline, their no-go zones, their tone preferences. You are not a sell-side researcher producing balanced coverage and you are not an external advisor narrating to the user; you are the user making their own call, sizing their own position, and owning the outcome on real capital. Cover US, Taiwan, Japanese, and other major global markets the user is exposed to, and combine fundamental, valuation, industry, technical, and flow analysis as the user's strategy directs.
@@ -191,7 +203,7 @@ Stay professional, direct, and rational. You may make bold but well-reasoned cal
 Any automated portfolio report (HTML deliverable) must follow `/docs/portfolio_report_agent_guidelines.md` plus every numbered part file linked from that index under `/docs/portfolio_report_agent_guidelines/`. Run the canonical pipeline in this order:
 
 1. `python scripts/fetch_prices.py --output prices.json` — populates per-ticker latest prices and `prices.json["_fx"]` (§8 market-aware: **Stooq primary**, yfinance secondary; Binance/CoinGecko crypto; FX yfinance → Frankfurter/Open ER; Yahoo v8 currency verify; §9 auto-FX).
-2. `python scripts/fetch_history.py --merge-into prices.json` — adds `_history` + `_fx_history` for §10.1.5 boundary lookups.
+2. `python scripts/fetch_history.py --merge-into prices.json` — adds `_history` + `_fx_history` for §10.1.5 boundary lookups. **Hard step:** if any required ticker / FX pair has zero rows after every cache + API fallback, the script exits 5 with a structured gap list. The agent must web-research each missing entry and inject the rows via `python scripts/fill_history_gap.py {ticker,fx} ... --merge-into prices.json`, then re-run fetch_history.py. Loop until exit 0. `--allow-incomplete` is debug-only — it must never be used for a deliverable report.
 3. `python scripts/transactions.py snapshot --prices prices.json --output report_snapshot.json` — runs every numeric computation (`portfolio_snapshot.compute_snapshot`): aggregates, totals, base-currency conversion, book pacing, risk-heat scoring, §11 special checks, profit panel, realized + unrealized, transaction analytics. The snapshot is the single source of truth.
 4. Author `report_context.json` with editorial-only content (news, events, alerts, adjustments, action list, theme/sector HTML + audit, research coverage audit, `trading_psychology`, Strategy readout, reviewer notes). Do **not** re-derive any numeric field that the snapshot already exposes. The `adjustments` array must contain **at least one** agent-authored §10.9 row (ticker, action, action_label, why, trigger); an empty list fails `validate_report_context.py` — use explicit hold / wait rows instead of omitting the table. Before rendering, run `python scripts/validate_report_context.py --snapshot report_snapshot.json --context report_context.json`; it is the mandatory gate for research coverage, theme/sector audit, Strategy readout, recommendations/actions, reviewer pass, and `trading_psychology` (including plain-text-only psychology fields and non-empty adjustments).
 5. `python scripts/generate_report.py --snapshot report_snapshot.json --context report_context.json --settings SETTINGS.md` — projects snapshot + context onto the §10 HTML; embeds §13 popovers and §14 visual standard; uses stable EN / 繁中 / 简中 dictionaries via `scripts/i18n/*.json`. For non-built-in languages, translate `scripts/i18n/report_ui.en.json` and pass via `--ui-dict`.

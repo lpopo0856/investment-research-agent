@@ -1,0 +1,140 @@
+# Help — Agent Guidelines
+
+Brand-agnostic contract for "what can I do here?" requests. Any agent
+(Claude Code, OpenAI Codex, Gemini CLI, or similar) should follow this
+when the user asks for a capability overview rather than a specific
+workflow.
+
+The goal: in one short reply, give the user a clear menu of what this
+repo enables, *how to ask for each thing in plain English*, and which
+deeper doc the agent will follow once they pick. This is the
+conversational front door, not a reprint of `README.md`.
+
+## 1. When this applies
+
+Trigger on any of:
+
+- "Help" / "What can I do here?" / "What can you do?"
+- "How does this repo work?" / "Show me what's possible."
+- "What should I ask you?" / "I don't know where to start."
+- A user who has just finished onboarding and asks "now what?"
+
+If the user is asking about a *specific* capability already
+("generate a report", "log a trade", "import this CSV"), do **not**
+render the help menu — route directly to the relevant workflow doc.
+
+## 2. State-aware reply
+
+Before rendering the menu, check repo state in one shell call:
+
+```sh
+ls SETTINGS.md transactions.db 2>/dev/null
+python scripts/transactions.py db stats 2>/dev/null
+```
+
+Tailor the reply:
+
+- **Cold start** (`SETTINGS.md` and/or `transactions.db` missing) — lead
+  with onboarding. Tell the user the other workflows depend on having
+  those two artifacts in place. Point at `docs/onboarding_agent_guidelines.md`.
+- **Empty DB** (`transactions.db` exists, 0 rows) — lead with transaction
+  recording. The other workflows work but will be empty.
+- **Ready** (settings + DB with rows) — render the full four-item menu.
+
+State the detected state in one sentence at the top so the user knows
+which mode they are in.
+
+## 3. The capability menu
+
+Render exactly these four items, in this order, in the user's
+`SETTINGS.md` `Language` if available (else English). Each item is one
+line of plain-English ask + one line of agent action. Do not list CLI
+commands here — the user is asking the agent, not the shell.
+
+### A. Onboarding (one-time)
+
+- **Ask like:** "Help me get started." / "Onboard me — here's my
+  brokerage statement." (attach PDF / CSV / JSON / XLSX / screenshot /
+  text)
+- **Agent does:** detects missing `SETTINGS.md` / `transactions.db`,
+  bootstraps both, converts whatever format you handed it into canonical
+  transactions, confirms before writing, runs `verify`. Contract:
+  `docs/onboarding_agent_guidelines.md`.
+
+Hide this item from the menu once both artifacts exist and the DB has
+rows.
+
+### B. Record a transaction (most frequent flow)
+
+- **Ask like:** "I bought 30 NVDA at $185 yesterday." / "Sold 10 TSLA
+  at $400 today." / "Q1 GOOG dividend, $80." / "Deposited $5,000." /
+  "Here's my Schwab CSV — please import it."
+- **Agent does:** parses the message (or file), shows the canonical
+  JSON plan, asks for `yes`, then writes + auto-rebuilds + verifies.
+  Hard rule: never writes without explicit confirmation. Contract:
+  `docs/transactions_agent_guidelines.md`.
+
+### C. Research a name or the portfolio (read-only)
+
+- **Ask like:** "Analyze NVDA against my current portfolio." / "What
+  is my AI exposure now?" / "Should I trim short-term positions before
+  earnings?" / "Is XYZ a fit for my strategy?"
+- **Agent does:** reads `SETTINGS.md` (full `Investment Style And
+  Strategy` section), loads positions from `transactions.db`, and
+  responds first-person as the user — variant view, sized in pp of NAV,
+  with kill criteria. No writes. Contract: `AGENTS.md` (Output structure
+  + sourcing rules).
+
+### D. Generate a portfolio report (heavy)
+
+- **Ask like:** "Produce today's portfolio health check." / "Run my
+  pre-market report." / "Generate the daily HTML report."
+- **Agent does:** runs the full Gather → Think → Review → Render
+  pipeline (`fetch_prices` → `fetch_history` → `transactions.py
+  snapshot` → editorial `report_context.json` → `validate_report_context.py`
+  → `generate_report.py`). Output: a standalone HTML under `reports/`.
+  In auto / unattended environments, the agent should obtain explicit
+  consent before sending tickers to external market-data sources.
+  Contract: `docs/portfolio_report_agent_guidelines.md` and every
+  numbered file under `docs/portfolio_report_agent_guidelines/`.
+
+## 4. Customisation pointer
+
+Below the menu, add one line:
+
+> "To change how I act as you — risk appetite, sizing, off-limits zones,
+> language, base currency — say *'walk me through my settings'* and
+> I'll interview you. Or edit `SETTINGS.md` directly."
+
+The interview path follows `docs/settings_agent_guidelines.md`. Do not
+enumerate every SETTINGS field in the menu reply.
+
+## 5. What this menu does **not** include
+
+- CLI command listings (the user is asking the agent, not the shell;
+  manual CLI lives in `README.md` "Manual setup (fallback)").
+- Schema / field reference (lives in `docs/transactions_agent_guidelines.md` §2).
+- Report section taxonomy (lives in `docs/portfolio_report_agent_guidelines/`).
+- API key setup, advanced flags, demo ledger workflow. Mention these
+  only if the user asks specifically.
+
+## 6. Format and length
+
+- ≤ 25 lines total in the rendered reply, including the four menu items.
+- One-line state sentence + four bulleted items + one-line customisation
+  pointer is the target shape.
+- No emojis unless `SETTINGS.md` requests them.
+- Do not include CLI snippets in the menu reply itself; reference the
+  contract docs instead.
+- Close with a single open-ended prompt, e.g. "Which of these would you
+  like to do?"
+
+## 7. What does **not** belong here
+
+- Generating a report, recording a transaction, or running onboarding
+  inline. The help reply is a menu; once the user picks, switch to the
+  matching contract doc and follow it end-to-end.
+- Editing `SETTINGS.md` content beyond the customisation pointer.
+- Recommending specific positions, themes, or trades (research happens
+  under capability C, not in the help menu).
+- Editing any spec under `docs/`. Help is rendering, not authoring.

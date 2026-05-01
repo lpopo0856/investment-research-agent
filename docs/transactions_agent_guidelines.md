@@ -387,15 +387,25 @@ python scripts/transactions.py analytics \
     --settings SETTINGS.md --output transaction_analytics.json
 ```
 
-The renderer uses it for:
+The output is a JSON object with three top-level groups (`performance_attribution`,
+`trade_quality`, `discipline_check`) plus `base_currency` and `as_of`. Each
+group's emitted keys (canonical — consume by name, do not paraphrase):
 
-- performance attribution: flow-adjusted period P&L, MWR, top contributors /
-  detractors, and asset-class contribution;
-- trade quality: closed-lot win rate, profit factor, average hold days, sell
-  follow-up, and buy follow-up;
-- discipline check: cash deployment speed, top position weights, recent buy
-  churn, stale short-bucket lots, high-cost adds, largest gain / loss lots, and
-  analytics data gaps.
+- `performance_attribution`: `ending_nav`, `money_weighted_return_annualized`,
+  `periods`, `top_contributors`, `top_detractors`, `asset_class_contribution`.
+- `trade_quality`: `closed_lot_count`, `win_rate_pct`, `gross_profit`,
+  `gross_loss`, `profit_factor`, `avg_realized`, `avg_win`, `avg_loss`,
+  `avg_hold_days`, `sell_followups`, `buy_followups`, `recent_activity`.
+- `discipline_check`: `avg_days_deposit_to_buy` (cash deploy speed from
+  DEPOSIT → next BUY), `avg_days_sell_to_buy` (redeploy speed from SELL →
+  next BUY), `top_position_weights`, `recent_buy_counts_30d` (buy churn,
+  filtered to ≥ 3), `short_bucket_over_1y` (stale short-term lots),
+  `latest_lot_cost_flags` (high-cost-vs-prior adds), `largest_unrealized_losses`,
+  `largest_unrealized_gains`, `data_gaps`.
+
+The shape and key names are authoritative in `scripts/transactions.py`
+(`compute_transaction_analytics`); update this list when keys are added,
+removed, or renamed.
 
 ## 7. Realized + unrealized snapshot
 

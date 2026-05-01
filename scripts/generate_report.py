@@ -214,6 +214,7 @@ from portfolio_snapshot import (                              # noqa: E402
     write_snapshot,
 )
 from validate_report_context import validate_report_context    # noqa: E402
+from report_archive import archive_report as _archive_report   # noqa: E402
 
 
 # Legacy alias kept for any out-of-tree caller that imported this name from
@@ -3561,6 +3562,19 @@ def main(argv: Optional[List[str]] = None) -> int:
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(html_doc, encoding="utf-8")
     print(f"Wrote {args.output} ({len(html_doc):,} bytes)")
+
+    try:
+        m = re.search(r"(\d{4}-\d{2}-\d{2}_\d{4})", args.output.name)
+        report_id = m.group(1) if m else args.output.stem
+        _archive_report(
+            report_id=report_id,
+            snapshot_path=args.snapshot,
+            context_path=args.context,
+            html_path=args.output,
+            db_path=args.db if args.db else Path("transactions.db"),
+        )
+    except Exception as exc:  # noqa: BLE001 — never let archival block delivery
+        logging.warning("report_archive: failed to persist %s: %s", args.output, exc)
     return 0
 
 
