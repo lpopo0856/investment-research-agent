@@ -2,11 +2,11 @@
 
 **README languages** · [English](README.md) · [繁體中文](docs/l10n/README.zh-Hant.md) · [简体中文](docs/l10n/README.zh-Hans.md) · [日本語](docs/l10n/README.ja.md) · [Tiếng Việt](docs/l10n/README.vi.md) · [한국어](docs/l10n/README.ko.md)
 
-The English README is the canonical version. Other languages are convenience translations.
+The English README is the canonical version. Other languages are reader-friendly translations.
 
-A local workspace for an AI investment research agent. Open this repo in **Claude Code, OpenAI Codex, Gemini CLI, or any agent that can read files and run commands** — and just talk to it.
+A local workspace for an AI investment research assistant. Open this repo in **Claude Code, OpenAI Codex, Gemini CLI, or any agent that can read files and run commands** — then talk to it in plain language.
 
-**Model tier:** Use **Claude Sonnet 4.6** with **High** reasoning effort, or any newer model at least as capable. Lighter models may skip steps or weaken depth.
+**Model tier:** Use **Claude Sonnet 4.6** with **High** reasoning effort, or any newer model at least as capable. Lighter models may skip steps or shallow out the analysis.
 
 ## Just ask the agent
 
@@ -31,7 +31,7 @@ You don't need to learn any commands, schemas, or files. Pick whichever line bel
 > "Sold 10 TSLA at $400 today."
 > "Q1 GOOG dividend, $80."
 > "Deposited $5,000."
-> "Here's my Schwab CSV — please import it."
+> "Here's my Schwab CSV — please import it." *(other broker exports work too; see `docs/`)*
 
 **Ask a research question:**
 
@@ -44,11 +44,11 @@ You don't need to learn any commands, schemas, or files. Pick whichever line bel
 > "Produce today's portfolio health check."
 > "Run my pre-market report."
 
-The agent confirms before any write to your data, and follows the contract docs under `docs/` end-to-end. You stay in plain English; it handles the rest.
+The agent confirms before any write to your data, and follows the contract docs under `docs/` end-to-end. You describe what you want in everyday language; it handles the mechanics.
 
 ## Privacy
 
-Your settings, your transactions database, and every generated report stay local — none of them are tracked in git. Only the agent specs, example templates, and the Python scripts are in version control.
+Your settings, your transactions database (SQLite), and every generated report stay local — none of them are tracked in git. Only the agent specs, example templates, and the Python scripts are in version control.
 
 ## Third-party data
 
@@ -56,4 +56,4 @@ The price workflow may use public market-data and FX endpoints (Stooq, Yahoo, Bi
 
 ## Disclaimer
 
-For personal research only. Not investment advice. Verify important facts independently before trading.
+For personal research and record-keeping only. Not investment or legal advice. Verify important facts independently before trading; you own the decisions.
