@@ -682,6 +682,7 @@ tbody td:has(.price-trigger:is(:hover,:focus-within)){
   padding:8px 0;border-bottom:1px dotted var(--hairline);
   font-size: clamp(13.5px, 0.35vw + 12.4px, 14.5px);
   color:var(--ink-soft);line-height:1.7;
+  overflow-wrap:anywhere;word-break:break-word;
 }
 .gap-list li:last-child{border-bottom:0}
 .gap-list li b{color:var(--ink);font-weight:680}
@@ -689,6 +690,13 @@ tbody td:has(.price-trigger:is(:hover,:focus-within)){
   background:var(--surface-2);padding:1px 5px;border-radius:2px;
   font-size:.92em;color:var(--ink);
 }
+.gap-list .gap-sublist{
+  margin:6px 0 0;padding:0 0 0 18px;list-style:disc;
+}
+.gap-list .gap-sublist li{
+  padding:3px 0;border-bottom:0;line-height:1.55;
+}
+.gap-list .gap-sublist li.gap-overflow{color:var(--ink-soft);font-style:italic}
 
 /* ---------- Cash vs risk-asset bar (single horizontal split) ---------- */
 .cash-bar{

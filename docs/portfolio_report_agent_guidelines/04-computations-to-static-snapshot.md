@@ -177,6 +177,18 @@ is intentional. `realized` and `unrealized_Δ` are surfaced; the residual
 lives implicitly in `period_pnl` itself and surfaces in Sources & data gaps
 when material.
 
+**§10.11 gap-list rendering contract (HARD).** Each audit note in
+`profit_panel.rows[].audit`, `profit_panel.open_position_audit`,
+`profit_panel.issues`, and `transaction_analytics.discipline_check.data_gaps`
+is **its own row** in the §10.11 gaps `<ul>`. The renderer must group notes
+under one labeled parent `<li>` (e.g. *Profit panel data gap*) plus a nested
+`<ul class="gap-sublist">` containing one `<li>` per note — never concatenate
+multiple notes into a single bullet with `；` / `; ` / `,` separators (that
+overflows the section width and produces a broken layout). Group cap is 12
+visible notes; a 13th+ note collapses into a single trailing `+N more` row in
+the same sublist. CSS hardening (`overflow-wrap:anywhere`) is defense-in-depth,
+not a substitute for the per-note row contract.
+
 `starting_value` requires daily closes for every held ticker at the boundary
 date plus FX as-of the boundary. The agent runs `scripts/fetch_history.py`
 to populate `prices.json["_history"]` and `prices.json["_fx_history"]`.

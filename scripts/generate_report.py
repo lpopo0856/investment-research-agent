@@ -1389,6 +1389,28 @@ def render_report_accuracy(context: Dict[str, Any]) -> str:
   </section>"""
 
 
+_GAP_GROUP_MAX = 12
+
+
+def _gap_group_li(label: str, notes: List[str]) -> str:
+    """Render a labeled group of audit notes as one parent <li> with a nested
+    <ul class="gap-sublist"> so each note gets its own row. Multi-note groups
+    must never be concatenated into a single bullet — that overflows the
+    section width on long lists (see §10.11 rendering contract).
+    """
+    head = _GAP_GROUP_MAX
+    visible = notes[:head]
+    overflow = len(notes) - head
+    sub = "".join(f'<li>{_esc(n)}</li>' for n in visible)
+    if overflow > 0:
+        sub += f'<li class="gap-overflow">+{overflow} more</li>'
+    return (
+        f'<li><b>{_esc(label)}:</b>'
+        f'<ul class="gap-sublist">{sub}</ul>'
+        f'</li>'
+    )
+
+
 def _profit_panel_audit_notes(context: Dict[str, Any]) -> List[str]:
     panel = context.get("profit_panel") or {}
     rows = panel.get("rows") or []
@@ -3040,11 +3062,8 @@ def render_sources(prices: Dict[str, Any], context: Dict[str, Any]) -> str:
 
     profit_panel_notes = _profit_panel_audit_notes(context)
     if profit_panel_notes:
-        detail = "；".join(profit_panel_notes[:12])
-        if len(profit_panel_notes) > 12:
-            detail += f"；+{len(profit_panel_notes) - 12} more"
         gap_items.append(
-            f'<li><b>{_esc(_ui("sources.profit_panel_gap"))}:</b> {_esc(detail)}</li>'
+            _gap_group_li(_ui("sources.profit_panel_gap"), profit_panel_notes)
         )
     if not _transaction_analytics(context):
         gap_items.append(
@@ -3052,15 +3071,13 @@ def render_sources(prices: Dict[str, Any], context: Dict[str, Any]) -> str:
             f'{_esc(_ui("sources.transaction_analytics_gap_detail"))}</li>'
         )
     else:
-        analytics_gaps = (
-            (_transaction_analytics(context).get("discipline_check") or {}).get("data_gaps") or []
-        )
+        analytics_gaps = [
+            str(g) for g in
+            ((_transaction_analytics(context).get("discipline_check") or {}).get("data_gaps") or [])
+        ]
         if analytics_gaps:
-            detail = "；".join(str(g) for g in analytics_gaps[:12])
-            if len(analytics_gaps) > 12:
-                detail += f"；+{len(analytics_gaps) - 12} more"
             gap_items.append(
-                f'<li><b>{_esc(_ui("sources.transaction_analytics_gap"))}:</b> {_esc(detail)}</li>'
+                _gap_group_li(_ui("sources.transaction_analytics_gap"), analytics_gaps)
             )
 
     rp_summary_label = _ui("reviewer.summary_label")
