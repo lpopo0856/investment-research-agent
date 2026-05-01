@@ -18,7 +18,7 @@ USAGE
 -----
     python scripts/generate_report.py \
         --settings SETTINGS.md \
-        --prices prices.json \
+        --snapshot report_snapshot.json \
         --context report_context.json \
         --output reports/2026-04-28_1330_portfolio_report.html
 
@@ -40,32 +40,65 @@ CONTEXT FILE SHAPE  (report_context.json)
       "events":        [{"date": "01-08", "topic": "DELT", "event": "本季財報",
                           "impact_label": "高", "impact_class": "warn", "watch": "..."},
                          ...],
-      "high_opps":     [{"ticker": "ZETA", "why": "...", "trigger": "260 突破加碼"}, ...],
+      "high_opps":     [{"ticker": "ZETA", "actionable": false,
+                          "why": "...", "trigger": "260 突破才研究是否加碼"}, ...],
       "adjustments":   [{"ticker": "KAPA", "current_pct": 4.5, "action": "trim",
                           "action_label": "減碼 20%", "why": "...", "trigger": "..."},
-                         ...],
+                         ...],          // non-empty list required — validate_report_context rejects []
       "holdings_actions": {"BTC": "長線續抱；50–55k 分批加碼", ...},
-      "actions":       {"must_do": ["..."], "may_do": ["..."],
-                         "avoid": ["..."],  "need_data": ["..."]},
+      "actions":       {"must_do": [{"ticker": "NVDA", "action": "add",
+                                      "why": "...", "trigger": "...",
+                                      "sized_pp_delta": 1.0,
+                                      "variant_tag": "variant",
+                                      "consensus": "...", "variant": "...",
+                                      "anchor": "...", "entry_price": 1,
+                                      "target_price": 2, "stop_price": 0.8,
+                                      "failure_mode": "...",
+                                      "kill_trigger": "...",
+                                      "kill_action": "cut"}],
+                         "may_do": [], "avoid": ["..."], "need_data": ["..."]},
       "transaction_analytics": {
         "performance_attribution": {...},
         "trade_quality": {...},
         "discipline_check": {...}
       },                  // optional override; generated automatically from transactions.db when absent
+      "theme_sector_html": "<div class=\"cols-2\">...</div>",
+      "theme_sector_audit": {
+        "tickers": {
+          "NVDA": {"sector": "半導體", "themes": {"AI 算力": 1.0}, "sources": ["..."]}
+        }
+      },
+      "research_coverage": {
+        "tickers": {
+          "NVDA": {"news": {"count": 1}, "events": {"count": 1}}
+        }
+      },
+      "trading_psychology": {
+        "headline": "...",
+        "observations": [{"behavior": "...", "evidence": "snapshot.transaction_analytics...", "tone": "warn"}],
+        "improvements": [{"issue": "...", "suggestion": "...", "priority": "high"}],
+        "strengths": ["..."]
+      },                  // mandatory; full context validated by scripts/validate_report_context.py before render
+      "reviewer_pass": {
+        "completed": true,
+        "reviewed_sections": ["alerts", "watchlist", "adjustments", "actions",
+                              "strategy_readout", "trading_psychology",
+                              "theme_sector", "news_events"],
+        "summary": [],
+        "by_section": {}
+      },
       "data_gaps":     [{"summary": "ALPH 成本基礎缺失",
                           "detail": "transactions.db open_lots row for ALPH lacks cost basis"}, ...],
       "spec_update_note": "...",
-
-      "theme_sector_html": "<div class=\"bars\">...</div>"
     }
 
 REQUIRED EDITORIAL HTML — `theme_sector_html` (spec §10.4.2)
 -------------------------------------------------------------
-The agent **must** auto-classify each holding by sector / theme each run and
-pre-render the bar chart as a string of HTML. The script does NOT compute this
-because the classification depends on current public-data context, not just the
-ticker. If `theme_sector_html` is missing, the section renders a placeholder
-telling the user the agent skipped this step.
+The agent **must** auto-classify each holding by sector / theme each run,
+pre-render the bar chart as a string of HTML, and provide `theme_sector_audit`.
+The script does NOT compute this because the classification depends on current
+public-data context, not just the ticker. Missing theme fields fail the
+pre-render context validator.
 
 The full deterministic contract — closed-list sectors, fixed-order theme master
 list, ETF look-through rules, bar color rules, bucket-note thresholds, and the
@@ -138,159 +171,54 @@ from fetch_prices import (                                    # noqa: E402
     format_todo_required_hard_failures,
 )
 
-
-# ----------------------------------------------------------------------------- #
-# Defaults — mirror SETTINGS.example.md "Position sizing rails" so warnings fire.
-# ----------------------------------------------------------------------------- #
-
-DEFAULTS = {
-    "single_name_weight_warn_pct": 15.0,    # §11 special check #1
-    "theme_concentration_warn_pct": 25.0,   # §11 #2
-    "high_vol_bucket_warn_pct": 30.0,       # §11 #3
-    "cash_floor_warn_pct": 10.0,            # §15.6 cash floor (warn below)
-    "single_day_move_alert_pct": 8.0,       # §10.6 alert #4
-    "earnings_within_days": 7,              # §10.6 alert #5
-    "earnings_weight_pct": 5.0,             # §10.6 alert #5
-    "above_target_pct": 20.0,               # §10.6 alert #7
-}
-
-
-# ----------------------------------------------------------------------------- #
-# SETTINGS.md parsing + language resolution
-# ----------------------------------------------------------------------------- #
-
-LANGUAGE_ALIASES = {
-    "en": "en",
-    "eng": "en",
-    "english": "en",
-    "zh-hant": "zh-Hant",
-    "zh-tw": "zh-Hant",
-    "traditional chinese": "zh-Hant",
-    "traditional chinese (taiwan)": "zh-Hant",
-    "繁體中文": "zh-Hant",
-    "繁体中文": "zh-Hant",
-    "zh-hans": "zh-Hans",
-    "zh-cn": "zh-Hans",
-    "simplified chinese": "zh-Hans",
-    "簡體中文": "zh-Hans",
-    "简体中文": "zh-Hans",
-    "ja": "ja",
-    "jp": "ja",
-    "japanese": "ja",
-    "日本語": "ja",
-    "ko": "ko",
-    "korean": "ko",
-    "한국어": "ko",
-    "vi": "vi",
-    "vietnamese": "vi",
-    "tiếng việt": "vi",
-}
-
-DISPLAY_NAME_BY_LOCALE = {
-    "en": "English",
-    "zh-Hant": "繁體中文",
-    "zh-Hans": "简体中文",
-    "ja": "日本語",
-    "ko": "한국어",
-    "vi": "Tiếng Việt",
-}
-
-RAIL_PATTERNS = {
-    "single_name_weight_warn_pct": r"Single-name weight cap:\s*([0-9]*\.?[0-9]+)%",
-    "theme_concentration_warn_pct": r"Theme concentration cap:\s*([0-9]*\.?[0-9]+)%",
-    "high_vol_bucket_warn_pct": r"High-volatility bucket cap:\s*([0-9]*\.?[0-9]+)%",
-    "cash_floor_warn_pct": r"Cash floor:\s*([0-9]*\.?[0-9]+)%",
-    "single_day_move_alert_pct": r"Single-day move alert:\s*[±+-]?([0-9]*\.?[0-9]+)%",
-}
-
-# §9.0 — `Base currency: <CCY>` line in SETTINGS.md picks the canonical currency
-# every aggregate is denominated in. Default is USD when missing or unset.
-BASE_CURRENCY_PATTERN = r"Base currency:\s*([A-Za-z]{3})"
-DEFAULT_BASE_CURRENCY = "USD"
+# Pure-compute pipeline stage. The renderer no longer owns the math — it
+# imports the dataclasses, helpers, and snapshot serializer from
+# portfolio_snapshot.py so `python scripts/transactions.py snapshot` and the
+# legacy `--prices --db` fallback share one implementation.
+from portfolio_snapshot import (                              # noqa: E402
+    BASE_CURRENCY_PATTERN,
+    BookPacing,
+    CASH_STABLECOIN_USD,
+    CheckResult,
+    DEFAULT_BASE_CURRENCY,
+    DEFAULTS,
+    DISPLAY_NAME_BY_LOCALE,
+    LANGUAGE_ALIASES,
+    LANGUAGE_QUOTE_CHARS,
+    MARKET_DEFAULT_CCY,
+    RAIL_PATTERNS,
+    RISK_REASONS_EN,
+    RiskHeatItem,
+    SCHEMA_VERSION as SNAPSHOT_SCHEMA_VERSION,
+    SettingsProfile,
+    Snapshot,
+    TickerAggregate,
+    _bucket_key,
+    _bucket_priority,
+    _days_label,
+    _fx_to_base,
+    aggregate,
+    auto_fx_from_prices,
+    book_pacing,
+    build_risk_heat_items,
+    compute_snapshot,
+    compute_totals,
+    deserialize_snapshot,
+    find_missing_fx,
+    hold_period_label,
+    merge_prices,
+    parse_settings_profile,
+    serialize_snapshot,
+    settings_profile_for_snapshot,
+    special_checks,
+    write_snapshot,
+)
+from validate_report_context import validate_report_context    # noqa: E402
 
 
-@dataclass
-class SettingsProfile:
-    raw_language: str
-    locale: str
-    display_name: str
-    config_overrides: Dict[str, float]
-    base_currency: str = DEFAULT_BASE_CURRENCY
-    missing: bool = False
-
-
-def _extract_settings_section_bullets(text: str, heading: str) -> List[str]:
-    bullets: List[str] = []
-    in_section = False
-    for raw_line in text.splitlines():
-        line = raw_line.rstrip()
-        # Match both `## Language` and `Language:` heading formats.
-        if line.startswith("## "):
-            current = line[3:].strip().lower()
-            in_section = current == heading.lower()
-            continue
-        stripped = line.strip()
-        if stripped.lower() == heading.lower() + ":":
-            in_section = True
-            continue
-        if not in_section:
-            continue
-        # A new plain heading (no leading `-`) that ends with `:` terminates the section.
-        if stripped and not stripped.startswith("-") and stripped.endswith(":"):
-            break
-        if line.startswith("### "):
-            break
-        if line.lstrip().startswith("-"):
-            bullets.append(line.split("-", 1)[1].strip())
-    return bullets
-
-
-def _normalize_language(raw_language: str) -> str:
-    normalized = raw_language.strip().strip(LANGUAGE_QUOTE_CHARS).strip().lower()
-    if normalized in LANGUAGE_ALIASES:
-        return LANGUAGE_ALIASES[normalized]
-    return normalized or "en"
-
-
-def parse_settings_profile(path: Path) -> SettingsProfile:
-    if not path.exists():
-        return SettingsProfile(
-            raw_language="english",
-            locale="en",
-            display_name=DISPLAY_NAME_BY_LOCALE["en"],
-            config_overrides={},
-            base_currency=DEFAULT_BASE_CURRENCY,
-            missing=True,
-        )
-
-    text = path.read_text(encoding="utf-8")
-    bullets = _extract_settings_section_bullets(text, "Language")
-    raw_language = bullets[0] if bullets else "english"
-    locale = _normalize_language(raw_language)
-    display_name = DISPLAY_NAME_BY_LOCALE.get(locale, raw_language.strip() or locale)
-
-    config_overrides: Dict[str, float] = {}
-    for key, pattern in RAIL_PATTERNS.items():
-        m = re.search(pattern, text, re.IGNORECASE)
-        if not m:
-            continue
-        try:
-            config_overrides[key] = float(m.group(1))
-        except ValueError:
-            continue
-
-    # Base currency: optional. Falls back to USD per §9.0 default.
-    base_match = re.search(BASE_CURRENCY_PATTERN, text, re.IGNORECASE)
-    base_currency = base_match.group(1).upper() if base_match else DEFAULT_BASE_CURRENCY
-
-    return SettingsProfile(
-        raw_language=raw_language,
-        locale=locale,
-        display_name=display_name,
-        config_overrides=config_overrides,
-        base_currency=base_currency,
-        missing=False,
-    )
+# Legacy alias kept for any out-of-tree caller that imported this name from
+# generate_report. The canonical implementation lives in portfolio_snapshot.
+_auto_fx_from_prices = auto_fx_from_prices
 
 
 # ----------------------------------------------------------------------------- #
@@ -774,7 +702,7 @@ def _load_builtin_ui_text() -> Dict[str, Dict[str, Any]]:
 STABLE_UI_TEXT = _load_builtin_ui_text()
 
 ACTIVE_UI: Dict[str, Any] = copy.deepcopy(STABLE_UI_TEXT["en"])
-LANGUAGE_QUOTE_CHARS = "\"'“”‘’「」『』〈〉《》"
+# `LANGUAGE_QUOTE_CHARS` is imported from portfolio_snapshot at module top.
 
 
 def _ui(path: str, **kwargs: Any) -> str:
@@ -853,6 +781,46 @@ _REVIEWER_CSS = """
 li.reviewer-note, li.reviewer-summary { font-style: italic; color: #475569; }
 li.reviewer-note b, li.reviewer-summary b { font-style: normal; color: #334155; }
 li.reviewer-summary { margin-top: 8px; padding-top: 8px; border-top: 1px dashed #cbd5e1; }
+/* §10.1.7 trading psychology — same typographic scale as .prose / body (§14.9 tokens) */
+.psych-headline { margin-bottom: 14px; }
+.psych-headline p {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: clamp(13.5px, 0.35vw + 12.4px, 14.5px);
+  line-height: 1.7;
+  font-weight: 650;
+}
+.psych-list { margin: 0; padding-left: 0; list-style: none; }
+.psych-list li {
+  margin: 0 0 10px 0;
+  padding: 0;
+  color: var(--ink-soft);
+  font-size: clamp(13.5px, 0.35vw + 12.4px, 14.5px);
+  line-height: 1.7;
+}
+.psych-list li:last-child { margin-bottom: 0; }
+.psych-list .psych-li-main { display: inline; }
+.psych-evidence {
+  margin-top: 6px;
+  font-size: clamp(11.5px, 0.2vw + 10.8px, 12.5px);
+  color: var(--muted);
+  letter-spacing: 0.04em;
+  line-height: 1.45;
+}
+.psych-ev-prefix { font-style: italic; margin-right: 4px; }
+.psych-suggestion {
+  margin-top: 6px;
+  color: var(--ink-soft);
+  font-size: clamp(13.5px, 0.35vw + 12.4px, 14.5px);
+  line-height: 1.65;
+}
+.psych-suggestion-label { font-weight: 650; margin-right: 6px; }
+.psych-strengths-wrap { margin-top: 18px; }
+.tag.info { color: var(--info); border-color: #b8c9e8; background: #f4f7fd; }
+.tag.neu { color: var(--muted); border-color: var(--hairline-2); background: var(--surface-2); }
+/* §10.1.5a report accuracy — one KPI uses full width (avoid 4-col grid squeezing) */
+.kpis.kpis-solo { grid-template-columns: minmax(0, 1fr); }
+.kpis.kpis-solo .kpi { padding-left: 0; }
 """
 
 
@@ -871,327 +839,11 @@ def load_canonical_css(sample_path: Path) -> str:
 
 
 # ----------------------------------------------------------------------------- #
-# Metrics
+# Metrics — TickerAggregate, BookPacing, RiskHeatItem, CheckResult, aggregate(),
+# merge_prices(), book_pacing(), build_risk_heat_items(), special_checks() and
+# the FX helpers all live in `portfolio_snapshot` so the snapshot and the
+# renderer share one implementation. Imported at the top of this file.
 # ----------------------------------------------------------------------------- #
-
-@dataclass
-class TickerAggregate:
-    """Per-ticker rollup used by the holdings table and the popovers.
-
-    Per spec §9.0 every aggregate (`market_value`, `pnl_amount`, `weighted_avg_cost_usd`,
-    cash totals) is in the configured base currency. Native trade currency is
-    preserved for popover display via the `*_native` fields and `trade_currency`.
-    """
-    ticker: str
-    market: MarketType
-    bucket: str                       # representative bucket (highest seniority)
-    total_qty: float
-    weighted_avg_cost: Optional[float]      # native trade currency (None if all lots have ? cost)
-    total_cost_known: float                 # native: Σ(lot_cost × lot_qty) over known-cost lots
-    earliest_date: Optional[str]            # for hold period
-    lots: List[Lot] = field(default_factory=list)
-
-    # Filled in after price merge — all base-currency unless suffixed _native.
-    latest_price: Optional[float] = None             # native trade currency (display in §10.3)
-    move_pct: Optional[float] = None
-    market_value: Optional[float] = None             # base currency (post-FX)
-    pnl_amount: Optional[float] = None               # base currency
-    pnl_pct: Optional[float] = None                  # ratio, currency-agnostic
-    weighted_avg_cost_usd: Optional[float] = None    # base-converted avg cost (legacy name)
-    is_cash: bool = False
-    trade_currency: str = "USD"                      # market → currency (US/crypto/FX → USD)
-    fx_rate_used: Optional[float] = None             # 1 unit native = N base; None when n/a
-
-
-@dataclass
-class BookPacing:
-    """§9.5 book-wide aggregates for the Holding period & pacing block."""
-    avg_hold_years: Optional[float]
-    oldest: Optional[Tuple[str, str, str]]    # (ticker, date, duration_label)
-    newest: Optional[Tuple[str, str, str]]
-    pct_held_over_1y: Optional[float]
-    distribution_pct: Dict[str, float]        # buckets: <1m, 1-6m, 6-12m, 1-3y, 3y+
-
-
-def _bucket_priority(name: str) -> int:
-    order = {"long term": 0, "mid term": 1, "short term": 2, "cash holdings": 99}
-    for k, v in order.items():
-        if name.lower().startswith(k):
-            return v
-    return 50
-
-
-def aggregate(lots: List[Lot]) -> Dict[str, TickerAggregate]:
-    """One row per distinct ticker, picking the most senior bucket if a ticker spans multiple."""
-    buckets: Dict[str, TickerAggregate] = {}
-    for lot in lots:
-        agg = buckets.get(lot.ticker)
-        is_cash = lot.market == MarketType.CASH or _bucket_priority(lot.bucket) == 99
-        if agg is None:
-            agg = TickerAggregate(
-                ticker=lot.ticker,
-                market=lot.market,
-                bucket=lot.bucket,
-                total_qty=0.0,
-                weighted_avg_cost=None,
-                total_cost_known=0.0,
-                earliest_date=None,
-                is_cash=is_cash,
-            )
-            buckets[lot.ticker] = agg
-        # Promote bucket if a more senior one shows up
-        if _bucket_priority(lot.bucket) < _bucket_priority(agg.bucket):
-            agg.bucket = lot.bucket
-
-        agg.lots.append(lot)
-        agg.total_qty += lot.quantity
-        if lot.cost is not None:
-            agg.total_cost_known += lot.cost * lot.quantity
-        if lot.date:
-            if agg.earliest_date is None or lot.date < agg.earliest_date:
-                agg.earliest_date = lot.date
-
-    # Compute weighted average cost over lots with known cost only
-    for agg in buckets.values():
-        known_qty = sum(l.quantity for l in agg.lots if l.cost is not None)
-        if known_qty > 0:
-            agg.weighted_avg_cost = agg.total_cost_known / known_qty
-    return buckets
-
-
-# §9.0 — every market type maps to a default trade currency. The agent can override
-# per-ticker via the editorial context if a security is dual-listed.
-MARKET_DEFAULT_CCY: Dict[MarketType, str] = {
-    MarketType.US: "USD",
-    MarketType.CRYPTO: "USD",
-    MarketType.FX: "USD",
-    MarketType.TW: "TWD",
-    MarketType.TWO: "TWD",
-    MarketType.JP: "JPY",
-    MarketType.HK: "HKD",
-    MarketType.LSE: "GBP",
-    MarketType.UNKNOWN: "USD",
-    MarketType.CASH: "USD",  # overridden per-line below
-}
-
-# USD stablecoin tickers held as `[cash]` are pegged at $1.00 USD per unit. When the
-# report base currency is not USD, the cash-line conversion below applies the
-# auto-fetched fx rate to translate the peg into base units.
-CASH_STABLECOIN_USD: Dict[str, float] = {
-    "USDC": 1.0, "USDT": 1.0, "DAI": 1.0, "BUSD": 1.0, "TUSD": 1.0, "USDP": 1.0,
-}
-
-
-def _fx_to_base(
-    native_amount: Optional[float],
-    currency: str,
-    fx: Dict[str, float],
-    base: str = DEFAULT_BASE_CURRENCY,
-) -> Tuple[Optional[float], Optional[float]]:
-    """Convert `native_amount` in `currency` to the configured base currency.
-
-    `fx` is keyed `"<BASE>/<CCY>"` with the rate "1 unit of base = N units of CCY".
-    The rates come from prices.json["_fx"], not SETTINGS.md. Returns
-    (base_amount, fx_rate_used).
-    `fx_rate_used` is "1 unit of native = X units of base" (i.e. 1 / (base/ccy))
-    so the caller can record what was applied.
-    """
-    if native_amount is None:
-        return None, None
-    if currency == base:
-        return native_amount, 1.0
-    rate_key = f"{base}/{currency}"
-    pair_rate = fx.get(rate_key)
-    if pair_rate in (None, 0):
-        return None, None
-    fx_native_to_base = 1.0 / pair_rate
-    return native_amount * fx_native_to_base, fx_native_to_base
-
-
-def merge_prices(
-    aggs: Dict[str, TickerAggregate],
-    prices: Dict[str, Any],
-    fx: Optional[Dict[str, float]] = None,
-    base: str = DEFAULT_BASE_CURRENCY,
-) -> None:
-    """Merge prices and apply §9.0 base-currency canonicalization.
-
-    `fx` is the auto-fetched base-quoted rate map from prices.json["_fx"]. If a
-    non-base currency is held but no rate was fetched, the affected aggregate is
-    marked `n/a` (per §9.6). We never assume parity.
-
-    `base` defaults to USD for backwards compatibility; pass a different ISO 4217
-    code (e.g. "TWD") to denominate the report in another currency.
-    """
-    fx = fx or {}
-    base = base.upper()
-    for ticker, agg in aggs.items():
-        if agg.is_cash:
-            ccy = ticker.upper()
-            agg.trade_currency = ccy
-            # USD stablecoins are pegged at $1; convert to base via the auto-FX map.
-            if ccy in CASH_STABLECOIN_USD:
-                usd_value = agg.total_qty * CASH_STABLECOIN_USD[ccy]
-                base_value, base_rate = _fx_to_base(usd_value, "USD", fx, base)
-                agg.market_value = base_value           # None if base != USD and fx missing
-                agg.fx_rate_used = base_rate
-            elif ccy == base:
-                agg.market_value = agg.total_qty
-                agg.fx_rate_used = 1.0
-            else:
-                base_value, rate = _fx_to_base(agg.total_qty, ccy, fx, base)
-                agg.market_value = base_value           # None when fx missing
-                agg.fx_rate_used = rate
-            continue
-
-        pr = prices.get(ticker, {}) or {}
-        agg.latest_price = pr.get("latest_price")      # native trade currency, displayed as-is
-        agg.move_pct = pr.get("move_pct")
-        # Source-currency override from prices.json wins over market-default mapping.
-        agg.trade_currency = (pr.get("currency") or MARKET_DEFAULT_CCY.get(agg.market, "USD")).upper()
-
-        if agg.latest_price is not None:
-            native_mv = agg.latest_price * agg.total_qty
-            base_mv, rate = _fx_to_base(native_mv, agg.trade_currency, fx, base)
-            agg.market_value = base_mv                  # base currency; None if fx missing
-            agg.fx_rate_used = rate
-            if agg.weighted_avg_cost not in (None, 0):
-                # weighted_avg_cost is in the lot's acquisition trade currency. We use the
-                # *current* fx rate as the simplest spec-compliant approximation; the agent
-                # may inject acquisition-date FX via a richer context payload in the future.
-                native_cost_basis = agg.weighted_avg_cost * agg.total_qty
-                base_cost_basis, _ = _fx_to_base(native_cost_basis, agg.trade_currency, fx, base)
-                if base_cost_basis is not None and base_mv is not None:
-                    agg.pnl_amount = base_mv - base_cost_basis
-                    agg.pnl_pct = (agg.pnl_amount / base_cost_basis * 100.0) if base_cost_basis else None
-                    agg.weighted_avg_cost_usd = (
-                        base_cost_basis / agg.total_qty if agg.total_qty else None
-                    )
-
-
-def hold_period_label(earliest_date: Optional[str], today: _dt.date) -> str:
-    if not earliest_date:
-        return "n/a"
-    try:
-        d0 = _dt.date.fromisoformat(earliest_date)
-    except ValueError:
-        return "n/a"
-    days = (today - d0).days
-    if days < 0:
-        return "n/a"
-    if days < 30:
-        return f"{days}d"
-    months = days // 30
-    if months < 12:
-        return f"{months}m"
-    years = months // 12
-    rem = months % 12
-    return f"{years}y {rem}m" if rem else f"{years}y"
-
-
-def book_pacing(aggs: Dict[str, TickerAggregate], today: _dt.date) -> BookPacing:
-    """§9.5 — risk-asset only, cost-weighted in base-currency basis (per §9.0).
-
-    The cost-weighted average hold MUST use base-converted cost, not native cost.
-    Mixing native costs (e.g. NT$345,000 with $4,500) means a single TW lot
-    appears 32× heavier than an equivalently-sized US lot just because of the
-    currency unit, dragging the weighted average toward whatever lot happens to
-    have the largest native-currency notional.
-    """
-    buckets = {"<1m": 0.0, "1-6m": 0.0, "6-12m": 0.0, "1-3y": 0.0, "3y+": 0.0}
-    risk_value = 0.0
-    over_1y_value = 0.0
-    weighted_days = 0.0
-    cost_total = 0.0
-    oldest: Optional[Tuple[str, str, int]] = None
-    newest: Optional[Tuple[str, str, int]] = None
-
-    for agg in aggs.values():
-        if agg.is_cash or agg.market_value in (None, 0):
-            continue
-        risk_value += agg.market_value
-        # `fx_rate_used` is "1 unit native = X base"; None when fx is missing for a
-        # non-base position. In that case we cannot compare costs across the book,
-        # so the lot is excluded from the cost-weighted aggregate (oldest/newest/
-        # bucket distribution still use base market value, which the merge step has
-        # already filtered to FX-resolvable holdings via market_value).
-        fx_rate = agg.fx_rate_used
-        for lot in agg.lots:
-            if not lot.date or lot.cost is None:
-                continue
-            try:
-                d0 = _dt.date.fromisoformat(lot.date)
-            except ValueError:
-                continue
-            days = (today - d0).days
-            if fx_rate is not None:
-                cost_usd = lot.cost * lot.quantity * fx_rate
-                cost_total += cost_usd
-                weighted_days += cost_usd * days
-            if days >= 365:
-                over_1y_value += (agg.market_value or 0) * (lot.quantity / agg.total_qty)
-            if oldest is None or days > oldest[2]:
-                oldest = (agg.ticker, lot.date, days)
-            if newest is None or days < newest[2]:
-                newest = (agg.ticker, lot.date, days)
-
-            # Distribution by hold period (value-weighted using lot share of agg market value)
-            value_share = (agg.market_value or 0) * (lot.quantity / agg.total_qty)
-            if days < 30:
-                buckets["<1m"] += value_share
-            elif days < 180:
-                buckets["1-6m"] += value_share
-            elif days < 365:
-                buckets["6-12m"] += value_share
-            elif days < 365 * 3:
-                buckets["1-3y"] += value_share
-            else:
-                buckets["3y+"] += value_share
-
-    if risk_value > 0:
-        dist_pct = {k: round(v / risk_value * 100.0, 1) for k, v in buckets.items()}
-    else:
-        dist_pct = {k: 0.0 for k in buckets}
-
-    avg_years = (weighted_days / cost_total / 365.0) if cost_total > 0 else None
-    pct_over_1y = round(over_1y_value / risk_value * 100.0, 1) if risk_value > 0 else None
-
-    def _wrap(node: Optional[Tuple[str, str, int]]) -> Optional[Tuple[str, str, str]]:
-        if node is None:
-            return None
-        ticker, date, days = node
-        return (ticker, date, _days_label(days))
-
-    return BookPacing(
-        avg_hold_years=round(avg_years, 1) if avg_years is not None else None,
-        oldest=_wrap(oldest),
-        newest=_wrap(newest),
-        pct_held_over_1y=pct_over_1y,
-        distribution_pct=dist_pct,
-    )
-
-
-def _days_label(days: int) -> str:
-    if days < 30:
-        return f"{days}d"
-    months = days // 30
-    if months < 12:
-        return f"{months}m"
-    years = months // 12
-    rem = months % 12
-    return f"{years}y {rem}m" if rem else f"{years}y"
-
-def _bucket_key(bucket: str) -> str:
-    bucket_lc = bucket.lower()
-    if bucket_lc.startswith("long term"):
-        return "long"
-    if bucket_lc.startswith("mid term"):
-        return "mid"
-    if bucket_lc.startswith("short term"):
-        return "short"
-    if bucket_lc.startswith("cash holdings"):
-        return "cash"
-    return bucket_lc
 
 
 def _translate_bucket(bucket: str) -> str:
@@ -1221,104 +873,6 @@ def _translate_market(label: Optional[str]) -> str:
         return _ui("common.na")
     translated = _ui(f"market.{label}")
     return translated if translated != f"market.{label}" else label
-
-
-# ----------------------------------------------------------------------------- #
-# §11 special checks — runs against the merged data
-# ----------------------------------------------------------------------------- #
-
-@dataclass
-class CheckResult:
-    label: str
-    triggered: bool
-    detail: str
-
-
-def special_checks(
-    aggs: Dict[str, TickerAggregate],
-    total_assets: float,
-    config: Dict[str, float],
-) -> List[CheckResult]:
-    """Returns one CheckResult per §11 item — both passes and triggers."""
-    if total_assets <= 0:
-        return []
-    results: List[CheckResult] = []
-    # 1. Single asset > 15%
-    for agg in aggs.values():
-        if agg.is_cash or agg.market_value is None:
-            continue
-        weight = agg.market_value / total_assets * 100.0
-        if weight > config["single_name_weight_warn_pct"]:
-            results.append(CheckResult(
-                "Concentration: single asset",
-                True,
-                f"{agg.ticker} 權重 {weight:.1f}% > {config['single_name_weight_warn_pct']:.0f}%",
-            ))
-            break
-    else:
-        results.append(CheckResult("Concentration: single asset", False, "通過 — 無單一標的超過上限"))
-
-    # 6. Recent buying spree — 3+ adds in last 30 days per ticker
-    today = _dt.date.today()
-    spree: List[str] = []
-    for agg in aggs.values():
-        recent = [l for l in agg.lots if l.date and (today - _dt.date.fromisoformat(l.date)).days <= 30]
-        if len(recent) >= 3:
-            spree.append(agg.ticker)
-    results.append(CheckResult(
-        "Recent buying spree (3+ adds in 30 days)",
-        bool(spree),
-        ", ".join(spree) if spree else "通過 — 無近期密集加碼",
-    ))
-
-    # 8. Bucket misclassification — Short Term lot held > 12 months
-    misclassified: List[Tuple[str, str]] = []
-    for agg in aggs.values():
-        for lot in agg.lots:
-            if "short" in lot.bucket.lower() and lot.date:
-                try:
-                    days = (today - _dt.date.fromisoformat(lot.date)).days
-                except ValueError:
-                    continue
-                if days > 365:
-                    misclassified.append((agg.ticker, lot.date))
-    results.append(CheckResult(
-        "Bucket misclassification (Short Term > 12m)",
-        bool(misclassified),
-        ", ".join(f"{t} ({d})" for t, d in misclassified) if misclassified else "通過 — 短線桶內無持有 > 12 月之批次",
-    ))
-
-    # 9. Averaging up — most recent lot > 1.1× older weighted avg
-    averaging_up: List[str] = []
-    for agg in aggs.values():
-        if len(agg.lots) < 2 or agg.weighted_avg_cost is None:
-            continue
-        sorted_lots = sorted([l for l in agg.lots if l.date and l.cost is not None], key=lambda l: l.date or "")
-        if len(sorted_lots) < 2:
-            continue
-        older = sorted_lots[:-1]
-        latest = sorted_lots[-1]
-        older_qty = sum(l.quantity for l in older)
-        if older_qty == 0:
-            continue
-        older_avg = sum(l.cost * l.quantity for l in older) / older_qty
-        if latest.cost > older_avg * 1.1:
-            averaging_up.append(f"{agg.ticker} (latest {latest.cost:.2f} vs older avg {older_avg:.2f})")
-    results.append(CheckResult(
-        "Averaging up (latest lot > 1.1× older avg)",
-        bool(averaging_up),
-        "; ".join(averaging_up) if averaging_up else "通過 — 無加碼追高情形",
-    ))
-
-    # 10. Open cost-basis or date gaps
-    gaps = [agg.ticker for agg in aggs.values()
-            if any(l.cost is None or l.date is None for l in agg.lots)]
-    results.append(CheckResult(
-        "Open cost-basis / date gaps",
-        bool(gaps),
-        ", ".join(sorted(set(gaps))) if gaps else "通過 — 所有批次皆有完整成本與日期",
-    ))
-    return results
 
 
 # ----------------------------------------------------------------------------- #
@@ -1565,12 +1119,118 @@ def _profit_panel_pct(value: Optional[float]) -> Tuple[str, str]:
     return cls, f"{sign}{abs(value):.2f}%"
 
 
+def _profit_panel_net_flows_cell(
+    value: Optional[float],
+    *,
+    null_as_dash: bool,
+) -> Tuple[str, str]:
+    """Flows column: n/a for missing aggregate; em dash when per-market flows are undefined (v1)."""
+    if value is None and null_as_dash:
+        return "muted", f'<span class="muted">{_esc(_ui("common.dash"))}</span>'
+    return _profit_panel_signed_money(value)
+
+
+def _profit_panel_thead_html() -> str:
+    return f"""\
+        <thead>
+          <tr>
+            <th>{_esc(_ui("profit_panel.col_period"))}</th>
+            <th class="num">{_esc(_ui("profit_panel.col_pnl"))}</th>
+            <th class="num">{_esc(_ui("profit_panel.col_return"))}</th>
+            <th class="num">{_esc(_ui("profit_panel.col_realized"))}</th>
+            <th class="num">{_esc(_ui("profit_panel.col_unrealized"))}</th>
+            <th class="num">{_esc(_ui("profit_panel.col_flows"))}</th>
+          </tr>
+        </thead>"""
+
+
+def _profit_panel_row_cells_for_source(
+    row: Dict[str, Any],
+    ui_key: str,
+    boundary_html: str,
+    *,
+    flows_null_as_dash: bool,
+    market: Optional[str] = None,
+) -> str:
+    """One <tr> for profit-panel table; `market` selects per_market_detail[market] when set."""
+    if market is None:
+        pnl_cls, pnl_html = _profit_panel_signed_money(row.get("pnl"))
+        ret_cls, ret_html = _profit_panel_pct(row.get("return_pct"))
+        rea_cls, rea_html = _profit_panel_signed_money(row.get("realized"))
+        unr_cls, unr_html = _profit_panel_signed_money(row.get("unrealized_delta"))
+        flw_cls, flw_inner = _profit_panel_net_flows_cell(row.get("net_flows"), null_as_dash=flows_null_as_dash)
+    else:
+        detail_root = row.get("per_market_detail") or {}
+        src = detail_root.get(market) if isinstance(detail_root, dict) else None
+        if not isinstance(src, dict):
+            legacy_pm = row.get("per_market") or {}
+            if market in legacy_pm:
+                src = {
+                    "pnl": legacy_pm.get(market),
+                    "return_pct": None,
+                    "realized": None,
+                    "unrealized_delta": None,
+                    "net_flows": None,
+                }
+            else:
+                src = {
+                    "pnl": None,
+                    "return_pct": None,
+                    "realized": None,
+                    "unrealized_delta": None,
+                    "net_flows": None,
+                }
+        pnl_cls, pnl_html = _profit_panel_signed_money(src.get("pnl"))
+        ret_cls, ret_html = _profit_panel_pct(src.get("return_pct"))
+        rea_cls, rea_html = _profit_panel_signed_money(src.get("realized"))
+        unr_cls, unr_html = _profit_panel_signed_money(src.get("unrealized_delta"))
+        flw_cls, flw_inner = _profit_panel_net_flows_cell(src.get("net_flows"), null_as_dash=flows_null_as_dash)
+
+    return f"""\
+      <tr>
+        <td>{_esc(_ui(ui_key))}{boundary_html}</td>
+        <td class="num {pnl_cls}">{pnl_html}</td>
+        <td class="num {ret_cls}">{ret_html}</td>
+        <td class="num {rea_cls}">{rea_html}</td>
+        <td class="num {unr_cls}">{unr_html}</td>
+        <td class="num {flw_cls}">{flw_inner}</td>
+      </tr>"""
+
+
+def _build_profit_panel_table_body_rows(
+    rows: List[Dict[str, Any]],
+    *,
+    flows_null_as_dash: bool,
+    market: Optional[str] = None,
+) -> List[str]:
+    body_rows: List[str] = []
+    for key, ui_key in _PROFIT_PANEL_PERIOD_KEYS:
+        row = next((r for r in rows if r.get("period") == key), None)
+        if row is None:
+            continue
+        boundary = row.get("boundary")
+        boundary_html = ""
+        if boundary:
+            boundary_html = (
+                f' <span class="muted">({_esc(_ui("profit_panel.boundary_prefix"))} '
+                f'{_esc(boundary)})</span>'
+            )
+        body_rows.append(
+            _profit_panel_row_cells_for_source(
+                row, ui_key, boundary_html,
+                flows_null_as_dash=flows_null_as_dash,
+                market=market,
+            )
+        )
+    return body_rows
+
+
 def render_profit_panel(context: Dict[str, Any]) -> str:
     """§10.1.5 — Profit panel: period P&L for 1D/7D/MTD/1M/YTD/1Y/ALLTIME.
 
-    Consumes context['profit_panel'] (output of `python scripts/transactions.py
-    profit-panel`). When profit-panel rows are absent, the section is omitted;
-    the newer transaction analytics sections carry the useful performance view.
+    Consumes context['profit_panel'], normally copied from report_snapshot.json.
+    When profit-panel rows are absent, the section is omitted; transaction
+    analytics carry the primary performance view.
     """
     panel = context.get("profit_panel") or {}
     realized_unrealized = context.get("realized_unrealized") or {}
@@ -1594,36 +1254,7 @@ def render_profit_panel(context: Dict[str, Any]) -> str:
         <div class="v {u_cls}">{u_inner}</div></div>
     </div>"""
 
-    # Table rows
-    body_rows: List[str] = []
-    period_label_by_key = {k: ui_key for k, ui_key in _PROFIT_PANEL_PERIOD_KEYS}
-    seen_keys = {row.get("period") for row in rows}
-    for key, ui_key in _PROFIT_PANEL_PERIOD_KEYS:
-        row = next((r for r in rows if r.get("period") == key), None)
-        if row is None:
-            continue
-        boundary = row.get("boundary")
-        boundary_html = ""
-        if boundary:
-            boundary_html = f' <span class="muted">({_esc(_ui("profit_panel.boundary_prefix"))} {_esc(boundary)})</span>'
-
-        pnl_cls, pnl_html = _profit_panel_signed_money(row.get("pnl"))
-        ret_cls, ret_html = _profit_panel_pct(row.get("return_pct"))
-        rea_cls, rea_html = _profit_panel_signed_money(row.get("realized"))
-        unr_cls, unr_html = _profit_panel_signed_money(row.get("unrealized_delta"))
-        flw_cls, flw_html = _profit_panel_signed_money(row.get("net_flows"))
-
-        body_rows.append(
-            f"""\
-      <tr>
-        <td>{_esc(_ui(ui_key))}{boundary_html}</td>
-        <td class="num {pnl_cls}">{pnl_html}</td>
-        <td class="num {ret_cls}">{ret_html}</td>
-        <td class="num {rea_cls}">{rea_html}</td>
-        <td class="num {unr_cls}">{unr_html}</td>
-        <td class="num {flw_cls}">{flw_html}</td>
-      </tr>"""
-        )
+    body_rows = _build_profit_panel_table_body_rows(rows, flows_null_as_dash=False, market=None)
 
     return f"""\
   <section class="section">
@@ -1633,21 +1264,127 @@ def render_profit_panel(context: Dict[str, Any]) -> str:
     </div>{kpi_html}
     <div class="tbl-wrap" style="margin-top:14px">
       <table class="holdings-tbl">
-        <thead>
-          <tr>
-            <th>{_esc(_ui("profit_panel.col_period"))}</th>
-            <th class="num">{_esc(_ui("profit_panel.col_pnl"))}</th>
-            <th class="num">{_esc(_ui("profit_panel.col_return"))}</th>
-            <th class="num">{_esc(_ui("profit_panel.col_realized"))}</th>
-            <th class="num">{_esc(_ui("profit_panel.col_unrealized"))}</th>
-            <th class="num">{_esc(_ui("profit_panel.col_flows"))}</th>
-          </tr>
-        </thead>
+{_profit_panel_thead_html()}
         <tbody>
 {chr(10).join(body_rows)}
         </tbody>
       </table>
     </div>
+  </section>"""
+
+
+def _format_report_accuracy_detail(dim_id: str, detail: Any) -> str:
+    if not isinstance(detail, dict):
+        return ""
+    if dim_id == "quote_coverage" or dim_id == "quote_freshness":
+        w = int(detail.get("with_price") or 0)
+        n = int(detail.get("tickers") or 0)
+        return _ui(
+            "report_accuracy.detail.quote_counts",
+            with_price=w,
+            total=n,
+            fresh=int(detail.get("fresh") or 0),
+            delayed=int(detail.get("delayed") or 0),
+            stale=int(detail.get("stale") or 0),
+        )
+    if dim_id == "profit_boundary":
+        return _ui(
+            "report_accuracy.detail.boundary_counts",
+            a=int(detail.get("no_historical_close") or 0),
+            b=int(detail.get("no_close_and_no_latest") or 0),
+            c=int(detail.get("missing_price") or 0),
+            d=int(detail.get("unrealized_excluded") or 0),
+            e=int(detail.get("using_current_latest") or 0),
+            f=int(detail.get("no_fx_history") or 0),
+        )
+    if dim_id == "profit_reconciliation":
+        mag = detail.get("max_abs_gap")
+        mrg = detail.get("max_rel_gap")
+        try:
+            mag_f = float(mag) if mag is not None else 0.0
+        except (TypeError, ValueError):
+            mag_f = 0.0
+        try:
+            mrg_f = float(mrg) if mrg is not None else 0.0
+        except (TypeError, ValueError):
+            mrg_f = 0.0
+        return _ui("report_accuracy.detail.recon", max_abs=mag_f, max_rel=mrg_f)
+    if dim_id == "pipeline":
+        return _ui("report_accuracy.detail.pipeline", n=int(detail.get("hard_errors") or 0))
+    return ""
+
+
+def render_report_accuracy(context: Dict[str, Any]) -> str:
+    """§10.1.5a — Data quality scores (snapshot-computed, deterministic)."""
+    block = context.get("report_accuracy")
+    if not isinstance(block, dict):
+        return ""
+    overall = block.get("overall") or {}
+    try:
+        score = float(overall.get("score"))
+    except (TypeError, ValueError):
+        return ""
+    band = str(overall.get("band") or "low")
+    band_cls = {"high": "pos", "medium": "info", "low": "warn"}.get(band, "warn")
+    band_key = f"report_accuracy.band.{band}"
+    dims = block.get("dimensions") or []
+    rows_html: List[str] = []
+    for d in dims:
+        if not isinstance(d, dict):
+            continue
+        did = str(d.get("id") or "")
+        if not did:
+            continue
+        try:
+            ds = float(d.get("score"))
+        except (TypeError, ValueError):
+            ds = float("nan")
+        if ds != ds:  # NaN
+            ds_str = _ui("common.na")
+        else:
+            ds_str = f"{ds:.1f}"
+        title = _ui(f"report_accuracy.dim.{did}")
+        detail = _format_report_accuracy_detail(did, d.get("detail"))
+        rows_html.append(
+            f"""<tr><td>{_esc(title)}</td><td class="num">{_esc(ds_str)}</td><td>{_esc(detail)}</td></tr>"""
+        )
+    if not rows_html:
+        return ""
+    meta = block.get("meta") if isinstance(block.get("meta"), dict) else {}
+    miss_fx = meta.get("missing_fx_currencies") or []
+    fx_note = ""
+    if miss_fx:
+        fx_note = (
+            f'<div class="bucket-note"><b>{_esc(_ui("report_accuracy.missing_fx_label"))}:</b> '
+            f"{_esc(', '.join(str(x) for x in miss_fx))}</div>"
+        )
+    return f"""\
+  <section class="section" id="report-accuracy">
+    <div class="section-head">
+      <h2>{_esc(_ui("report_accuracy.title"))}</h2>
+      <span class="sub">{_esc(_ui("report_accuracy.subtitle"))}</span>
+    </div>
+    <div class="kpis kpis-solo">
+      <div class="kpi">
+        <div class="k">{_esc(_ui("report_accuracy.overall_label"))}</div>
+        <div class="v">{_esc(f"{score:.1f}")}</div>
+        <div class="delta"><span class="tag {band_cls}">{_esc(_ui(band_key))}</span></div>
+      </div>
+    </div>
+    <div class="tbl-wrap" style="margin-top:14px">
+      <table class="holdings-tbl">
+        <thead><tr>
+          <th>{_esc(_ui("report_accuracy.col_dimension"))}</th>
+          <th class="num">{_esc(_ui("report_accuracy.col_score"))}</th>
+          <th>{_esc(_ui("report_accuracy.col_detail"))}</th>
+        </tr></thead>
+        <tbody>
+{chr(10).join(rows_html)}
+        </tbody>
+      </table>
+    </div>
+    <div class="prose" style="margin-top:14px"><p class="muted">{_esc(_ui("report_accuracy.footer"))}</p></div>
+    {fx_note}
   </section>"""
 
 
@@ -1695,6 +1432,32 @@ def _asset_class_label(key: str) -> str:
     return translated if translated != f"analytics.asset_class_{key}" else key
 
 
+# Stable column order for the per-market period P&L matrix. Markets that appear
+# in the data are kept in this order; anything outside the list is appended in
+# alphabetical order so unfamiliar markets still render.
+_MARKET_COLUMN_ORDER: Tuple[str, ...] = (
+    "us", "tw", "two", "jp", "hk", "lse", "crypto", "fx", "cash", "other",
+)
+
+
+def _ordered_market_columns(periods: List[Dict[str, Any]]) -> List[str]:
+    seen = set()
+    for row in periods:
+        for k in (row.get("per_market") or {}).keys():
+            seen.add(k)
+        detail = row.get("per_market_detail")
+        if isinstance(detail, dict):
+            for k in detail.keys():
+                seen.add(k)
+    ordered = [m for m in _MARKET_COLUMN_ORDER if m in seen]
+    extras = sorted(m for m in seen if m not in _MARKET_COLUMN_ORDER)
+    return ordered + extras
+
+
+# Show "unallocated P&L" block when portfolio row P&L vs sum(per_market_detail) exceeds this (base ccy).
+_MARKET_PNL_RESIDUAL_THRESHOLD = 0.015
+
+
 def render_performance_attribution(context: Dict[str, Any]) -> str:
     analytics = _transaction_analytics(context)
     perf = analytics.get("performance_attribution") or {}
@@ -1703,7 +1466,6 @@ def render_performance_attribution(context: Dict[str, Any]) -> str:
     periods = perf.get("periods") or []
     contributors = perf.get("top_contributors") or []
     detractors = perf.get("top_detractors") or []
-    classes = perf.get("asset_class_contribution") or []
 
     best = contributors[0] if contributors else {}
     worst = detractors[0] if detractors else {}
@@ -1711,28 +1473,92 @@ def render_performance_attribution(context: Dict[str, Any]) -> str:
     worst_label = f'{worst.get("ticker", _ui("common.na"))} {_analytics_money(worst.get("total_pnl"))}' if worst else _ui("common.na")
     mwr = perf.get("money_weighted_return_annualized")
 
-    rows = []
-    period_label_by_key = {k: ui_key for k, ui_key in _PROFIT_PANEL_PERIOD_KEYS}
-    for row in periods:
-        period = str(row.get("period") or "")
-        label_key = period_label_by_key.get(period)
-        label = _ui(label_key) if label_key else period
-        rows.append(
-            f"""\
-      <tr>
-        <td>{_esc(label)}</td>
-        <td class="num">{_analytics_money(row.get("pnl"))}</td>
-        <td class="num">{_analytics_pct(row.get("return_pct")) if row.get("return_pct") is not None else _ui("common.na")}</td>
-        <td class="num">{_analytics_money(row.get("net_flows"))}</td>
-        <td class="num">{_analytics_money(row.get("realized"))}</td>
-        <td class="num">{_analytics_money(row.get("unrealized_delta"))}</td>
-        <td class="num">{_analytics_money(row.get("residual"))}</td>
-      </tr>"""
+    panel_rows = (context.get("profit_panel") or {}).get("rows") or []
+    attr_rows: List[Dict[str, Any]] = panel_rows if panel_rows else periods
+
+    market_tables_html = ""
+    market_cols = _ordered_market_columns(attr_rows)
+    if attr_rows and market_cols:
+        blocks: List[str] = []
+        for m in market_cols:
+            m_body = _build_profit_panel_table_body_rows(
+                attr_rows, flows_null_as_dash=True, market=m,
+            )
+            blocks.append(
+                f"""
+    <div class="subsection" style="margin-top:20px">
+      <h3 class="eyebrow">{_esc(_asset_class_label(m))}</h3>
+      <div class="tbl-wrap" style="margin-top:8px">
+        <table class="holdings-tbl">
+{_profit_panel_thead_html()}
+          <tbody>
+{chr(10).join(m_body)}
+          </tbody>
+        </table>
+      </div>
+    </div>"""
+            )
+
+        residual_lines: List[str] = []
+        for key, ui_key in _PROFIT_PANEL_PERIOD_KEYS:
+            row = next((r for r in attr_rows if r.get("period") == key), None)
+            if row is None:
+                continue
+            row_pnl = row.get("pnl")
+            if row_pnl is None:
+                continue
+            det = row.get("per_market_detail") or {}
+            sum_m = 0.0
+            if isinstance(det, dict):
+                for _bk, sub in det.items():
+                    if isinstance(sub, dict) and sub.get("pnl") is not None:
+                        sum_m += float(sub["pnl"])
+            residual = float(row_pnl) - sum_m
+            if abs(residual) <= _MARKET_PNL_RESIDUAL_THRESHOLD:
+                continue
+            boundary = row.get("boundary")
+            bh = ""
+            if boundary:
+                bh = (
+                    f' <span class="muted">({_esc(_ui("profit_panel.boundary_prefix"))} '
+                    f'{_esc(boundary)})</span>'
+                )
+            r_cls, r_inner = _profit_panel_signed_money(round(residual, 2))
+            residual_lines.append(
+                f"      <tr><td>{_esc(_ui(ui_key))}{bh}</td>"
+                f'<td class="num {r_cls}">{r_inner}</td></tr>'
+            )
+
+        if residual_lines:
+            blocks.append(
+                f"""
+    <div class="subsection" style="margin-top:20px">
+      <h3 class="eyebrow">{_esc(_ui("analytics.market_residual_title"))}</h3>
+      <div class="tbl-wrap" style="margin-top:8px">
+        <table class="holdings-tbl">
+          <thead>
+            <tr>
+              <th>{_esc(_ui("profit_panel.col_period"))}</th>
+              <th class="num">{_esc(_ui("analytics.market_residual_col_pnl"))}</th>
+            </tr>
+          </thead>
+          <tbody>
+{chr(10).join(residual_lines)}
+          </tbody>
+        </table>
+      </div>
+    </div>"""
+            )
+
+        foot = _esc(_ui("analytics.market_tables_footnote", base=ACTIVE_BASE_CURRENCY))
+        market_tables_html = (
+            f'{"".join(blocks)}'
+            f'<div class="prose" style="margin-top:16px"><p>{foot}</p></div>'
         )
 
     def _bars(items: List[Dict[str, Any]]) -> str:
         if not items:
-            return f'<p class="muted">{_esc(_ui("common.na"))}</p>'
+            return f'<div class="prose"><p class="muted">{_esc(_ui("common.na"))}</p></div>'
         max_abs = max(abs(float(i.get("total_pnl") or 0)) for i in items) or 1.0
         out = []
         for item in items:
@@ -1748,47 +1574,18 @@ def render_performance_attribution(context: Dict[str, Any]) -> str:
             )
         return "".join(out)
 
-    class_rows = []
-    for item in classes:
-        class_rows.append(
-            f"""\
-      <tr>
-        <td>{_esc(_asset_class_label(str(item.get("asset_class") or "other")))}</td>
-        <td class="num">{_analytics_money(item.get("total_pnl"))}</td>
-        <td class="num">{_analytics_money(item.get("realized"))}</td>
-        <td class="num">{_analytics_money(item.get("unrealized"))}</td>
-      </tr>"""
-        )
-
-    class_table = ""
-    if class_rows:
-        class_table = f"""
-    <div class="tbl-wrap scroll-y" style="margin-top:18px">
-      <table>
-        <thead><tr><th>{_esc(_ui("analytics.asset_class"))}</th><th class="num">{_esc(_ui("analytics.total_pnl"))}</th><th class="num">{_esc(_ui("analytics.realized"))}</th><th class="num">{_esc(_ui("analytics.unrealized"))}</th></tr></thead>
-        <tbody>{chr(10).join(class_rows)}</tbody>
-      </table>
-    </div>"""
-
     return f"""\
   <section class="section">
     <div class="section-head">
       <h2>{_esc(_ui("analytics.performance_title"))}</h2>
-      <span class="sub">{_esc(_ui("analytics.performance_subtitle", base=ACTIVE_BASE_CURRENCY))}</span>
+      <span class="sub">{_esc(_ui("analytics.market_breakdown_subtitle", base=ACTIVE_BASE_CURRENCY))}</span>
     </div>
     <div class="kpis">
       <div class="kpi"><div class="k">{_esc(_ui("analytics.ending_nav"))}</div><div class="v">{_analytics_money(perf.get("ending_nav"))}</div><div class="delta">{_esc(_ui("analytics.ending_nav_note"))}</div></div>
       <div class="kpi"><div class="k">{_esc(_ui("analytics.mwr"))}</div><div class="v">{_analytics_pct(mwr) if mwr is not None else _ui("common.na")}</div><div class="delta">{_esc(_ui("analytics.mwr_note"))}</div></div>
       <div class="kpi"><div class="k">{_esc(_ui("analytics.best_contributor"))}</div><div class="v">{_esc(best_label)}</div><div class="delta">{_esc(_ui("analytics.lifetime_basis"))}</div></div>
       <div class="kpi"><div class="k">{_esc(_ui("analytics.worst_detractor"))}</div><div class="v">{_esc(worst_label)}</div><div class="delta">{_esc(_ui("analytics.lifetime_basis"))}</div></div>
-    </div>
-    <div class="tbl-wrap scroll-y" style="margin-top:18px">
-      <table>
-        <thead><tr><th>{_esc(_ui("profit_panel.col_period"))}</th><th class="num">{_esc(_ui("analytics.investment_pnl"))}</th><th class="num">{_esc(_ui("profit_panel.col_return"))}</th><th class="num">{_esc(_ui("profit_panel.col_flows"))}</th><th class="num">{_esc(_ui("analytics.realized"))}</th><th class="num">{_esc(_ui("analytics.unrealized"))}</th><th class="num">{_esc(_ui("analytics.residual"))}</th></tr></thead>
-        <tbody>{chr(10).join(rows)}</tbody>
-      </table>
-    </div>
-    {class_table}
+    </div>{market_tables_html}
     <div class="cols-2" style="margin-top:22px">
       <div><div class="eyebrow" style="margin-bottom:10px">{_esc(_ui("analytics.top_contributors"))}</div><div class="bars">{_bars(contributors)}</div></div>
       <div><div class="eyebrow" style="margin-bottom:10px">{_esc(_ui("analytics.top_detractors"))}</div><div class="bars">{_bars(detractors)}</div></div>
@@ -1801,54 +1598,85 @@ def render_trade_quality(context: Dict[str, Any]) -> str:
     tq = analytics.get("trade_quality") or {}
     if not tq:
         return ""
-    sells = tq.get("sell_followups") or []
-    buys = tq.get("buy_followups") or []
+    activity = tq.get("recent_activity") or []
+    if not activity:
+        # Back-compat: synthesize from sell_followups + buy_followups so older
+        # snapshots without a `recent_activity` field still render something.
+        legacy: List[Dict[str, Any]] = []
+        for s in tq.get("sell_followups") or []:
+            legacy.append({
+                "date": s.get("sell_date"), "action": "SELL", "ticker": s.get("ticker"),
+                "qty": s.get("qty"), "price": s.get("sell_price"),
+                "realized": s.get("realized"),
+                "after_30d_pct": s.get("after_30d_pct"),
+                "after_90d_pct": s.get("after_90d_pct"),
+            })
+        for b in tq.get("buy_followups") or []:
+            legacy.append({
+                "date": b.get("buy_date"), "action": "BUY", "ticker": b.get("ticker"),
+                "qty": b.get("qty"), "price": b.get("buy_price"),
+                "after_30d_pct": b.get("after_30d_pct"),
+                "after_90d_pct": b.get("after_90d_pct"),
+            })
+        legacy.sort(key=lambda r: r.get("date") or "", reverse=True)
+        activity = legacy
 
-    sell_rows = []
-    for item in sells[:8]:
-        sell_rows.append(
+    rows = []
+    for item in activity[:10]:
+        action = str(item.get("action") or "")
+        action_cls = "pos-txt" if action == "SELL" else "neg-txt" if action == "BUY" else ""
+        action_label = _ui(f"analytics.action_{action.lower()}") if action else ""
+        if action_label.startswith("analytics."):
+            action_label = action  # i18n key missing → fall back to literal
+        qty_str = ""
+        qty = item.get("qty")
+        if qty is not None:
+            try:
+                qty_str = f"{float(qty):,.4g}"
+            except (TypeError, ValueError):
+                qty_str = str(qty)
+        price_str = ""
+        price = item.get("price")
+        if price is not None:
+            try:
+                price_str = f"{float(price):,.2f}"
+            except (TypeError, ValueError):
+                price_str = str(price)
+        realized = item.get("realized")
+        realized_html = _analytics_money(realized) if realized is not None else f'<span class="muted">{_esc(_ui("common.dash"))}</span>'
+
+        def _drift_cell(pct):
+            if pct is None:
+                return f'<td class="num"><span class="muted">{_esc(_ui("common.na"))}</span></td>'
+            cls = "pos-txt" if pct >= 0 else "neg-txt"
+            sign = "+" if pct >= 0 else "−"
+            return f'<td class="num {cls}">{sign}{abs(pct):.2f}%</td>'
+
+        rows.append(
             f"""\
       <tr>
-        <td>{_esc(str(item.get("ticker") or ""))}</td>
-        <td>{_esc(str(item.get("sell_date") or ""))}</td>
-        <td class="num">{_analytics_money(item.get("realized"))}</td>
-        <td class="num">{_analytics_pct(item.get("after_30d_pct")) if item.get("after_30d_pct") is not None else _ui("common.na")}</td>
-        <td class="num">{_analytics_pct(item.get("after_90d_pct")) if item.get("after_90d_pct") is not None else _ui("common.na")}</td>
-        <td class="num">{_analytics_money(item.get("after_90d_pnl"))}</td>
-      </tr>"""
-        )
-    buy_rows = []
-    for item in buys[:8]:
-        buy_rows.append(
-            f"""\
-      <tr>
-        <td>{_esc(str(item.get("ticker") or ""))}</td>
-        <td>{_esc(str(item.get("buy_date") or ""))}</td>
-        <td class="num">{_analytics_pct(item.get("after_30d_pct")) if item.get("after_30d_pct") is not None else _ui("common.na")}</td>
-        <td class="num">{_analytics_pct(item.get("after_90d_pct")) if item.get("after_90d_pct") is not None else _ui("common.na")}</td>
+        <td>{_esc(str(item.get("date") or ""))}</td>
+        <td><span class="adj-action {action.lower()}">{_esc(action_label)}</span></td>
+        <td><span class="sym-trigger" tabindex="0" role="button">{_esc(str(item.get("ticker") or ""))}</span></td>
+        <td class="num">{_esc(qty_str)}</td>
+        <td class="num">{_esc(price_str)}</td>
+        <td class="num">{realized_html}</td>
+        {_drift_cell(item.get("after_30d_pct"))}
+        {_drift_cell(item.get("after_90d_pct"))}
       </tr>"""
         )
 
-    sell_table = f"""
-    <div class="tbl-wrap scroll-y" style="margin-top:18px;max-width:100%;overflow-x:auto">
-      <table style="min-width:600px">
-        <thead><tr><th>{_esc(_ui("adjustments.ticker"))}</th><th>{_esc(_ui("analytics.sell_date"))}</th><th class="num">{_esc(_ui("analytics.realized"))}</th><th class="num">{_esc(_ui("analytics.after_30d"))}</th><th class="num">{_esc(_ui("analytics.after_90d"))}</th><th class="num">{_esc(_ui("analytics.missed_saved"))}</th></tr></thead>
-        <tbody>{chr(10).join(sell_rows) if sell_rows else f'<tr><td colspan="6">{_esc(_ui("analytics.no_closed_trades"))}</td></tr>'}</tbody>
-      </table>
-    </div>"""
-    buy_table = f"""
-    <div class="tbl-wrap scroll-y" style="margin-top:18px;max-width:100%;overflow-x:auto">
-      <table style="min-width:420px">
-        <thead><tr><th>{_esc(_ui("adjustments.ticker"))}</th><th>{_esc(_ui("analytics.buy_date"))}</th><th class="num">{_esc(_ui("analytics.after_30d"))}</th><th class="num">{_esc(_ui("analytics.after_90d"))}</th></tr></thead>
-        <tbody>{chr(10).join(buy_rows) if buy_rows else f'<tr><td colspan="4">{_esc(_ui("analytics.no_buy_followups"))}</td></tr>'}</tbody>
-      </table>
-    </div>"""
+    body = (
+        chr(10).join(rows)
+        if rows else
+        f'<tr><td colspan="8" class="na" style="text-align:center;padding:14px">{_esc(_ui("analytics.no_recent_activity"))}</td></tr>'
+    )
 
     return f"""\
   <section class="section">
     <div class="section-head">
       <h2>{_esc(_ui("analytics.trade_quality_title"))}</h2>
-      <span class="sub">{_esc(_ui("analytics.trade_quality_subtitle"))}</span>
+      <span class="sub">{_esc(_ui("analytics.recent_activity_subtitle"))}</span>
     </div>
     <div class="kpis">
       <div class="kpi"><div class="k">{_esc(_ui("analytics.closed_lots"))}</div><div class="v">{_esc(str(tq.get("closed_lot_count", 0)))}</div><div class="delta">{_esc(_ui("analytics.closed_lots_note"))}</div></div>
@@ -1856,9 +1684,20 @@ def render_trade_quality(context: Dict[str, Any]) -> str:
       <div class="kpi"><div class="k">{_esc(_ui("analytics.profit_factor"))}</div><div class="v">{_esc(str(tq.get("profit_factor") if tq.get("profit_factor") is not None else _ui("common.na")))}</div><div class="delta">{_esc(_ui("analytics.profit_factor_note"))}</div></div>
       <div class="kpi"><div class="k">{_esc(_ui("analytics.avg_hold_days"))}</div><div class="v">{_esc(str(tq.get("avg_hold_days") if tq.get("avg_hold_days") is not None else _ui("common.na")))}</div><div class="delta">{_esc(_ui("analytics.sell_lot_basis"))}</div></div>
     </div>
-    <div class="cols-2" style="margin-top:4px;align-items:start">
-      <div style="min-width:0">{sell_table}</div>
-      <div style="min-width:0">{buy_table}</div>
+    <div class="tbl-wrap scroll-y" style="margin-top:18px">
+      <table>
+        <thead><tr>
+          <th>{_esc(_ui("analytics.activity_date"))}</th>
+          <th>{_esc(_ui("analytics.activity_action"))}</th>
+          <th>{_esc(_ui("adjustments.ticker"))}</th>
+          <th class="num">{_esc(_ui("analytics.activity_qty"))}</th>
+          <th class="num">{_esc(_ui("analytics.activity_price"))}</th>
+          <th class="num">{_esc(_ui("analytics.realized"))}</th>
+          <th class="num">{_esc(_ui("analytics.after_30d"))}</th>
+          <th class="num">{_esc(_ui("analytics.after_90d"))}</th>
+        </tr></thead>
+        <tbody>{body}</tbody>
+      </table>
     </div>
   </section>"""
 
@@ -1935,6 +1774,169 @@ def render_discipline_check(context: Dict[str, Any]) -> str:
       <div class="tbl-wrap scroll-y"><table><thead><tr><th>{_esc(_ui("analytics.loss_lots"))}</th><th>{_esc(_ui("price_pop.acquired"))}</th><th class="num">{_esc(_ui("price_pop.pnl"))}</th><th class="num">%</th></tr></thead><tbody>{_lot_rows(losses)}</tbody></table></div>
       <div class="tbl-wrap scroll-y"><table><thead><tr><th>{_esc(_ui("analytics.gain_lots"))}</th><th>{_esc(_ui("price_pop.acquired"))}</th><th class="num">{_esc(_ui("price_pop.pnl"))}</th><th class="num">%</th></tr></thead><tbody>{_lot_rows(gains)}</tbody></table></div>
     </div>
+  </section>"""
+
+
+# --------------------------------------------------------------------------- #
+# §10.1.7 Trading-psychology evaluation
+#
+# Editorial section authored by the agent during report generation. Schema:
+#
+#   context["trading_psychology"] = {
+#     "headline":     str,                       # 1-line summary (≤ 80 chars)
+#     "observations": [{"behavior", "evidence", "tone"}],  # 2-4 items
+#     "improvements": [{"issue", "suggestion", "priority"}],  # 2-4 items
+#     "strengths":    [str | {"behavior", "evidence"}],   # optional 0-2 items
+#   }
+#
+# `tone ∈ {pos, neu, warn, neg}`; `priority ∈ {high, medium, low}`.
+# The CLI render path hard-fails when the field is missing; the fallback below
+# is defensive for direct function callers only.
+# --------------------------------------------------------------------------- #
+
+_PSYCH_TONE_CLASS = {"pos": "pos", "neu": "info", "warn": "warn", "neg": "neg"}
+_PSYCH_PRIORITY_CLASS = {"high": "warn", "medium": "info", "low": "neu"}
+
+
+def _psych_tone_chip(tone: Optional[str]) -> str:
+    cls = _PSYCH_TONE_CLASS.get(str(tone or "neu").lower(), "info")
+    label_key = f"psychology.tone_{str(tone or 'neu').lower()}"
+    label = _ui(label_key)
+    if label.startswith("psychology."):
+        label = str(tone or "")
+    return f'<span class="tag {cls}">{_esc(label)}</span>' if label else ""
+
+
+def _psych_priority_chip(priority: Optional[str]) -> str:
+    cls = _PSYCH_PRIORITY_CLASS.get(str(priority or "medium").lower(), "info")
+    label_key = f"psychology.priority_{str(priority or 'medium').lower()}"
+    label = _ui(label_key)
+    if label.startswith("psychology."):
+        label = str(priority or "")
+    return f'<span class="tag {cls}">{_esc(label)}</span>' if label else ""
+
+
+def render_trading_psychology(context: Dict[str, Any]) -> str:
+    """Render §10.1.7 — agent's read of recent trading mindset + improvements.
+
+    The section sits between the transaction-history evidence (§10.1.5/6) and
+    the holdings table so the user sees: facts → reflection → positions.
+    """
+    payload = context.get("trading_psychology") or {}
+    title = _ui("psychology.title")
+    subtitle = _ui("psychology.subtitle")
+
+    if not isinstance(payload, dict) or not payload:
+        return f"""\
+  <section class="section">
+    <div class="section-head">
+      <h2>{_esc(title)}</h2>
+      <span class="sub">{_esc(subtitle)}</span>
+    </div>
+    <div class="prose"><p class="muted">{_esc(_ui("psychology.placeholder"))}</p></div>
+  </section>"""
+
+    headline = str(payload.get("headline") or "").strip()
+    observations = payload.get("observations") or []
+    improvements = payload.get("improvements") or []
+    strengths = payload.get("strengths") or []
+    rp_label = _ui("reviewer.note_label")
+
+    headline_html = ""
+    if headline:
+        headline_html = (
+            f'<div class="prose psych-headline">'
+            f'<p>{_esc(headline)}</p>'
+            f'</div>'
+        )
+
+    def _observation_row(item: Any) -> str:
+        if isinstance(item, str):
+            return f'<li>{_esc(item)}</li>'
+        if not isinstance(item, dict):
+            return ""
+        behavior = str(item.get("behavior") or "").strip()
+        evidence = str(item.get("evidence") or "").strip()
+        tone = item.get("tone")
+        chip = _psych_tone_chip(tone)
+        evidence_html = (
+            f'<div class="psych-evidence">'
+            f'<span class="psych-ev-prefix">{_esc(_ui("psychology.evidence_prefix"))}</span>'
+            f'{_esc(evidence)}'
+            f'</div>'
+        ) if evidence else ""
+        return (
+            f'<li>'
+            f'<div class="psych-li-main">{chip}<span style="margin-left:6px">{_esc(behavior)}</span></div>'
+            f'{evidence_html}'
+            f'</li>'
+        )
+
+    def _improvement_row(item: Any) -> str:
+        if isinstance(item, str):
+            return f'<li>{_esc(item)}</li>'
+        if not isinstance(item, dict):
+            return ""
+        issue = str(item.get("issue") or "").strip()
+        suggestion = str(item.get("suggestion") or "").strip()
+        priority = item.get("priority")
+        chip = _psych_priority_chip(priority)
+        suggestion_html = (
+            f'<div class="psych-suggestion">'
+            f'<span class="psych-suggestion-label">{_esc(_ui("psychology.suggestion_prefix"))}</span>'
+            f'{_esc(suggestion)}'
+            f'</div>'
+        ) if suggestion else ""
+        return (
+            f'<li>'
+            f'<div class="psych-li-main">{chip}<span style="margin-left:6px">{_esc(issue)}</span></div>'
+            f'{suggestion_html}'
+            f'</li>'
+        )
+
+    obs_html = (
+        "".join(_observation_row(i) for i in observations)
+        or f'<li class="muted">{_esc(_ui("psychology.no_observations"))}</li>'
+    )
+    imp_html = (
+        "".join(_improvement_row(i) for i in improvements)
+        or f'<li class="muted">{_esc(_ui("psychology.no_improvements"))}</li>'
+    )
+    strengths_html = ""
+    if strengths:
+        strengths_items = "".join(
+            f'<li>{_esc(s if isinstance(s, str) else (s.get("behavior") or ""))}</li>'
+            for s in strengths
+        )
+        strengths_html = (
+            f'<div class="psych-strengths-wrap">'
+            f'<div class="eyebrow" style="margin-bottom:8px">{_esc(_ui("psychology.strengths_label"))}</div>'
+            f'<ul class="psych-list">{strengths_items}</ul>'
+            f'</div>'
+        )
+
+    rp_notes = _reviewer_pass(context)["by_section"].get("trading_psychology") or []
+    reviewer_block = _render_reviewer_notes(rp_notes, rp_label)
+
+    return f"""\
+  <section class="section">
+    <div class="section-head">
+      <h2>{_esc(title)}</h2>
+      <span class="sub">{_esc(subtitle)}</span>
+    </div>
+    {headline_html}
+    <div class="cols-2" style="align-items:start">
+      <div>
+        <div class="eyebrow" style="margin-bottom:10px">{_esc(_ui("psychology.observations_label"))}</div>
+        <ul class="psych-list">{obs_html}</ul>
+      </div>
+      <div>
+        <div class="eyebrow" style="margin-bottom:10px">{_esc(_ui("psychology.improvements_label"))}</div>
+        <ul class="psych-list">{imp_html}</ul>
+      </div>
+    </div>
+    {strengths_html}
+    {reviewer_block}
   </section>"""
 
 
@@ -2226,9 +2228,10 @@ def _category_chip(agg: TickerAggregate) -> str:
     if agg.is_cash:
         return f'{_esc(_ui("category.cash"))}<span class="tag">{_esc(_ui("category.chip_cash"))}</span>'
     chips = {
-        MarketType.US: (_ui("category.stock_etf"), ""),
+        MarketType.US: (_ui("category.us"), ""),
         MarketType.CRYPTO: (_ui("category.crypto"), "warn"),
         MarketType.TW: (_ui("category.tw"), ""),
+        MarketType.TWO: (_ui("category.two"), ""),
         MarketType.JP: (_ui("category.jp"), ""),
         MarketType.HK: (_ui("category.hk"), ""),
         MarketType.LSE: (_ui("category.lse"), ""),
@@ -2407,9 +2410,8 @@ def render_theme_sector(context: Dict[str, Any]) -> str:
     holding by sector / theme each run; buckets are not fixed). The agent must
     pre-render the bar chart and pass it as `context["theme_sector_html"]`.
 
-    See the CONTEXT FILE SHAPE section at the top of this module for the markup
-    contract. If the field is missing, the section renders a placeholder so the
-    omission is visible — never a guess.
+    The CLI pre-render validator requires this field and theme_sector_audit.
+    The placeholder branch is defensive for direct function callers only.
     """
     body = context.get("theme_sector_html") or (
         f'<div class="prose"><p>{_esc(_ui("theme_sector.placeholder"))}</p></div>'
@@ -2555,94 +2557,21 @@ def render_events(context: Dict[str, Any]) -> str:
   </section>"""
 
 
-@dataclass
-class RiskHeatItem:
-    ticker: str
-    score: int
-    band_class: str
-    weight_pct: float
-    move_pct: Optional[float]
-    reasons: List[str]
+def _translate_heat_reason(reason: Dict[str, Any]) -> str:
+    """Translate a structured risk-heat reason payload (`{code, threshold?}`).
 
-
-def build_risk_heat_items(
-    aggs: Dict[str, TickerAggregate],
-    prices: Dict[str, Any],
-    total_assets: float,
-    config: Dict[str, float],
-) -> List[RiskHeatItem]:
-    items: List[RiskHeatItem] = []
-    single_name_cap = config.get("single_name_weight_warn_pct", DEFAULTS["single_name_weight_warn_pct"])
-    move_alert = config.get("single_day_move_alert_pct", DEFAULTS["single_day_move_alert_pct"])
-
-    for agg in aggs.values():
-        if agg.is_cash or agg.market_value in (None, 0):
-            continue
-        weight_pct = (agg.market_value / total_assets * 100.0) if total_assets else 0.0
-        pr = prices.get(agg.ticker, {}) or {}
-        reasons: List[str] = []
-        score = 0
-
-        if agg.market == MarketType.CRYPTO:
-            score += 3
-            reasons.append(_ui("risk.factor_crypto"))
-
-        bucket_key = _bucket_key(agg.bucket)
-        if bucket_key == "short":
-            score += 2
-            reasons.append(_ui("risk.factor_short_bucket"))
-        elif bucket_key == "mid":
-            score += 1
-            reasons.append(_ui("risk.factor_mid_bucket"))
-
-        if weight_pct >= single_name_cap * 1.5:
-            score += 3
-            reasons.append(_ui("risk.factor_concentration_breach", threshold=single_name_cap))
-        elif weight_pct >= single_name_cap:
-            score += 2
-            reasons.append(_ui("risk.factor_concentration_warn", threshold=single_name_cap))
-        elif weight_pct >= single_name_cap * 0.5:
-            score += 1
-            reasons.append(_ui("risk.factor_concentration_watch", threshold=single_name_cap * 0.5))
-
-        if agg.move_pct is not None:
-            abs_move = abs(agg.move_pct)
-            if abs_move >= move_alert * 1.5:
-                score += 2
-                reasons.append(_ui("risk.factor_move_breach", threshold=move_alert))
-            elif abs_move >= move_alert:
-                score += 1
-                reasons.append(_ui("risk.factor_move_warn", threshold=move_alert))
-
-        if agg.latest_price is None or pr.get("price_source") == "n/a":
-            score += 2
-            reasons.append(_ui("risk.factor_missing"))
-        else:
-            freshness = pr.get("price_freshness", "n/a")
-            if freshness == "delayed":
-                score += 1
-                reasons.append(_ui("risk.factor_delayed"))
-            elif freshness in {"stale_after_exhaustive_search", "n/a"}:
-                score += 2
-                reasons.append(_ui("risk.factor_stale"))
-
-        score = min(score, 10)
-        if not reasons:
-            reasons.append(_ui("risk.factor_core"))
-        band_class = "r-high" if score >= 6 else "r-mid" if score >= 3 else "r-low"
-        items.append(
-            RiskHeatItem(
-                ticker=agg.ticker,
-                score=score,
-                band_class=band_class,
-                weight_pct=weight_pct,
-                move_pct=agg.move_pct,
-                reasons=reasons,
-            )
-        )
-
-    items.sort(key=lambda item: (-item.score, -item.weight_pct, item.ticker))
-    return items[:10]
+    The pipeline emits these as locale-stable codes; the renderer formats them
+    via `_ui("risk.factor_<code>", threshold=...)` at display time so the
+    snapshot doesn't need to know the active locale.
+    """
+    code = reason.get("code") if isinstance(reason, dict) else None
+    if not code:
+        return ""
+    key = f"risk.factor_{code}"
+    threshold = reason.get("threshold") if isinstance(reason, dict) else None
+    if threshold is None:
+        return _ui(key)
+    return _ui(key, threshold=threshold)
 
 
 def render_high_risk_opp(
@@ -2651,11 +2580,22 @@ def render_high_risk_opp(
     total_assets: float,
     context: Dict[str, Any],
     config: Dict[str, float],
+    risk_heat: Optional[List[RiskHeatItem]] = None,
 ) -> str:
+    """Render the high-risk heatmap + opportunities block.
+
+    `risk_heat` may be supplied pre-computed (e.g. from a snapshot); when
+    omitted, fall back to computing it from `aggs` for the legacy in-memory
+    path.
+    """
+    items = risk_heat if risk_heat is not None else build_risk_heat_items(
+        aggs, prices, total_assets, config
+    )
     risk_cells = []
-    for item in build_risk_heat_items(aggs, prices, total_assets, config):
+    for item in items:
         move_str = f"{item.move_pct:+.1f}%" if item.move_pct is not None else _ui("common.na")
-        reason_summary = " · ".join(item.reasons[:3])
+        translated = [_translate_heat_reason(r) for r in item.reasons[:3]]
+        reason_summary = " · ".join(t for t in translated if t)
         risk_cells.append(
             f'<div class="risk {item.band_class}"><div class="t">{_esc(item.ticker)}</div>'
             f'<div class="s">{_esc(_ui("risk.card_label", score=item.score))} · {_esc(reason_summary)}</div>'
@@ -2937,6 +2877,45 @@ def render_adjustments(
   </section>"""
 
 
+def _render_action_item(item: Any) -> str:
+    if isinstance(item, str):
+        return _esc(item)
+    if not isinstance(item, dict):
+        return _esc(str(item))
+
+    ticker = str(item.get("ticker") or "").strip()
+    label = str(item.get("text") or item.get("action_label") or item.get("action") or "").strip()
+    why = str(item.get("why") or "").strip()
+    trigger = str(item.get("trigger") or "").strip()
+    chunks: List[str] = []
+    head = " ".join(x for x in (ticker, label) if x).strip()
+    if head:
+        chunks.append(head)
+    if why:
+        chunks.append(why)
+    if trigger:
+        chunks.append(f"{_ui('adjustments.trigger')}: {trigger}")
+    main = " — ".join(chunks) or _ui("common.dash")
+
+    meta: List[str] = []
+    for key, label_key in [
+        ("variant_tag", "pm.tag"),
+        ("consensus", "pm.consensus"),
+        ("anchor", "pm.anchor"),
+        ("kill_trigger", "pm.kill"),
+        ("kill_action", "pm.kill_action"),
+    ]:
+        value = item.get(key)
+        if value not in (None, "", []):
+            meta.append(f"{_ui(label_key)}: {value}")
+    sized = item.get("sized_pp_delta")
+    if sized not in (None, ""):
+        meta.append(f"{_ui('pm.sized')} {float(sized):+.1f}{_ui('pm.pp_nav')}")
+    if not meta:
+        return _esc(main)
+    return f"{_esc(main)}<br><span class=\"pm-meta\">{_esc('；'.join(meta))}</span>"
+
+
 def render_actions(context: Dict[str, Any]) -> str:
     a = context.get("actions") or {}
     rows = []
@@ -2947,7 +2926,7 @@ def render_actions(context: Dict[str, Any]) -> str:
         ("fix", _ui("actions.need_data"), "need_data"),
     ]:
         for item in a.get(key, []) or []:
-            rows.append(f'<li><span class="lbl {label_class}">{_esc(label_text)}</span><span>{_esc(item)}</span></li>')
+            rows.append(f'<li><span class="lbl {label_class}">{_esc(label_text)}</span><span>{_render_action_item(item)}</span></li>')
     body = "\n".join(rows) or f'<li><span class="lbl">{_esc(_ui("common.dash"))}</span><span>{_esc(_ui("actions.placeholder"))}</span></li>'
     rp_notes = _reviewer_pass(context)["by_section"].get("actions") or []
     reviewer_block = _render_reviewer_notes(rp_notes, _ui("reviewer.note_label"))
@@ -3024,20 +3003,34 @@ def render_sources(prices: Dict[str, Any], context: Dict[str, Any]) -> str:
     # because the prose is the user's own framing: the LLM reads the whole
     # `## Investment Style And Strategy` section in SETTINGS.md, internalises
     # it, and writes the readout in first person as the user (in the SETTINGS
-    # Language). Renderer just slots it.
+    # Language). Renderer just slots it as a labeled prose block at the top of
+    # §10.11 — separate from the data-gaps list so the paragraph cadence does
+    # not collide with terse `<b>label:</b> detail` gap bullets.
     # Canonical key: `strategy_readout`. Legacy alias `style_readout` is still
     # accepted so older context payloads keep rendering.
     strategy_readout_str = context.get("strategy_readout") or context.get("style_readout")
-    if strategy_readout_str:
-        gap_items.append(f'<li class="strategy-readout">{_esc(strategy_readout_str)}</li>')
 
     rp = _reviewer_pass(context)
     rp_label = _ui("reviewer.note_label")
-    for note in rp["by_section"].get("strategy_readout") or []:
-        if isinstance(note, str) and note.strip():
-            gap_items.append(
-                f'<li class="reviewer-note"><b>{_esc(rp_label)}:</b> {_esc(note)}</li>'
-            )
+    readout_review_notes = [
+        n for n in (rp["by_section"].get("strategy_readout") or [])
+        if isinstance(n, str) and n.strip()
+    ]
+    if strategy_readout_str:
+        review_html = "".join(
+            f'<div class="reviewer-note-inline"><b>{_esc(rp_label)}:</b> {_esc(n)}</div>'
+            for n in readout_review_notes
+        )
+        readout_block = (
+            f'<div class="strategy-readout-wrap" style="margin-bottom:18px">'
+            f'<div class="eyebrow" style="margin-bottom:8px">'
+            f'{_esc(_ui("sources.strategy_readout_heading"))}</div>'
+            f'<div class="prose"><p>{_esc(strategy_readout_str)}</p></div>'
+            f'{review_html}'
+            f'</div>'
+        )
+    else:
+        readout_block = ""
 
     for g in gaps:
         gap_items.append(
@@ -3086,6 +3079,7 @@ def render_sources(prices: Dict[str, Any], context: Dict[str, Any]) -> str:
       <h2>{_esc(_ui("sources.title"))}</h2>
       <span class="sub">{_esc(_ui("sources.subtitle"))}</span>
     </div>
+    {readout_block}
     <div class="eyebrow" style="margin-bottom:10px">{_esc(_ui("sources.audit_heading"))}</div>
     <div class="tbl-wrap scroll-y">
       <table class="src-tbl">
@@ -3106,28 +3100,36 @@ def render_sources(prices: Dict[str, Any], context: Dict[str, Any]) -> str:
 # ----------------------------------------------------------------------------- #
 
 def render_html(
-    aggs: Dict[str, TickerAggregate],
-    prices: Dict[str, Any],
+    snapshot: Snapshot,
     context: Dict[str, Any],
     css: str,
-    config: Dict[str, float],
     settings: SettingsProfile,
 ) -> str:
-    today = _dt.date.today()
+    """Project a fully-resolved Snapshot onto HTML.
+
+    All numeric / structural data comes from the snapshot — the renderer
+    performs no aggregation, FX conversion, pacing, heat scoring, or
+    special-check computation here. Editorial content (news, events, alerts,
+    adjustments, action list, theme/sector HTML) comes from `context`.
+    """
+    try:
+        today = _dt.date.fromisoformat(snapshot.today)
+    except (ValueError, TypeError):
+        today = _dt.date.today()
 
     # Activate the base currency *before* any render_ function runs so all
     # downstream `_fmt_money` / `_fmt_signed*` / popover-footer prefixes use the
-    # configured base (default USD).
-    _set_active_base_currency(settings.base_currency)
+    # configured base.
+    _set_active_base_currency(snapshot.base_currency)
 
-    # Totals (base-currency basis — merge_prices has already FX-converted)
-    total_assets = sum(a.market_value or 0 for a in aggs.values())
-    invested = sum(a.market_value or 0 for a in aggs.values() if not a.is_cash)
-    cash = sum(a.market_value or 0 for a in aggs.values() if a.is_cash)
-    pnl = sum(a.pnl_amount for a in aggs.values() if a.pnl_amount is not None) or None
-
-    pacing = book_pacing(aggs, today)
-    _ = special_checks(aggs, total_assets, config)  # results currently surfaced via context["alerts"]
+    aggs = snapshot.aggregates
+    prices = snapshot.prices
+    config = snapshot.config
+    totals = snapshot.totals
+    total_assets = totals.get("total_assets") or 0.0
+    invested = totals.get("invested") or 0.0
+    cash = totals.get("cash") or 0.0
+    pnl = totals.get("pnl")
 
     # Render sections (§10 order)
     sections = [
@@ -3136,17 +3138,20 @@ def render_html(
         render_today_summary(context),                                     # §10.1 #1
         render_dashboard(aggs, total_assets, invested, cash, pnl),         # §10.1 #2
         render_profit_panel(context),                                      # §10.1.5 profit panel
+        render_report_accuracy(context),                                   # §10.1.5a data quality scores
         render_performance_attribution(context),                           # transaction history attribution
         render_trade_quality(context),                                     # transaction history trade review
         render_discipline_check(context),                                  # transaction history discipline checks
+        render_trading_psychology(context),                                # §10.1.7 trading-psychology evaluation
         render_allocation_and_weight(aggs, total_assets, today),           # §10.1 allocation + weight
         render_holdings_table(aggs, total_assets, prices, today, context), # §10.1 #3
         render_pnl_ranking(aggs),                                          # §10.4 chart
-        render_holding_period(pacing),                                     # §10.1 #4
+        render_holding_period(snapshot.book_pacing),                       # §10.1 #4
         render_theme_sector(context),                                      # §10.1 #5
         render_news(context),                                              # §10.1 #6
         render_events(context),                                            # §10.1 #7
-        render_high_risk_opp(aggs, prices, total_assets, context, config), # §10.1 #8
+        render_high_risk_opp(aggs, prices, total_assets, context, config,  # §10.1 #8
+                              risk_heat=snapshot.risk_heat),
         render_adjustments(context, config, aggs, total_assets),           # §10.1 #9
         render_actions(context),                                           # §10.1 #10
         render_sources(prices, context),                                   # §10.1 #11
@@ -3178,11 +3183,19 @@ def render_html(
 
 def _cli(argv: Optional[List[str]] = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--snapshot", default=None, type=Path,
+                   help="Pre-computed report snapshot from `python scripts/transactions.py "
+                        "snapshot`. When supplied, the renderer skips aggregation, "
+                        "merge_prices, book_pacing, build_risk_heat_items, special_checks, "
+                        "auto-FX, and auto-analytics — all numeric work happens upstream. "
+                        "This is the canonical pipeline path; --prices/--db is a fallback.")
     p.add_argument("--db", default=Path("transactions.db"), type=Path,
-                   help="Path to transactions.db (canonical source for positions; default: ./transactions.db)")
+                   help="Fallback path: transactions.db source for positions when "
+                        "--snapshot is not supplied.")
     p.add_argument("--settings", default="SETTINGS.md", type=Path)
     p.add_argument("--prices", required=False, type=Path,
-                   help="JSON output from scripts/fetch_prices.py (required unless --self-check)")
+                   help="Fallback path: prices.json from scripts/fetch_prices.py. Ignored "
+                        "when --snapshot is supplied.")
     p.add_argument("--ui-dict", default=None, type=Path,
                    help="Optional UI dictionary JSON overlay. For non-built-in languages, "
                         "the executing agent should translate scripts/i18n/report_ui.en.json "
@@ -3330,6 +3343,20 @@ def _run_self_check() -> int:
                 "kill_action": "cut full position", "sized_pp_delta": 2.0}
     check("good_adj compliant", validate_recommendation_block(good_adj), [])
 
+    from report_accuracy import compute_report_accuracy  # noqa: WPS433
+
+    ra = compute_report_accuracy(
+        profit_panel={"rows": [{"period": "1D", "pnl": 1000.0, "audit": []}]},
+        prices={"NVDA": {"latest_price": 1.0, "price_freshness": "fresh"}},
+        position_tickers=["NVDA"],
+        missing_fx=[],
+        errors={},
+    )
+    if not isinstance(ra.get("overall"), dict) or "score" not in ra["overall"]:
+        failures.append(f"  - report_accuracy shape: {ra!r}")
+    elif not isinstance(ra.get("dimensions"), list) or len(ra["dimensions"]) < 4:
+        failures.append(f"  - report_accuracy dimensions: {ra.get('dimensions')!r}")
+
     if failures:
         print(f"FAIL — {len(failures)} self-check assertions failed:")
         for f in failures:
@@ -3339,45 +3366,54 @@ def _run_self_check() -> int:
     return 0
 
 
-def _auto_fx_from_prices(
-    prices: Dict[str, Any],
-    base_currency: str,
-) -> Tuple[Dict[str, float], Dict[str, Any]]:
-    """Return auto-fetched FX rates from prices.json["_fx"], scoped to the base."""
-    fx_payload = prices.get("_fx")
-    if not isinstance(fx_payload, dict):
-        logging.warning(
-            "prices.json has no `_fx` payload. Re-run scripts/fetch_prices.py so FX "
-            "conversion rates are auto-fetched."
-        )
-        return {}, {}
+def _load_snapshot_from_disk(path: Path) -> Snapshot:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    return deserialize_snapshot(payload)
 
-    payload_base = str(fx_payload.get("base") or "").upper()
-    base = base_currency.upper()
-    if payload_base and payload_base != base:
-        logging.warning(
-            "prices.json `_fx` base %s does not match SETTINGS.md base %s; ignoring "
-            "stale FX payload. Re-run scripts/fetch_prices.py.",
-            payload_base, base,
-        )
-        return {}, {}
 
-    raw_rates = fx_payload.get("rates") if isinstance(fx_payload.get("rates"), dict) else {}
-    rates: Dict[str, float] = {}
-    for pair, raw_rate in raw_rates.items():
-        pair_str = str(pair).upper()
-        if not pair_str.startswith(f"{base}/"):
-            continue
-        try:
-            rate = float(raw_rate)
-        except (TypeError, ValueError):
-            continue
-        if rate > 0:
-            rates[pair_str] = rate
+def _build_snapshot_from_legacy_inputs(args: argparse.Namespace) -> Tuple[Optional[Snapshot], int]:
+    """Legacy `--prices --db` path: build the snapshot in-process before render.
 
-    raw_details = fx_payload.get("details")
-    details = raw_details if isinstance(raw_details, dict) else {}
-    return rates, details
+    Emits a deprecation warning so the canonical pipeline (`transactions.py
+    snapshot` → `--snapshot`) is preferred. Returns (snapshot, exit_code).
+    Exit code is 0 on success; non-zero exit codes are propagated to main().
+    """
+    logging.warning(
+        "DEPRECATED: --prices/--db path materializes the snapshot in-process. "
+        "Run `python scripts/transactions.py snapshot --prices ... --output "
+        "report_snapshot.json` upstream and pass --snapshot for a clean "
+        "pipeline / renderer split."
+    )
+    if args.prices is None:
+        print("ERROR: --prices is required when --snapshot is omitted", file=sys.stderr)
+        return None, 2
+    if not args.prices.exists():
+        print(f"ERROR: {args.prices} not found (run fetch_prices.py first)", file=sys.stderr)
+        return None, 3
+    if not (args.db and args.db.exists()):
+        print(f"ERROR: no positions source found at --db {args.db}. "
+              f"Run `python scripts/transactions.py db init` and import transactions first.",
+              file=sys.stderr)
+        return None, 2
+
+    prices = json.loads(args.prices.read_text(encoding="utf-8"))
+    todo_hard_failures = find_todo_required_hard_failures(prices)
+    if todo_hard_failures:
+        print(format_todo_required_hard_failures(todo_hard_failures), file=sys.stderr)
+        return None, 5
+
+    settings = parse_settings_profile(args.settings)
+    snapshot = compute_snapshot(
+        db_path=args.db,
+        prices=prices,
+        settings=settings,
+    )
+    if not snapshot.aggregates:
+        print(f"ERROR: {args.db} has no open_lots / cash_balances. "
+              f"Run `python scripts/transactions.py db init` and import transactions first.",
+              file=sys.stderr)
+        return None, 4
+    return snapshot, 0
 
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -3388,43 +3424,41 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.self_check:
         return _run_self_check()
 
-    if args.prices is None:
-        print("ERROR: --prices is required (omit only when running --self-check)", file=sys.stderr); return 2
-    if not args.prices.exists():
-        print(f"ERROR: {args.prices} not found (run fetch_prices.py first)", file=sys.stderr); return 3
-
-    if args.db and args.db.exists():
-        scripts_dir = Path(__file__).resolve().parent
-        if str(scripts_dir) not in sys.path:
-            sys.path.insert(0, str(scripts_dir))
-        from transactions import load_holdings_lots  # type: ignore[import-not-found]
-        lots = load_holdings_lots(args.db)
-        if not lots:
-            print(f"ERROR: {args.db} has no open_lots / cash_balances. "
-                  f"Run `python scripts/transactions.py db init` and import transactions first.",
+    # ----------------------------------------------------------------------- #
+    # Resolve the snapshot. Canonical path: --snapshot (built upstream by
+    # `python scripts/transactions.py snapshot`). Legacy path: --prices + --db
+    # builds the snapshot in-process and emits a deprecation warning.
+    # ----------------------------------------------------------------------- #
+    if args.snapshot is not None:
+        if not args.snapshot.exists():
+            print(f"ERROR: snapshot file {args.snapshot} not found. "
+                  "Run `python scripts/transactions.py snapshot` first.",
                   file=sys.stderr)
-            return 4
+            return 3
+        try:
+            snapshot = _load_snapshot_from_disk(args.snapshot)
+        except (ValueError, json.JSONDecodeError) as exc:
+            print(f"ERROR: failed to load snapshot {args.snapshot}: {exc}", file=sys.stderr)
+            return 6
     else:
-        print(f"ERROR: no positions source found at --db {args.db}. "
-              f"Run `python scripts/transactions.py db init` and import transactions first.",
-              file=sys.stderr)
-        return 2
-    aggs = aggregate(lots)
-    prices = json.loads(args.prices.read_text(encoding="utf-8"))
-    todo_hard_failures = find_todo_required_hard_failures(prices)
-    if todo_hard_failures:
-        print(format_todo_required_hard_failures(todo_hard_failures), file=sys.stderr)
-        return 5
+        snapshot, exit_code = _build_snapshot_from_legacy_inputs(args)
+        if snapshot is None:
+            return exit_code
 
-    # §9.0 — editorial context must not supply FX rates. FX conversion rates are
-    # auto-fetched by scripts/fetch_prices.py and stored under prices.json["_fx"].
+    # ----------------------------------------------------------------------- #
+    # Editorial context (agent-authored: news, events, alerts, action list,
+    # adjustments, theme/sector HTML, reviewer pass, and research audits).
+    # ----------------------------------------------------------------------- #
     context: Dict[str, Any] = {}
     if args.context and args.context.exists():
         context = json.loads(args.context.read_text(encoding="utf-8"))
     elif args.context:
-        logging.warning("Context file %s not found; rendering with placeholders.", args.context)
+        logging.warning("Context file %s not found; pre-render validation will fail.", args.context)
 
-    settings = parse_settings_profile(args.settings)
+    # Reconstruct a SettingsProfile shim from the snapshot so UI bundle resolution
+    # stays uniform across both paths.
+    settings = settings_profile_for_snapshot(snapshot)
+
     ui_dict_override: Optional[Dict[str, Any]] = None
     if args.ui_dict and args.ui_dict.exists():
         ui_dict_override = _load_json_ui_dict(args.ui_dict)
@@ -3453,53 +3487,73 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     context["language"] = settings.display_name
 
-    base_ccy = settings.base_currency
     if "fx" in context:
         logging.warning(
             "Ignoring context['fx']; FX conversion rates are auto-fetched into "
-            "prices.json by scripts/fetch_prices.py."
+            "prices.json by scripts/fetch_prices.py and propagated through the snapshot."
         )
-    fx, fx_details = _auto_fx_from_prices(prices, base_ccy)
-    context["fx"] = fx
-    context["fx_details"] = fx_details
-    merge_prices(aggs, prices, fx=fx, base=base_ccy)
+    # Snapshot is the single source of truth for FX (already base-scoped).
+    context["fx"] = dict(snapshot.fx)
+    context["fx_details"] = dict(snapshot.fx_details) if isinstance(snapshot.fx_details, dict) else {}
 
-    if not _transaction_analytics(context):
-        try:
-            from transactions import compute_transaction_analytics, load_transactions_db  # type: ignore[import-not-found]
-            txns = load_transactions_db(args.db)
-            context["transaction_analytics"] = compute_transaction_analytics(txns, prices, base=base_ccy)
-        except Exception as e:
-            gaps = context.setdefault("data_gaps", [])
-            if isinstance(gaps, list):
-                gaps.append({
-                    "summary": _ui("sources.transaction_analytics_gap"),
-                    "detail": str(e),
-                })
+    # Profit panel / analytics: prefer agent-supplied context, fall back to
+    # snapshot pre-computed values. The renderer never recomputes here.
+    if not context.get("profit_panel") and snapshot.profit_panel:
+        context["profit_panel"] = snapshot.profit_panel
+    if not context.get("report_accuracy") and getattr(snapshot, "report_accuracy", None):
+        context["report_accuracy"] = snapshot.report_accuracy
+    if not context.get("realized_unrealized") and snapshot.realized_unrealized:
+        context["realized_unrealized"] = snapshot.realized_unrealized
+    if not _transaction_analytics(context) and snapshot.transaction_analytics:
+        context["transaction_analytics"] = snapshot.transaction_analytics
+    # §10.1.7 trading psychology is a mandatory agent-authored gate. Snapshot
+    # fallback exists only for callers that explicitly pre-merge a validated
+    # block into the snapshot; otherwise missing context is a render failure.
+    if not context.get("trading_psychology") and snapshot.trading_psychology:
+        context["trading_psychology"] = snapshot.trading_psychology
 
-    # §9.0 audit — warn loudly for any non-base currency in the book that lacks
-    # an FX rate. Stablecoins pegged 1:1 to USD still need fx[base/USD] when
-    # base != USD; the audit catches that case too.
-    needed_ccys = sorted({a.trade_currency for a in aggs.values() if a.trade_currency != base_ccy})
-    missing_fx: List[str] = []
-    for c in needed_ccys:
-        if f"{base_ccy}/{c}" in fx:
+    context_errors = validate_report_context(context, serialize_snapshot(snapshot))
+    if context_errors:
+        print(
+            f"ERROR: report_context failed pre-render validation "
+            f"({len(context_errors)} problem(s)):",
+            file=sys.stderr,
+        )
+        for err in context_errors:
+            print(f"  - {err}", file=sys.stderr)
+        print(
+            "Run `python scripts/validate_report_context.py --snapshot "
+            "report_snapshot.json --context report_context.json` before rendering.",
+            file=sys.stderr,
+        )
+        return 7
+
+    # Surface snapshot-side errors as data gaps.
+    snapshot_errors = [
+        ("profit_panel", snapshot.profit_panel_error),
+        ("realized_unrealized", snapshot.realized_unrealized_error),
+        ("transaction_analytics", snapshot.transaction_analytics_error),
+    ]
+    for key, msg in snapshot_errors:
+        if not msg:
             continue
-        # USD stablecoins are usable as long as we can convert USD → base (or base IS USD).
-        if c in CASH_STABLECOIN_USD and (base_ccy == "USD" or f"{base_ccy}/USD" in fx):
-            continue
-        missing_fx.append(c)
-    if missing_fx:
+        gaps = context.setdefault("data_gaps", [])
+        if isinstance(gaps, list):
+            gaps.append({
+                "summary": f"{key} pipeline error",
+                "detail": msg,
+            })
+
+    if snapshot.missing_fx:
         logging.warning(
             "Non-%s currency in book without FX rate: %s. "
             "Affected aggregates will render as `n/a` per spec §9.0. "
             "Re-run scripts/fetch_prices.py so prices.json['_fx'] is populated.",
-            base_ccy, ", ".join(missing_fx),
+            snapshot.base_currency, ", ".join(snapshot.missing_fx),
         )
 
     css = load_canonical_css(args.sample)
-    config = {**DEFAULTS, **settings.config_overrides}
-    html_doc = render_html(aggs, prices, context, css, config, settings)
+    html_doc = render_html(snapshot, context, css, settings)
 
     if args.output is None:
         ts = _dt.datetime.now().strftime("%Y-%m-%d_%H%M")

@@ -838,8 +838,11 @@ def main(argv: Optional[List[str]] = None) -> int:
                         format="%(asctime)s [%(levelname)s] %(message)s")
 
     if args.db and args.db.exists():
-        from transactions import load_holdings_lots  # type: ignore[import-not-found]
-        lots = load_holdings_lots(args.db)
+        # Use the fetch *universe* (current holdings + sold-off tickers) so
+        # historical-boundary valuations in compute_profit_panel can resolve
+        # closes for tickers that have since been fully sold.
+        from transactions import load_fetch_universe_lots  # type: ignore[import-not-found]
+        lots = load_fetch_universe_lots(args.db)
     else:
         print(f"ERROR: no source found at --db {args.db}. "
               f"Run `python scripts/transactions.py db init` and import transactions first.",

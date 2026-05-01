@@ -46,6 +46,32 @@ Read every run for language, tone, `## Investment Style And Strategy`, optional 
 
 Auto-read all positions every run; never hard-code holdings or assume tickers. Re-classify by asset class/sector/theme from current data. Buckets flexible: ETF, single stock, crypto, cash, semiconductor, AI, energy, aerospace, financials, healthcare, consumer, industrial, optical/data center, defense, other.
 
+### 4.4 Demo ledger (isolated `transactions.db`)
+
+The repo ships a **non-production** transaction ledger under `demo/` for
+generating demo HTML reports without touching the root `transactions.db`:
+
+| Artifact | Role |
+|----------|------|
+| `demo/transactions_history.json` | Canonical JSON seed (multi-year synthetic flow); safe to commit. |
+| `demo/bootstrap_demo_ledger.py` | Regenerates the JSON from code (replay-validated) and **`--apply`** rebuilds `demo/transactions.db`. |
+| `demo/transactions.db` | Gitignored SQLite store — **not** the user’s root `transactions.db`. |
+
+**Safety:** `scripts/transactions.py` defaults to `./transactions.db` when
+`--db` is omitted. For demo work, always pass **`--db demo/transactions.db`**
+(or an absolute path to that file) to every pipeline step that reads
+transactions. Do not run demo bootstrap commands against production paths.
+Full runbook: [`demo/README.md`](../../demo/README.md).
+
+There is no demo-specific report pipeline, no committed demo
+`report_context.json`, and no auto-fill script for editorial content. Only the
+transaction ledger is synthetic. Everything else must be generated exactly as
+in a real report: latest-price retrieval, history retrieval, snapshot math,
+profit panel, transaction analytics, mandatory `trading_psychology`,
+theme/sector classification, news, catalysts, consensus, recommendations,
+Strategy readout, reviewer pass, and HTML rendering. Parser-test/offline flags
+that produce `n/a` quotes are not valid for user-facing demo reports.
+
 ---
 
 ## 5. Output language (HARD)

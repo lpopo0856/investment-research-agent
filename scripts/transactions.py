@@ -688,6 +688,90 @@ def _unrealized_pnl_state(
     return total, audit
 
 
+def _realized_in_period_by_market(
+    state: ReplayState,
+    start: str,
+    end: str,
+    fx: Dict[str, float],
+    base: str,
+    market_map: Dict[str, str],
+    audit: List[str],
+) -> Dict[str, float]:
+    """Sum realized events in (start, end] grouped by asset-class code.
+
+    Bucketed via `_asset_class_for_market`. Events on tickers not in
+    `market_map` (which can happen if the ticker was fully closed before the
+    market lookup ran) fall into "other" so the totals still balance.
+    """
+    out: Dict[str, float] = {}
+    for ev in state.realized_events:
+        if ev.date < start or ev.date > end:
+            continue
+        rate = _fx_rate(fx, base, ev.currency, audit)
+        if rate is None:
+            continue
+        market_code = market_map.get(ev.ticker or "", "")
+        cls = _asset_class_for_market(market_code) if market_code else "other"
+        out[cls] = out.get(cls, 0.0) + ev.realized_native / rate
+    return out
+
+
+def _unrealized_pnl_state_by_market(
+    state: ReplayState,
+    prices_at: Dict[str, float],
+    fx: Dict[str, float],
+    base: str,
+    market_map: Dict[str, str],
+) -> Dict[str, float]:
+    """Open-lot unrealized P&L grouped by asset-class code."""
+    out: Dict[str, float] = {}
+    for ticker, lots in state.open_lots.items():
+        mark = prices_at.get(ticker)
+        if mark is None or not lots:
+            continue
+        ccy = lots[0].currency
+        rate = _fx_rate(fx, base, ccy, [])
+        if rate is None:
+            continue
+        market_code = market_map.get(ticker, lots[0].market)
+        cls = _asset_class_for_market(market_code)
+        native = sum((mark - lot.cost) * lot.qty for lot in lots)
+        out[cls] = out.get(cls, 0.0) + native / rate
+    return out
+
+
+# Minimum |starting position value| used as return denominator when positions-only.
+_PROFIT_PANEL_MARKET_RETURN_EPS = 1.0
+
+
+def _gross_position_value_by_market(
+    state: ReplayState,
+    prices_at: Dict[str, float],
+    fx: Dict[str, float],
+    base: str,
+    market_map: Dict[str, str],
+    audit: List[str],
+) -> Dict[str, float]:
+    """Gross mark-to-market value of open lots by asset-class code (no cash), base ccy."""
+    out: Dict[str, float] = {}
+    for ticker, lots in state.open_lots.items():
+        if not lots:
+            continue
+        mark = prices_at.get(ticker)
+        if mark is None:
+            continue
+        ccy = lots[0].currency if lots else "USD"
+        rate = _fx_rate(fx, base, ccy, audit)
+        if rate is None:
+            continue
+        qty = sum(l.qty for l in lots)
+        native = float(mark) * qty
+        market_code = market_map.get(ticker, lots[0].market)
+        cls = _asset_class_for_market(market_code)
+        out[cls] = out.get(cls, 0.0) + native / rate
+    return out
+
+
 def _earliest_txn_date(txns: List[Transaction]) -> Optional[str]:
     if not txns:
         return None
@@ -800,6 +884,16 @@ def compute_profit_panel(
         final_state, latest_prices, fx_current, base, today_iso
     )
 
+    # Market lookup (ticker → market code) for the per-market period decomposition.
+    market_map = _market_by_ticker(txns, final_state)
+    end_unrealized_by_market = _unrealized_pnl_state_by_market(
+        final_state, latest_prices, fx_current, base, market_map
+    )
+    gross_market_audit: List[str] = []
+    end_gross_by_m = _gross_position_value_by_market(
+        final_state, latest_prices, fx_current, base, market_map, gross_market_audit
+    )
+
     boundaries = period_boundaries(today)
     earliest = _earliest_txn_date(txns)
     if earliest:
@@ -813,6 +907,8 @@ def compute_profit_panel(
                 "period": period, "pnl": None, "return_pct": None,
                 "realized": None, "unrealized_delta": None, "net_flows": None,
                 "starting_value": None, "ending_value": end_value,
+                "per_market": {},
+                "per_market_detail": {},
                 "audit": ["no transactions yet"],
             })
             continue
@@ -829,6 +925,8 @@ def compute_profit_panel(
             # boundary unrealized P&L to subtract.
             starting_value = 0.0
             starting_unrealized = 0.0
+            starting_unrealized_by_market: Dict[str, float] = {}
+            start_gross_by_m: Dict[str, float] = {}
             start_inclusive = "0001-01-01"
         else:
             # State at boundary (inclusive)
@@ -863,6 +961,12 @@ def compute_profit_panel(
                 boundary_state, boundary_prices, fx_at_boundary, base, boundary_iso
             )
             period_audit.extend(su_audit)
+            starting_unrealized_by_market = _unrealized_pnl_state_by_market(
+                boundary_state, boundary_prices, fx_at_boundary, base, market_map
+            )
+            start_gross_by_m = _gross_position_value_by_market(
+                boundary_state, boundary_prices, fx_at_boundary, base, market_map, period_audit
+            )
             start_inclusive = (_date(boundary_iso) + _dt.timedelta(days=1)).isoformat()
 
         # External flows in period.
@@ -875,7 +979,7 @@ def compute_profit_panel(
         )
         period_audit.extend(flow_audit)
 
-        # Realized in period.
+        # Realized in period (whole-portfolio + per-market).
         realized_audit: List[str] = []
         realized = _realized_in_period(
             final_state,
@@ -884,6 +988,10 @@ def compute_profit_panel(
             fx_current, base, realized_audit,
         )
         period_audit.extend(realized_audit)
+        realized_by_market = _realized_in_period_by_market(
+            final_state, start_inclusive, today_iso,
+            fx_current, base, market_map, realized_audit,
+        )
 
         pnl = end_value - starting_value - flows
         denom = starting_value + 0.5 * flows
@@ -891,11 +999,87 @@ def compute_profit_panel(
 
         unrealized_delta = end_unrealized - starting_unrealized
         component_gap = pnl - (realized + unrealized_delta)
+
+        # Decompose the residual into named drift components so the agent can
+        # tell mechanical FX-translation drift apart from genuine unmodelled
+        # cash events. ALLTIME has no boundary state, so fx_drift is 0 by
+        # construction; the entire residual is then cash-side.
+        #
+        # Caveat: when `_fx_at` falls back to current rates (no FX history at
+        # the boundary), `fx_at_boundary == fx_current`, so `starting_value`
+        # and `starting_value_curfx` agree and `fx_drift` collapses to ~0.
+        # The whole residual is then reported as `cash_drift` even though
+        # part of it could be unobserved FX motion. The audit line emitted by
+        # `_fx_at` flags the missing history; consumers should treat
+        # cash_drift>0 *with* an "no _fx_history" audit on the same row as
+        # ambiguous, not as a confirmed cash gap.
+        fx_drift = 0.0
+        cash_drift = component_gap
+        if period != "ALLTIME":
+            starting_value_curfx, _ = _value_state(
+                boundary_state, boundary_prices, fx_current, base
+            )
+            starting_unrealized_curfx, _ = _unrealized_pnl_state(
+                boundary_state, boundary_prices, fx_current, base, boundary_iso
+            )
+            pnl_curfx = end_value - starting_value_curfx - flows
+            ud_curfx = end_unrealized - starting_unrealized_curfx
+            residual_curfx = pnl_curfx - (realized + ud_curfx)
+            fx_drift = component_gap - residual_curfx
+            cash_drift = residual_curfx
+
         if abs(component_gap) > 1.0:
+            # Keep the legacy audit phrasing so report_accuracy._reconciliation_gaps
+            # still penalises real reconciliation drift, then attach the structured
+            # decomposition as a sibling line.
             period_audit.append(
                 f"{period}: P&L differs from realized + unrealized_delta by {component_gap:.2f} "
                 "(cash/FX drift or missing marks)"
             )
+            period_audit.append(
+                f"{period}: residual {component_gap:.2f} = "
+                f"fx_drift {fx_drift:.2f} + cash_drift {cash_drift:.2f}"
+            )
+
+        # Per-market P&L decomposition: realized_in_period + unrealized_delta.
+        # Cash/FX residual lives at portfolio level and is NOT distributed across
+        # markets (deposits are not attributable to a market). Sum of per-market
+        # P&L therefore differs from `pnl` by `pnl - realized - unrealized_delta`.
+        per_market_keys = (
+            set(realized_by_market)
+            | set(end_unrealized_by_market)
+            | set(starting_unrealized_by_market)
+            | set(end_gross_by_m)
+            | set(start_gross_by_m)
+        )
+        per_market: Dict[str, float] = {}
+        per_market_detail: Dict[str, Dict[str, Any]] = {}
+        for k in per_market_keys:
+            r = realized_by_market.get(k, 0.0)
+            ud = end_unrealized_by_market.get(k, 0.0) - starting_unrealized_by_market.get(k, 0.0)
+            value = r + ud
+            s_m = start_gross_by_m.get(k, 0.0)
+            e_m = end_gross_by_m.get(k, 0.0)
+            eps = _PROFIT_PANEL_MARKET_RETURN_EPS
+            denom = max(abs(s_m), eps)
+            if abs(s_m) < 1e-12 and abs(value) < 0.01:
+                ret_m = None
+            elif abs(s_m) < 1e-12:
+                ret_m = None
+            else:
+                ret_m = round((value / denom) * 100.0, 4)
+            per_market_detail[k] = {
+                "pnl": round(value, 2),
+                "realized": round(r, 2),
+                "unrealized_delta": round(ud, 2),
+                "return_pct": ret_m,
+                "starting_position_value": round(s_m, 2),
+                "ending_position_value": round(e_m, 2),
+                "net_flows": None,
+            }
+            if abs(value) < 0.01 and k != "us":  # drop noise except for the dominant US bucket
+                continue
+            per_market[k] = round(value, 2)
 
         rows.append({
             "period": period,
@@ -907,6 +1091,10 @@ def compute_profit_panel(
             "realized": round(realized, 2),
             "unrealized_delta": round(unrealized_delta, 2),
             "net_flows": round(flows, 2),
+            "fx_drift": round(fx_drift, 2),
+            "cash_drift": round(cash_drift, 2),
+            "per_market": per_market,
+            "per_market_detail": per_market_detail,
             "audit": period_audit,
         })
 
@@ -914,7 +1102,7 @@ def compute_profit_panel(
         "base_currency": base,
         "as_of": today_iso,
         "rows": rows,
-        "open_position_audit": end_audit + end_unrealized_audit,
+        "open_position_audit": end_audit + end_unrealized_audit + gross_market_audit,
         "issues": final_state.issues,
     }
 
@@ -1001,9 +1189,25 @@ def _market_by_ticker(txns: List[Transaction], state: ReplayState) -> Dict[str, 
 
 
 def _asset_class_for_market(market: Optional[str]) -> str:
+    """Return a stable, market-specific asset-class code.
+
+    The renderer translates each code via `analytics.asset_class_<code>`. We
+    keep the codes lowercase so they're locale-stable and pre-existing
+    `analytics.asset_class_other` / `_cash` / `_fx` / `_crypto` keep working.
+    """
     m = (market or "").upper()
-    if m in {"US", "TW", "TWO", "JP", "HK", "LSE"}:
-        return "stock_etf"
+    if m == "US":
+        return "us"
+    if m == "TW":
+        return "tw"
+    if m == "TWO":
+        return "two"
+    if m == "JP":
+        return "jp"
+    if m == "HK":
+        return "hk"
+    if m == "LSE":
+        return "lse"
     if m == "CRYPTO":
         return "crypto"
     if m == "FX":
@@ -1276,6 +1480,49 @@ def compute_transaction_analytics(
         buy_followups.append(item)
     buy_followups.sort(key=lambda r: abs(r.get("after_90d_pct") or r.get("after_30d_pct") or 0), reverse=True)
 
+    # Combined chronological recent-activity feed (BUY + SELL together,
+    # most recent first). This is the daily-useful view: did my latest sells
+    # leave money on the table, did my latest buys immediately tank? The
+    # parallel sell/buy follow-up tables above are kept for back-compat but
+    # not surfaced by the renderer.
+    recent_activity: List[Dict[str, Any]] = []
+    for t in txns:
+        if t.ticker is None or t.price is None or t.qty is None:
+            continue
+        if t.type not in ("BUY", "SELL"):
+            continue
+        item: Dict[str, Any] = {
+            "date": t.date,
+            "action": t.type,
+            "ticker": t.ticker,
+            "qty": round(t.qty, 8),
+            "price": round(t.price, 6),
+            "currency": (t.currency or "USD").upper(),
+            "market": t.market,
+        }
+        if t.type == "SELL":
+            # Aggregate realized across the matching SELL_LOT events for this txn
+            # (one SELL transaction can drain multiple lots → multiple events).
+            realized_native = sum(
+                ev.realized_native for ev in state.realized_events
+                if ev.type == "SELL_LOT" and ev.ticker == t.ticker and ev.date == t.date
+            )
+            rate = _fx_rate(fx_current, base, t.currency or "USD", value_audit)
+            item["realized"] = round(realized_native / rate, 2) if rate else None
+        for days in (30, 90):
+            target = (_date(t.date) + _dt.timedelta(days=days)).isoformat()
+            if target > today_iso:
+                item[f"after_{days}d_pct"] = None
+                continue
+            future = _historical_close_on_or_after(history, t.ticker, target)
+            if future is None:
+                item[f"after_{days}d_pct"] = None
+            else:
+                _, close = future
+                item[f"after_{days}d_pct"] = round((close - t.price) / t.price * 100.0, 2)
+        recent_activity.append(item)
+    recent_activity.sort(key=lambda r: r["date"], reverse=True)
+
     deposits = [t for t in txns if t.type == "DEPOSIT"]
     sells = [t for t in txns if t.type == "SELL"]
     buys = [t for t in txns if t.type == "BUY"]
@@ -1376,6 +1623,7 @@ def compute_transaction_analytics(
             "avg_hold_days": round(sum(avg_hold_days_values) / len(avg_hold_days_values), 1) if avg_hold_days_values else None,
             "sell_followups": sell_followups[:12],
             "buy_followups": buy_followups[:12],
+            "recent_activity": recent_activity[:12],
         },
         "discipline_check": {
             "avg_days_deposit_to_buy": round(sum(deposit_deploy_days) / len(deposit_deploy_days), 1) if deposit_deploy_days else None,
@@ -1539,6 +1787,21 @@ def _selfcheck() -> int:
         failures.append("profit_panel: ALLTIME row missing")
     elif abs((alltime_row.get("net_flows") or 0) - 5000.0) > 1e-6:
         failures.append(f"profit_panel: ALLTIME net_flows should include first-day/whole-history deposits, got {alltime_row.get('net_flows')}")
+    r1 = panel["rows"][0]
+    pmd = r1.get("per_market_detail") or {}
+    if not pmd:
+        failures.append("profit_panel: per_market_detail missing on rows")
+    else:
+        usd = pmd.get("us")
+        if not isinstance(usd, dict):
+            failures.append("profit_panel: per_market_detail.us not a dict")
+        elif usd.get("net_flows") is not None:
+            failures.append("profit_panel: per_market_detail.us.net_flows should be null in v1")
+        else:
+            pnl_u = float(usd.get("pnl") or 0.0)
+            comb = float(usd.get("realized") or 0.0) + float(usd.get("unrealized_delta") or 0.0)
+            if abs(pnl_u - comb) > 0.02:
+                failures.append(f"profit_panel: us pnl {pnl_u} != realized+unrealized {comb}")
 
     sold_lot_sample = """\
 # Transactions
@@ -2479,6 +2742,97 @@ def load_holdings_lots(db_path: Path) -> List[Lot]:
     return out
 
 
+def load_fetch_universe_lots(db_path: Path) -> List[Lot]:
+    """Return the price-fetch universe: today's open lots + cash UNION stub
+    lots for every ticker that ever transacted but is no longer in open_lots.
+
+    Why: ``compute_profit_panel`` replays state to past period boundaries
+    (1D, 7D, MTD, 1M, YTD, 1Y, ALLTIME). Sold-off tickers reappear in those
+    boundary states. ``load_holdings_lots`` returns only currently-held lots,
+    so the price-fetch and history-fetch pipelines miss those tickers and
+    the profit panel ends up with no boundary close + no latest price for
+    them. The stub lots carry the (ticker, market, currency, bucket,
+    is_share) routing metadata the fetcher needs; ``quantity = 0`` keeps
+    valuation/replay code paths unaffected because they all weight by qty.
+
+    Stub buckets are kept identical to the most recent transaction's bucket
+    so reports that group by bucket still classify the ticker correctly.
+    """
+    if not db_path.exists():
+        return []
+    current = load_holdings_lots(db_path)
+    held: set[str] = {l.ticker for l in current if l.market != MarketType.CASH}
+
+    db_init(db_path)
+    conn = db_connect(db_path)
+    try:
+        # Pick the most recent BUY/SELL row per ticker so (market, currency,
+        # bucket) come from a single, deterministic source row. SQLite's
+        # bare-column rule is unreliable when two rows tie on MAX(date), and
+        # DEPOSIT/WITHDRAW rows can have empty bucket/market — neither belongs
+        # in the trading-history universe, so restrict to the trade types.
+        rows = conn.execute(
+            """
+            SELECT t1.ticker,
+                   COALESCE(NULLIF(t1.market, ''), '')   AS market,
+                   COALESCE(NULLIF(t1.currency, ''), '') AS currency,
+                   COALESCE(NULLIF(t1.bucket, ''), '')   AS bucket,
+                   t1.date                               AS last_date
+              FROM transactions t1
+             WHERE t1.ticker IS NOT NULL AND t1.ticker != ''
+               AND t1.type IN ('BUY','SELL')
+               AND t1.id = (
+                   SELECT t2.id FROM transactions t2
+                    WHERE t2.ticker = t1.ticker
+                      AND t2.type IN ('BUY','SELL')
+                    ORDER BY t2.date DESC, t2.id DESC
+                    LIMIT 1
+               )
+            """
+        ).fetchall()
+    finally:
+        conn.close()
+
+    by_ticker: Dict[str, Dict[str, str]] = {}
+    for row in rows:
+        ticker = row["ticker"]
+        if ticker in held:
+            continue
+        by_ticker[ticker] = {
+            "market": row["market"],
+            "currency": row["currency"],
+            "bucket": row["bucket"] or "Mid Term (1y+)",
+            "last_date": row["last_date"],
+        }
+
+    stubs: List[Lot] = []
+    for ticker, meta in sorted(by_ticker.items()):
+        try:
+            market_enum = MarketType(meta["market"]) if meta["market"] else MarketType.UNKNOWN
+        except ValueError:
+            market_enum = MarketType.UNKNOWN
+        is_share = market_enum not in (MarketType.CRYPTO, MarketType.FX, MarketType.CASH)
+        # `currency` here is purely cosmetic (used to pick the prefix glyph
+        # in the synthetic raw_line below). The runtime currency is derived
+        # from `lot.market` everywhere downstream.
+        ccy_prefix = {
+            "USD": "$", "TWD": "NT$", "JPY": "¥",
+            "EUR": "€", "GBP": "£", "HKD": "HK$",
+        }.get(meta["currency"], "")
+        stubs.append(Lot(
+            raw_line=f"- {ticker} 0 @ {ccy_prefix}0 (sold; last txn {meta['last_date']}) [{meta['market']}]",
+            bucket=meta["bucket"],
+            ticker=ticker,
+            quantity=0.0,
+            cost=0.0,
+            date=meta["last_date"],
+            market=market_enum,
+            is_share=is_share,
+        ))
+
+    return current + stubs
+
+
 def load_transactions(
     *,
     db: Optional[Path] = None,
@@ -2541,6 +2895,20 @@ def _build_parser() -> argparse.ArgumentParser:
                     help="Write JSON output here (merge into report_context.json as transaction_analytics)")
     an.add_argument("--today", default=None, help="Override today (YYYY-MM-DD); default: local date")
     _add_source_args(an)
+
+    # ---- snapshot ---------------------------------------------------------- #
+    sn = sub.add_parser("snapshot",
+                        help="Materialize the full report snapshot (aggregates, totals, "
+                             "fx, book_pacing, risk_heat, special_checks, profit_panel, "
+                             "realized_unrealized, transaction_analytics) into one JSON "
+                             "for `python scripts/generate_report.py --snapshot`.")
+    sn.add_argument("--prices", default="prices.json", type=Path,
+                    help="prices.json from scripts/fetch_prices.py")
+    sn.add_argument("--settings", default="SETTINGS.md", type=Path)
+    sn.add_argument("--output", default=Path("report_snapshot.json"), type=Path,
+                    help="Snapshot path; default: ./report_snapshot.json")
+    sn.add_argument("--today", default=None, help="Override today (YYYY-MM-DD); default: local date")
+    _add_source_args(sn)
 
     # ---- replay ------------------------------------------------------------ #
     rp = sub.add_parser("replay", help="Print replay state at cutoff")
@@ -2686,6 +3054,58 @@ def main(argv: Optional[List[str]] = None) -> int:
             print(f"Wrote profit panel to {args.output}.")
         else:
             print(json.dumps(panel, indent=2, ensure_ascii=False))
+        return 0
+
+    if args.cmd == "snapshot":
+        # Pipeline materialization: every numeric/structural field the renderer
+        # needs lives in the snapshot. The agent then authors editorial
+        # context.json (news, events, alerts, adjustments, action list,
+        # theme/sector HTML) and runs `generate_report.py --snapshot`.
+        try:
+            from portfolio_snapshot import (              # noqa: WPS433
+                compute_snapshot,
+                parse_settings_profile,
+                write_snapshot,
+            )
+        except ImportError as exc:
+            print(f"ERROR: cannot import portfolio_snapshot ({exc}). "
+                  "Make sure scripts/portfolio_snapshot.py exists alongside transactions.py.",
+                  file=sys.stderr)
+            return 5
+        if not args.prices.exists():
+            print(f"ERROR: --prices file {args.prices} not found "
+                  "(run scripts/fetch_prices.py first).", file=sys.stderr)
+            return 3
+        prices = json.loads(args.prices.read_text(encoding="utf-8"))
+        settings = parse_settings_profile(args.settings)
+        today = _dt.date.fromisoformat(args.today) if args.today else _dt.date.today()
+        snap = compute_snapshot(
+            db_path=args.db,
+            prices=prices,
+            settings=settings,
+            today=today,
+        )
+        if not snap.aggregates:
+            print(f"ERROR: {args.db} has no open_lots / cash_balances. "
+                  "Run `python scripts/transactions.py db init` and import transactions first.",
+                  file=sys.stderr)
+            return 4
+        n_bytes = write_snapshot(snap, args.output)
+        gaps = []
+        if snap.profit_panel_error:
+            gaps.append(f"profit_panel: {snap.profit_panel_error}")
+        if snap.realized_unrealized_error:
+            gaps.append(f"realized_unrealized: {snap.realized_unrealized_error}")
+        if snap.transaction_analytics_error:
+            gaps.append(f"transaction_analytics: {snap.transaction_analytics_error}")
+        if snap.missing_fx:
+            gaps.append(f"missing FX: {', '.join(snap.missing_fx)}")
+        print(
+            f"Wrote snapshot to {args.output} "
+            f"({n_bytes:,} bytes; {len(snap.aggregates)} positions, base={snap.base_currency})."
+        )
+        for g in gaps:
+            print(f"  - gap: {g}")
         return 0
 
     if args.cmd == "analytics":

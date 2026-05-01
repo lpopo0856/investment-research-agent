@@ -26,7 +26,7 @@
   "summary": {
     "title": "Today's Summary",
     "subtitle": "Portfolio · Holdings · Risk",
-    "placeholder": "(Summary pending)"
+    "placeholder": "(No summary provided)"
   },
   "dashboard": {
     "title": "Portfolio Dashboard",
@@ -63,12 +63,40 @@
     "lifetime_realized_label": "Lifetime realized P&L",
     "lifetime_unrealized_label": "Open unrealized P&L"
   },
+  "report_accuracy": {
+    "title": "Report data quality",
+    "subtitle": "Deterministic scores from prices, profit-panel audits, and pipeline errors — not performance advice",
+    "overall_label": "Overall score",
+    "band": {
+      "high": "High confidence",
+      "medium": "Mixed",
+      "low": "Low confidence"
+    },
+    "col_dimension": "Dimension",
+    "col_score": "Score (0–100)",
+    "col_detail": "Diagnostics",
+    "dim": {
+      "quote_coverage": "Quote coverage (open lots)",
+      "quote_freshness": "Quote freshness",
+      "profit_boundary": "Profit panel — boundary marks",
+      "profit_reconciliation": "Profit panel — P&L vs components",
+      "pipeline": "Analytics pipeline"
+    },
+    "detail": {
+      "quote_counts": "{with_price}/{total} tickers with latest price · fresh {fresh} · delayed {delayed} · stale/n/a {stale}",
+      "boundary_counts": "audit hits — no hist.: {a}, no hist.+no px: {b}, missing px: {c}, unreal. excl.: {d}, latest fallback: {e}, no FX hist.: {f}",
+      "recon": "max |P&L−(realized+unreal.Δ)| ≈ {max_abs:,.2f} · max relative {max_rel:.4f}",
+      "pipeline": "hard errors: {n}"
+    },
+    "missing_fx_label": "Missing FX (book currencies)",
+    "footer": "Scores penalize missing historical marks, reconciliation gaps vs headline period P&L, stale quotes, and snapshot errors. They do not judge investment merit."
+  },
   "allocation": {
     "title": "Allocation & Weights",
     "subtitle": "{base} basis, {date}",
     "donut_label": "Asset allocation",
     "total_label": "TOTAL",
-    "cat_us": "Stocks / ETFs",
+    "cat_us": "US Equity",
     "cat_crypto": "Crypto",
     "cat_cash": "Cash",
     "cat_tw": "Taiwan",
@@ -93,7 +121,9 @@
     "cash": "Cash",
     "stock_etf": "Stock / ETF",
     "crypto": "Crypto",
+    "us": "US Equity",
     "tw": "Taiwan Equity",
+    "two": "Taiwan OTC",
     "jp": "Japan Equity",
     "hk": "Hong Kong Equity",
     "lse": "UK Equity",
@@ -183,6 +213,10 @@
   "analytics": {
     "performance_title": "Performance Attribution",
     "performance_subtitle": "Transaction history · flow-adjusted · {base} basis",
+    "market_breakdown_subtitle": "Per-market profit tables (same columns as profit panel) · {base} basis",
+    "market_tables_footnote": "Per-market net flows are not attributed (—). Return % uses starting gross position value in this market (positions only, no shared cash); the aggregate profit panel uses starting NAV + half net flows. Authoritative flows and full-portfolio return remain on the profit panel above.",
+    "market_residual_title": "Unallocated P&L (portfolio − sum of markets)",
+    "market_residual_col_pnl": "Residual P&L",
     "ending_nav": "Ending NAV",
     "ending_nav_note": "Current replay value",
     "mwr": "MWR annualized",
@@ -198,7 +232,12 @@
     "total_pnl": "Total P&L",
     "top_contributors": "Top Contributors",
     "top_detractors": "Top Detractors",
-    "asset_class_stock_etf": "Stocks / ETFs",
+    "asset_class_us": "US",
+    "asset_class_tw": "Taiwan",
+    "asset_class_two": "Taiwan OTC",
+    "asset_class_jp": "Japan",
+    "asset_class_hk": "Hong Kong",
+    "asset_class_lse": "UK",
     "asset_class_crypto": "Crypto",
     "asset_class_fx": "FX",
     "asset_class_cash": "Cash",
@@ -219,6 +258,14 @@
     "missed_saved": "Missed / Saved",
     "no_closed_trades": "No closed trades",
     "no_buy_followups": "No buy follow-ups",
+    "recent_activity_subtitle": "Recent trade follow-up · was the sell premature, did the buy underperform?",
+    "no_recent_activity": "No recent trades",
+    "activity_date": "Date",
+    "activity_action": "Action",
+    "activity_qty": "Qty",
+    "activity_price": "Price",
+    "action_buy": "BUY",
+    "action_sell": "SELL",
     "discipline_title": "Discipline Check",
     "discipline_subtitle": "Sizing, deployment, lot hygiene, and data gaps",
     "deposit_to_buy": "Deposit → Buy",
@@ -234,15 +281,34 @@
     "loss_lots": "Largest Loss Lots",
     "gain_lots": "Largest Gain Lots"
   },
+  "psychology": {
+    "title": "Recent Trading Mindset and Improvements",
+    "subtitle": "Evaluation grounded in transaction history and discipline-check evidence",
+    "placeholder": "(Trading-psychology section unavailable)",
+    "observations_label": "Recent behavior observations",
+    "improvements_label": "Areas to improve",
+    "strengths_label": "Discipline worth keeping",
+    "evidence_prefix": "Evidence",
+    "suggestion_prefix": "Suggestion",
+    "no_observations": "No salient behavior patterns this run",
+    "no_improvements": "No improvement items this run",
+    "tone_pos": "Positive",
+    "tone_neu": "Neutral",
+    "tone_warn": "Caution",
+    "tone_neg": "Negative",
+    "priority_high": "High",
+    "priority_medium": "Medium",
+    "priority_low": "Note"
+  },
   "theme_sector": {
     "title": "Theme and Sector Exposure",
     "subtitle": "{base} basis · ETF look-through where applicable",
-    "placeholder": "(Theme / sector exposure pending — the agent must auto-classify per spec §4.3 and inject the pre-rendered bars as context.theme_sector_html)"
+    "placeholder": "(Theme / sector exposure unavailable)"
   },
   "news": {
     "title": "Latest Material News",
     "subtitle": "1–3 items per core position",
-    "placeholder": "(Material news pending agent collection)",
+    "placeholder": "(No material news items selected for this report)",
     "positive": "Positive",
     "neutral": "Neutral",
     "negative": "Negative",
@@ -284,7 +350,7 @@
   "adjustments": {
     "title": "Recommended Adjustments",
     "subtitle": "Specific ticker · action · trigger",
-    "placeholder": "(Adjustment list pending agent input)",
+    "placeholder": "(No recommended adjustments this run)",
     "ticker": "Ticker",
     "current": "Current",
     "recommendation": "Recommendation",
@@ -298,7 +364,7 @@
     "may_do": "May",
     "avoid": "Avoid",
     "need_data": "Fix Data",
-    "placeholder": "(Action list pending)"
+    "placeholder": "(No action items this run)"
   },
   "pm": {
     "tag": "Tag",
@@ -329,6 +395,7 @@
   "sources": {
     "title": "Sources and Data Gaps",
     "subtitle": "Acquisition path and freshness for every quote · explicit gap list",
+    "strategy_readout_heading": "Strategy readout",
     "audit_heading": "Latest-price source audit",
     "gaps_heading": "Data gaps",
     "profit_panel_gap": "Profit panel data gap",

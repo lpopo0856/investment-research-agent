@@ -24,7 +24,7 @@ OpenAI Codex, Claude Code, Gemini CLI처럼 파일을 읽고 명령을 실행할
 - `scripts/fetch_prices.py`: 표준 최신 가격/환율 수집. `transactions.db`에서 포지션을 읽음
 - `scripts/fetch_history.py`: 보조 일봉 종가+환율 이력 수집(손익 패널용, `prices.json`에 `_history` / `_fx_history` 기록). `transactions.db`에서 포지션을 읽음
 - `scripts/transactions.py`: SQLite 저장 및 수집(CSV/JSON/메시지), 리플레이 엔진, 잔액 재구축, 실현+미실현 손익, 1D/7D/MTD/1M/YTD/1Y/ALLTIME 손익 패널
-- `scripts/generate_report.py`: 표준 HTML 렌더러. `report_context.json`의 `strategy_readout`, `reviewer_pass`, `profit_panel`, `realized_unrealized`를 읽음. `transactions.db`에서 포지션을 읽음
+- `scripts/generate_report.py`: 표준 HTML 렌더러. `report_snapshot.json`과 검증된 `report_context.json`을 읽으며, 렌더 단계에서 포트폴리오 숫자를 다시 계산하지 않음
 - `reports/`: 출력 폴더. 로컬 전용
 
 ## 최초 설정
@@ -94,40 +94,37 @@ python scripts/transactions.py db init        # transactions.db 생성
 
 완전한 리포트 실행은 네 단계입니다. 먼저 Gather에서 데이터를 수집하고, 가격/지표/뉴스/이벤트가 모인 뒤 Think에서 판단을 만들며, 렌더링 전에 시니어 PM 관점으로 Review하고, 마지막으로 Render합니다. Gather 단계는 현금이 아닌 모든 보유 종목에 대해 최신 뉴스와 30일 이내 이벤트를 검색하며, 비중 상위 종목만 보지 않습니다. Review 단계는 필요한 경우 검토 메모를 붙일 뿐, 사용자의 분석 내용을 대체하지 않습니다.
 
-에이전트는 매번 새로 쓰지 말고 표준 스크립트를 사용해야 합니다. 세 스크립트 모두 자동으로 `transactions.db`에서 포지션을 읽습니다.
+에이전트는 매번 새로 쓰지 말고 표준 스크립트를 사용해야 합니다. 거래 데이터를 읽는 단계는 기본적으로 루트 `transactions.db`를 사용합니다.
 
 ```sh
 python scripts/fetch_prices.py --settings SETTINGS.md --output prices.json
 # 어떤 행에 agent_web_search:TODO_required가 남아 있으면 fetch_prices는 0이 아닌 코드로 종료합니다.
 # 렌더링 전에 tier 3 / tier 4 가격 폴백을 완료해야 합니다.
 
-# 손익 패널용: 일봉 종가 및 환율 이력 수집
 python scripts/fetch_history.py \
     --settings SETTINGS.md \
     --merge-into prices.json --output prices_history.json
 
-# 평생 실현+미실현 스냅샷
-python scripts/transactions.py pnl \
-    --prices prices.json --settings SETTINGS.md \
-    > realized_unrealized.json
+# 단일 숫자 스냅샷을 생성합니다. profit panel, realized/unrealized,
+# transaction analytics는 이 snapshot에 포함됩니다.
+python scripts/transactions.py snapshot \
+    --prices prices.json --settings SETTINGS.md --output report_snapshot.json
 
-# 기간 손익 패널(1D / 7D / MTD / 1M / YTD / 1Y / ALLTIME)
-python scripts/transactions.py profit-panel \
-    --prices prices.json \
-    --settings SETTINGS.md --output profit_panel.json
-
-# 렌더링 전에 profit_panel.json과 realized_unrealized.json을
-# report_context.json의 키 "profit_panel"과 "realized_unrealized"로 병합합니다.
+# 에이전트는 snapshot, 최신 공개 정보, SETTINGS, guidelines를 바탕으로
+# report_context.json을 작성합니다. context에는 theme_sector_audit,
+# research_coverage, trading_psychology, Strategy readout, reviewer_pass,
+# actions / adjustments 등의 editorial 필드가 필수입니다.
+python scripts/validate_report_context.py \
+    --snapshot report_snapshot.json --context report_context.json
 
 python scripts/generate_report.py \
-    --settings SETTINGS.md \
-    --prices prices.json --context report_context.json \
+    --settings SETTINGS.md --snapshot report_snapshot.json --context report_context.json \
     --output reports/2026-04-28_1330_portfolio_report.html
 ```
 
 요청 언어가 내장 UI 사전 `english`, `traditional chinese`, `simplified chinese` 외라면, 실행 중인 에이전트가 `scripts/i18n/report_ui.en.json`을 임시 overlay로 번역해 `--ui-dict`로 넘깁니다.
 
-`report_context.json`에는 1인칭 Strategy readout용 `strategy_readout`과 검토 메모/요약용 `reviewer_pass`를 넣을 수 있습니다. 기존 `style_readout` 키도 렌더링되지만, 새 context는 `strategy_readout`을 사용해야 합니다.
+`report_context.json`은 `validate_report_context.py`를 통과해야 합니다. 기존 `style_readout` 키도 렌더링되지만, 새 context는 `strategy_readout`을 사용해야 합니다.
 
 ### 3. 거래 기록
 

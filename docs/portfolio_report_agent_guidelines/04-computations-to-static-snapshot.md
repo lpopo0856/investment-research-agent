@@ -1,5 +1,14 @@
 ## 9. Computations & missing-value glyphs
 
+> **Pipeline note (HARD).** Every numeric / structural field below is computed
+> by `scripts/portfolio_snapshot.py` (orchestrated by
+> `python scripts/transactions.py snapshot`) and serialized into
+> `report_snapshot.json`. The renderer (`scripts/generate_report.py`) reads
+> the snapshot and projects it onto HTML — it does not aggregate, FX-convert,
+> compute pacing, score risk, or run §11 checks itself. Authoring agents
+> inspect the snapshot to see the prepared numbers before drafting editorial
+> context; the renderer never re-derives them.
+
 ### 9.0 Currency canonicalization — base-currency basis (HARD)
 
 Base currency = `SETTINGS.md` `Base currency:`; default `USD`. Every aggregate/chart axis is base-denominated; native trade currency is display-only. No manual FX in `SETTINGS.md` or `report_context.json`. `scripts/fetch_prices.py` populates `prices.json["_fx"]`.
@@ -62,17 +71,63 @@ Cell-level only. Never blank cells; never write "missing/unknown/data gap" insid
 
 1. Today's summary
 2. Portfolio dashboard (KPIs)
-2.5. **Profit panel (§10.1.5)** — period P&L for 1D / 7D / MTD / 1M / YTD / 1Y / ALLTIME, computed from `transactions.db` (the local SQLite event log) via `scripts/transactions.py profit-panel`.
+2.5. **Profit panel (§10.1.5)** — period P&L for 1D / 7D / MTD / 1M / YTD / 1Y / ALLTIME. The numbers are produced upstream by `python scripts/transactions.py snapshot` (which calls `compute_profit_panel`) and embedded in `report_snapshot.json["profit_panel"]`. The renderer falls back to the snapshot value; `context["profit_panel"]` exists only as an explicit debugging override. The standalone `scripts/transactions.py profit-panel` subcommand is still available for one-off inspection.
 
-2.6. **Transaction analytics (§10.1.6)** — higher-level sections computed from
-the same event log via `scripts/transactions.py analytics` or automatically by
-`scripts/generate_report.py` when `prices.json` and `transactions.db` are
-available. The optional `context["transaction_analytics"]` payload overrides
-the automatic computation. It renders performance attribution, trade quality,
-and discipline check; computation failure is surfaced as a data gap.
+2.6. **Transaction analytics (§10.1.6)** — performance attribution, trade quality, discipline check. Produced upstream by `python scripts/transactions.py snapshot` (which calls `compute_transaction_analytics`) and embedded in `report_snapshot.json["transaction_analytics"]`. The renderer reads `context["transaction_analytics"]` if the agent overrides, otherwise falls back to the snapshot. The standalone `scripts/transactions.py analytics` subcommand still exists for inspection. Pipeline-side computation failures surface as snapshot errors and become data-gap entries automatically.
+
+   **Per-market profit tables:** `report_snapshot.json["profit_panel"]["rows"][*]` includes `per_market_detail` (per asset-class bucket: `pnl`, `realized`, `unrealized_delta`, `return_pct`, `starting_position_value`, `ending_position_value`, `net_flows` always `null` until cash/flow attribution exists). The performance-attribution HTML section renders one profit-panel–shaped table per bucket plus an optional residual block; see `docs/per_market_profit_panel_design.md`.
+
+2.7. **Trading-psychology evaluation (§10.1.7) (HARD REQUIRED)** — agent-authored editorial section that reads as the user's own self-coaching note. Renders between transaction analytics and the holdings table so the flow is `evidence → reflection → positions`. The renderer is deterministic; content comes only from `context["trading_psychology"]`. Missing `context["trading_psychology"]` is a render-blocking error, not a placeholder state.
+
+   **Authoring is judgment, not compute (HARD)**. Pure rules cannot match the user's strategy-specific framing — the same averaging-up pattern is "discipline drift" for one user and "right-sided conviction" for another. The agent operating the pipeline (whatever LLM — Claude, Codex, Gemini, automated runner, human) reads the snapshot data + `SETTINGS.md ## Investment Style And Strategy` and authors the JSON during the report run, before invoking `generate_report.py`. There is no hardcoded LLM provider, no rule-based code generator, and no "auto-fill" script — the spec below is the contract; `scripts/validate_report_context.py` is only a pre-render gate that catches schema and coverage violations.
+
+   **Pipeline placement (mandatory gate)**: between `python scripts/transactions.py snapshot` and `python scripts/generate_report.py`, the agent must:
+   1. Read `report_snapshot.json` (specifically the analytics paths listed under "Authoring rules" below).
+   2. Read `SETTINGS.md ## Investment Style And Strategy` to anchor improvements.
+   3. Synthesize patterns (not enumerate datapoints) into the schema below.
+   4. Merge into `report_context.json` under `"trading_psychology"`.
+   5. Run the full pre-render gate `python scripts/validate_report_context.py --snapshot report_snapshot.json --context report_context.json`; `generate_report.py` must not be invoked until this passes.
+
+   Demo reports use the same authoring rule. `demo/` only supplies an alternate synthetic transaction DB; the agent generating the report still authors and validates this section during the normal report run.
+
+   **Plain text & typography (HARD).** All `trading_psychology` headline / observation / improvement / strength strings are plain text — no HTML tags (`validate_report_context.py` rejects tag-like markup). Visual styling matches the report body: `generate_report.render_trading_psychology` uses `.psych-*` CSS appended with the canonical stylesheet so font size, line height, and ink colors align with `.prose` / §14.9 tokens.
+
+   **Authoring contract** (HARD):
+
+   ```jsonc
+   "trading_psychology": {
+     "headline":     "≤ 80 字 · 一句話總結你近期的交易心態",
+     "observations": [                           // 2-4 items
+       {
+         "behavior":  "近 30 日對 NVDA 連續加碼 3 筆，成本逐次上升 +28%",
+         "evidence":  "snapshot.transaction_analytics.discipline_check.latest_lot_cost_flags[NVDA]",
+         "tone":      "warn"   // pos | neu | warn | neg
+       }
+     ],
+     "improvements": [                           // 2-4 items
+       {
+         "issue":      "未在加碼前重新檢視變異觀點與錨點",
+         "suggestion": "下次加碼前先寫一條 §15.4 變異觀點 + 錨點，否則僅以原 sized_pp 規模執行",
+         "priority":   "high"  // high | medium | low
+       }
+     ],
+     "strengths": [                              // optional 0-2 items
+       "INTC 大跌後沒有恐慌停損，符合 SETTINGS 高承受度策略"
+     ]
+   }
+   ```
+
+   **Authoring rules:**
+
+   - Every `observations[*].behavior` must cite a specific data point from `snapshot.transaction_analytics` (`discipline_check.latest_lot_cost_flags`, `discipline_check.short_bucket_over_1y`, `trade_quality.recent_activity`, `trade_quality.win_rate_pct`, `performance_attribution.periods[*].per_market`, `performance_attribution.periods[*].per_market_detail`, `performance_attribution.top_detractors`, etc.). Never fabricate behavior observations from memory. Cite the path in `evidence`.
+   - Every `improvements[*].suggestion` must reference a `SETTINGS.md ## Investment Style And Strategy` bullet OR a §15 contract clause. The suggestion should be specific and actionable ("下次 NVDA 加碼前先擬一條變異觀點") not generic ("交易要更有紀律").
+   - The `headline` is the same first-person voice as the Strategy readout — the user reflecting on their own behavior, not a third-party PM lecturing them.
+   - Keep length tight: ≤ 80 chars headline, observations + improvements ≤ 80 chars each line. Use `length_budget_status()` to check.
+   - The reviewer pass (Phase C) **must** flag any item that drifts from the strategy or lacks data anchor — append entries to `reviewer_pass.by_section.trading_psychology`.
+   - Empty / missing `trading_psychology` is not acceptable. If the evidence shows no behavior problem, still write a valid block with at least one observation that states the clean read and cites the relevant `snapshot.transaction_analytics` path, plus at least one improvement or maintenance rule anchored to `SETTINGS.md`.
 3. Holdings P&L and weights table (§10.2)
 4. Holding period & pacing (§10.3)
-5. Theme / sector exposure: agent-authored deterministic HTML in `context["theme_sector_html"]`; renderer placeholder if missing; not auto-classified by renderer.
+5. Theme / sector exposure: agent-authored deterministic HTML in `context["theme_sector_html"]` plus `context["theme_sector_audit"]`; missing HTML or audit is a pre-render validation failure; not auto-classified by renderer.
 6. Latest material news
 7. Forward 30-day event calendar
 8. High-risk and high-opportunity list
@@ -84,11 +139,13 @@ and discipline check; computation failure is surfaced as a data gap.
 
 A discrete period-P&L block placed between the Portfolio Dashboard and the
 Holdings table. Sourced from `transactions.db` (the local SQLite event log;
-see `docs/transactions_agent_guidelines.md`) — the renderer reads
-`context["profit_panel"]` (output
-of `python scripts/transactions.py profit-panel`) and, optionally,
-`context["realized_unrealized"]` (output of `python scripts/transactions.py
-pnl`) for the lifetime KPI strip.
+see `docs/transactions_agent_guidelines.md`). `python scripts/transactions.py
+snapshot --prices prices.json --output report_snapshot.json` computes and
+embeds both `report_snapshot.json["profit_panel"]` and
+`report_snapshot.json["realized_unrealized"]`; the renderer copies those values
+into context when no explicit override is supplied. The standalone
+`profit-panel` / `pnl` subcommands are inspection tools, not report-pipeline
+steps.
 
 Periods rendered (every period has a row, even when `n/a`):
 
@@ -137,9 +194,9 @@ For ALLTIME, `starting_value = 0`, `starting_unrealized = 0`, and
 P&L impacts, not external-cash flows.
 
 Sign coloring uses the existing `pos-txt` / `neg-txt` CSS classes from the
-canonical sample (no new tokens introduced). When `context["profit_panel"]`
-has no rows, the legacy profit-panel section is omitted; the transaction
-analytics sections carry the primary performance view.
+canonical sample (no new tokens introduced). When the snapshot/context
+`profit_panel` has no rows, the legacy profit-panel section is omitted; the
+transaction analytics sections carry the primary performance view.
 
 HTML is sole deliverable; no companion Markdown/files.
 
@@ -181,7 +238,7 @@ Score every non-cash holding 0-10, cap at 10, band `0–2 low`, `3–5 mid`, `6�
 
 ### 10.4.2 Theme & Sector exposure contract (HARD)
 
-Renderer does not classify. Agent injects exact `<div class="cols-2">` with two `.bars` lists; each bucket row is `.bar-row` matching `_sample_redesign.html` lines 1267-1300.
+Renderer does not classify. Agent injects exact `<div class="cols-2">` with two `.bars` lists; each bucket row is `.bar-row` matching `_sample_redesign.html` lines 1267-1300. Agent also writes `context["theme_sector_audit"]`; `scripts/validate_report_context.py` blocks render if either the HTML or the audit is missing.
 
 | Column | Label | Domain |
 |---|---|---|
@@ -191,6 +248,23 @@ Renderer does not classify. Agent injects exact `<div class="cols-2">` with two 
 Sector closed list, choose from issuer GICS/equivalent disclosure (Wikipedia / Reuters / 10-K / annual report): `半導體`, `軟體 / 雲端`, `通信 / 光電`, `硬體 / 網通`, `汽車 / 電動車`, `能源 / 資源`, `航太 / 國防`, `金融`, `醫療 / 生技`, `消費`, `工業`, `公用事業`, `房地產`, `加密資產`, `多元 ETF / 指數`, `其他`. Pure index ETFs → `多元 ETF / 指數`; sector ETFs → matching sector; cash/FX excluded; unclear → `其他` + Sources gap.
 
 Theme algorithm: seed fixed master list `AI 算力`, `雲端 / 資料中心`, `半導體設備`, `先進封裝`, `新能源 / 核能`, `光電 / OCS`, `航太 / 國防`, `加密資產`, `去美元化 / 黃金`, `防禦資產 / 現金代理`, `通膨保護`, `Mega-cap Tech`; drop zero; merge near-duplicates (document once in bucket-note); visible ≤7 buckets, fold smallest into `其他`; order by master-list clusters then `pct desc`. Theme contribution = `holding_weight_pct × theme_membership_share`, share ∈ `{0,0.25,0.5,0.75,1.0}`, documented per ticker in source audit.
+
+Audit shape (required):
+
+```jsonc
+"theme_sector_audit": {
+  "as_of": "YYYY-MM-DD",
+  "tickers": {
+    "NVDA": {
+      "sector": "半導體",
+      "themes": {"AI 算力": 1.0, "半導體設備": 0.5},
+      "sources": ["10-K / issuer / Reuters / ETF factsheet URL actually read"]
+    }
+  }
+}
+```
+
+Every non-cash ticker in `report_snapshot.json["aggregates"]` must have one audit entry, exactly one non-empty `sector`, at least one theme, and at least one source. ETF look-through fallback is still recorded in this audit with the factsheet/index source or the failed lookup source.
 
 ETF look-through mandatory for index ETFs using latest issuer/index composition; document as-of. If unavailable: sectors 100% `多元 ETF / 指數`; themes most-applicable single theme; flag Sources gap.
 
@@ -216,7 +290,7 @@ Self-check: sectors sum exactly 100% cash/FX excluded; every non-cash/non-FX tic
 
 ### 10.5 News & event coverage (HARD; agent owns web)
 
-Renderer only formats `context["news"]` / `context["events"]`; `scripts/fetch_prices.py` is prices only. Empty news/events without search audit is violation.
+Renderer only formats `context["news"]` / `context["events"]`; `scripts/fetch_prices.py` is prices only. Agent must also write `context["research_coverage"]`. Empty news/events without search audit is violation and pre-render validation failure.
 
 Workflow:
 
@@ -230,10 +304,25 @@ Records:
 
 - News: `ticker`, ISO `date`, `source`, resolving `url` actually read, `headline`, `impact ∈ {pos,neu,neg}`.
 - Events: `date`, `topic`, `event`, `impact_label`, `impact_class ∈ {warn,info,pos,neg}`, `watch`; hedge `(待…公告)` only after issuer page tried and missing.
+- Research coverage audit:
+
+```jsonc
+"research_coverage": {
+  "as_of": "YYYY-MM-DD",
+  "tickers": {
+    "NVDA": {
+      "news": {"count": 1, "audit": "read issuer/Reuters; 1 material item"},
+      "events": {"count": 0, "audit": "event_search:NVDA:no_dated_catalyst_within_30d after IR/Nasdaq/Yahoo"}
+    }
+  }
+}
+```
+
+Every cover-universe ticker must appear under `research_coverage.tickers`. Count may be zero only when the matching audit string explains the exhausted search.
 
 Prioritise into §10.6/§10.8/§10.9/§10.10 by materiality, not weight. Materiality drivers: regulator/legal/going-concern, guidance cut/preannouncement, M&A/take-private/spin, major customer win/loss, approval/recall, dilution, debt maturity/covenant, insider anomaly, halt, peer datapoint. Weight is tie-breaker only.
 
-Render gate: every cover-universe ticker has ≥1 news item or explicit `news_search` audit, and ≥1 30-day dated catalyst or explicit `event_search:<ticker>:no_dated_catalyst_within_30d`. No model-memory catalyst dates. If search missing, recommendation degrades to `Need data`. Every holding must either get evidence-backed §10.9/§10.10 recommendation, explicit `hold — no material news in search window` + audit, or `Need data`.
+Render gate: every cover-universe ticker has ≥1 news item or explicit `news_search` audit, and ≥1 30-day dated catalyst or explicit `event_search:<ticker>:no_dated_catalyst_within_30d`, represented in `research_coverage`. No model-memory catalyst dates. If search missing, `scripts/validate_report_context.py` fails before render. Every holding must either get evidence-backed §10.9/§10.10 recommendation, explicit `hold — no material news in search window` + audit, or `Need data`.
 
 #### 10.5.1 Final reply audit
 

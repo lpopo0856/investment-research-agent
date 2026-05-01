@@ -24,7 +24,7 @@ Phù hợp nhất khi dùng trong môi trường tác nhân có thể đọc fil
 - `scripts/fetch_prices.py`: script chuẩn lấy giá và FX mới nhất. Đọc vị thế từ `transactions.db`
 - `scripts/fetch_history.py`: script đồng hành lấy lịch sử đóng cửa và FX (phục vụ bảng lợi nhuận; ghi `_history` / `_fx_history` vào prices.json). Đọc vị thế từ `transactions.db`
 - `scripts/transactions.py`: lưu SQLite + nhập (CSV/JSON/tin nhắn), engine phát lại, dựng lại số dư, P&L đã thực hiện + chưa thực hiện, bảng lợi nhuận cho 1D / 7D / MTD / 1M / YTD / 1Y / ALLTIME
-- `scripts/generate_report.py`: script chuẩn dựng HTML; tiêu thụ `strategy_readout`, `reviewer_pass`, `profit_panel`, `realized_unrealized` từ `report_context.json`. Đọc vị thế từ `transactions.db`
+- `scripts/generate_report.py`: script chuẩn dựng HTML; đọc `report_snapshot.json` và `report_context.json` đã validate, không tính lại số liệu danh mục ở bước render
 - `reports/`: thư mục đầu ra. Chỉ lưu cục bộ
 
 ## Thiết lập lần đầu
@@ -94,40 +94,37 @@ Với `auto mode`, `routine`, hoặc bất kỳ môi trường không giám sát
 
 Một lần chạy báo cáo đầy đủ có bốn pha: Gather để thu thập dữ liệu; Think chỉ sau khi giá, chỉ số, tin tức và sự kiện đã có đủ; Review với vai trò PM cấp cao trước khi render; rồi Render. Pha Gather phải tìm tin tức mới và sự kiện 30 ngày tới cho mọi vị thế không phải tiền mặt, không chỉ các vị thế lớn nhất. Pha Review chỉ thêm ghi chú phản biện khi hữu ích, không thay thế nội dung phân tích của bạn.
 
-Tác nhân nên dùng thẳng các script chuẩn, không viết lại quy trình. Cả ba đều tự đọc vị thế từ `transactions.db`.
+Tác nhân nên dùng thẳng các script chuẩn, không viết lại quy trình. Các bước đọc dữ liệu giao dịch mặc định dùng `transactions.db` ở thư mục gốc.
 
 ```sh
 python scripts/fetch_prices.py --settings SETTINGS.md --output prices.json
 # Nếu còn dòng nào có agent_web_search:TODO_required, fetch_prices sẽ thoát với mã khác 0.
 # Phải hoàn tất fallback giá tier 3 / tier 4 trước khi render.
 
-# Bắt buộc cho bảng lợi nhuận: lấy đóng cửa theo ngày + lịch sử FX
 python scripts/fetch_history.py \
     --settings SETTINGS.md \
     --merge-into prices.json --output prices_history.json
 
-# Ảnh chụp P&L đã thực hiện + chưa thực hiện trọn đời
-python scripts/transactions.py pnl \
-    --prices prices.json --settings SETTINGS.md \
-    > realized_unrealized.json
+# Tạo snapshot số liệu duy nhất. Profit panel, realized/unrealized và
+# transaction analytics đều nằm trong snapshot này.
+python scripts/transactions.py snapshot \
+    --prices prices.json --settings SETTINGS.md --output report_snapshot.json
 
-# Bảng lợi nhuận theo kỳ (1D / 7D / MTD / 1M / YTD / 1Y / ALLTIME)
-python scripts/transactions.py profit-panel \
-    --prices prices.json \
-    --settings SETTINGS.md --output profit_panel.json
-
-# Trước khi render, gộp profit_panel.json + realized_unrealized.json
-# vào report_context.json dưới khóa "profit_panel" và "realized_unrealized".
+# Tác nhân viết report_context.json từ snapshot, dữ liệu công khai mới nhất,
+# SETTINGS và guidelines. Context bắt buộc có theme_sector_audit,
+# research_coverage, trading_psychology, Strategy readout, reviewer_pass,
+# actions / adjustments và các trường editorial khác.
+python scripts/validate_report_context.py \
+    --snapshot report_snapshot.json --context report_context.json
 
 python scripts/generate_report.py \
-    --settings SETTINGS.md \
-    --prices prices.json --context report_context.json \
+    --settings SETTINGS.md --snapshot report_snapshot.json --context report_context.json \
     --output reports/2026-04-28_1330_portfolio_report.html
 ```
 
 Nếu ngôn ngữ báo cáo không phải một trong các từ điển UI tích hợp `english`, `traditional chinese`, `simplified chinese`, tác nhân đang chạy phải dịch `scripts/i18n/report_ui.en.json` thành overlay tạm và truyền qua `--ui-dict`.
 
-`report_context.json` có thể chứa `strategy_readout` cho Strategy readout ở ngôi thứ nhất và `reviewer_pass` cho ghi chú/tóm tắt phản biện. Khóa cũ `style_readout` vẫn render, nhưng context mới nên dùng `strategy_readout`.
+`report_context.json` phải vượt qua `validate_report_context.py`. Khóa cũ `style_readout` vẫn render, nhưng context mới nên dùng `strategy_readout`.
 
 ### 3. Ghi nhận giao dịch
 

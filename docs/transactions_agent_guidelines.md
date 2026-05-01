@@ -335,7 +335,11 @@ rows, so it is safe against double-bootstrapping.
 
 ## 6. Profit-panel computation
 
-The periodic profit panel is computed from the DB:
+The periodic profit panel is computed from the DB. In the automated portfolio
+report pipeline this is produced by `python scripts/transactions.py snapshot`
+and embedded in `report_snapshot.json["profit_panel"]`; do not manually merge a
+separate `profit_panel.json` into `report_context.json`. The standalone command
+below is for inspection/debugging:
 
 ```
 python scripts/transactions.py profit-panel \
@@ -372,7 +376,10 @@ For ALLTIME, `starting_value = 0`, `starting_unrealized = 0`, and
 
 ### 6.1 Transaction analytics for report sections
 
-Use the transaction history to build the report's three behavioral sections:
+Use the transaction history to build the report's three behavioral sections. In
+the automated report pipeline this is also produced by `transactions.py
+snapshot` and embedded in `report_snapshot.json["transaction_analytics"]`; the
+standalone command is for inspection/debugging or intentional override review:
 
 ```
 python scripts/transactions.py analytics \
@@ -380,10 +387,7 @@ python scripts/transactions.py analytics \
     --settings SETTINGS.md --output transaction_analytics.json
 ```
 
-`scripts/generate_report.py` computes this automatically when `prices.json` and
-`transactions.db` are available. The standalone command is useful for inspection
-or for injecting an explicit `report_context.json["transaction_analytics"]`
-override. The renderer uses it for:
+The renderer uses it for:
 
 - performance attribution: flow-adjusted period P&L, MWR, top contributors /
   detractors, and asset-class contribution;
@@ -403,9 +407,10 @@ python scripts/transactions.py pnl \
     --db transactions.db --prices prices.json --settings SETTINGS.md
 ```
 
-Pass the output as `context['realized_unrealized']` to
-`scripts/generate_report.py`; it surfaces as a KPI strip above the profit
-panel.
+In the automated report pipeline this output is embedded by
+`transactions.py snapshot` under `report_snapshot.json["realized_unrealized"]`
+and then surfaced as a KPI strip above the profit panel. The standalone command
+is for inspection/debugging; do not treat it as an extra report step.
 
 ## 8. Verify, rebuild, dump, stats, self-check
 

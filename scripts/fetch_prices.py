@@ -1737,11 +1737,19 @@ def _cli_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
 
 
 def _load_lots_from_db(args: argparse.Namespace) -> Tuple[List[Lot], str]:
-    """Resolve lots from transactions.db (open_lots + cash_balances)."""
+    """Resolve lots from transactions.db.
+
+    Returns the price-fetch *universe* — currently open lots + cash UNION stub
+    lots for every ticker that ever transacted but is no longer in
+    ``open_lots``. The profit panel replays state to historical boundaries
+    where sold-off tickers reappear; without their prices/history, every
+    boundary valuation drops "no historical close + no latest price" audits
+    that ultimately drive §10.1.5 boundary-score to 0.
+    """
     if args.db and args.db.exists():
         # Lazy import to avoid circular dependency.
-        from transactions import load_holdings_lots  # type: ignore[import-not-found]
-        return load_holdings_lots(args.db), str(args.db)
+        from transactions import load_fetch_universe_lots  # type: ignore[import-not-found]
+        return load_fetch_universe_lots(args.db), str(args.db)
     return [], str(args.db)
 
 

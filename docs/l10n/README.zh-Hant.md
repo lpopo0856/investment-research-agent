@@ -24,7 +24,7 @@
 - `scripts/fetch_prices.py`：標準最新價與匯率抓取。從 `transactions.db` 讀取部位。
 - `scripts/fetch_history.py`：搭配用的歷史收盤與匯率歷史抓取（供損益面板使用，將 `_history` / `_fx_history` 寫入 prices.json）。從 `transactions.db` 讀取部位。
 - `scripts/transactions.py`：SQLite 儲存與匯入（CSV／JSON／訊息）、重播引擎、餘額重建、已實現＋未實現損益、1D／7D／MTD／1M／YTD／1Y／ALLTIME 損益面板。
-- `scripts/generate_report.py`：標準 HTML 報表渲染；從 `report_context.json` 取用 `strategy_readout`、`reviewer_pass`、`profit_panel`、`realized_unrealized`。從 `transactions.db` 讀取部位。
+- `scripts/generate_report.py`：標準 HTML 報表渲染；讀取 `report_snapshot.json` 與已驗證的 `report_context.json`，不再於渲染階段重算投組數字。
 - `reports/`：產出目錄。僅存本機。
 
 ## 首次設定
@@ -94,40 +94,35 @@ python scripts/transactions.py db init        # 建立 transactions.db
 
 完整報表流程分成四階段：先 Gather 蒐集資料；價格、指標、新聞與事件完成後才 Think 形成判斷；渲染前以資深 PM 身分 Review；最後 Render。Gather 階段要對每個非現金持倉做即時新聞與未來 30 天事件搜尋，不只看最大權重部位。Review 階段只加上審稿備註，不改寫你的原始判斷。
 
-代理應直接使用標準腳本，而不是每次重寫流程；三者皆自動從 `transactions.db` 讀取部位。
+代理應直接使用標準腳本，而不是每次重寫流程；會讀取交易資料的步驟預設使用根目錄 `transactions.db`。
 
 ```sh
 python scripts/fetch_prices.py --settings SETTINGS.md --output prices.json
 # 若任何列仍含 agent_web_search:TODO_required，fetch_prices 會以非零碼停止。
 # 渲染前必須完成 tier 3 / tier 4 報價備援。
 
-# 損益面板所需：抓取日收盤與匯率歷史
 python scripts/fetch_history.py \
     --settings SETTINGS.md \
     --merge-into prices.json --output prices_history.json
 
-# 終身已實現＋未實現快照
-python scripts/transactions.py pnl \
-    --prices prices.json --settings SETTINGS.md \
-    > realized_unrealized.json
+# 產生單一數字快照；profit panel、realized/unrealized、transaction analytics 都在其中。
+python scripts/transactions.py snapshot \
+    --prices prices.json --settings SETTINGS.md --output report_snapshot.json
 
-# 區間損益面板（1D / 7D / MTD / 1M / YTD / 1Y / ALLTIME）
-python scripts/transactions.py profit-panel \
-    --prices prices.json \
-    --settings SETTINGS.md --output profit_panel.json
-
-# 渲染前將 profit_panel.json 與 realized_unrealized.json
-# 合併進 report_context.json 的鍵 "profit_panel" 與 "realized_unrealized"。
+# 代理接著依 snapshot、最新公開資料、SETTINGS 與 guidelines 撰寫 report_context.json。
+# context 必須包含 theme_sector_audit、research_coverage、trading_psychology、
+# Strategy readout、reviewer_pass、actions / adjustments 等 editorial 欄位。
+python scripts/validate_report_context.py \
+    --snapshot report_snapshot.json --context report_context.json
 
 python scripts/generate_report.py \
-    --settings SETTINGS.md \
-    --prices prices.json --context report_context.json \
+    --settings SETTINGS.md --snapshot report_snapshot.json --context report_context.json \
     --output reports/2026-04-28_1330_portfolio_report.html
 ```
 
 若報表語言不是內建 UI 字典 `english`、`traditional chinese`、`simplified chinese` 之一，執行中的代理應把 `scripts/i18n/report_ui.en.json` 翻成暫存 overlay，並用 `--ui-dict` 傳入。
 
-`report_context.json` 可放入 `strategy_readout` 作為第一人稱 Strategy readout，也可放入 `reviewer_pass` 作為審稿備註／總覽。舊的 `style_readout` key 仍會渲染，但新的 context 應使用 `strategy_readout`。
+`report_context.json` 必須通過 `validate_report_context.py`；舊的 `style_readout` key 仍會渲染，但新的 context 應使用 `strategy_readout`。
 
 ### 3. 交易記帳
 

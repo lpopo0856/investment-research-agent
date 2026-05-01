@@ -192,6 +192,9 @@ body{
 /* ---------- Prose ---------- */
 .prose p{margin:0 0 12px;color:var(--ink-soft);font-size: clamp(13.5px, 0.35vw + 12.4px, 14.5px);line-height:1.7}
 .prose p:last-child{margin-bottom:0}
+/* Secondary emphasis — used in tables, footnotes, NA cells; inherits surrounding font-size */
+.muted{color:var(--muted);}
+.prose p.muted{color:var(--muted);}
 
 /* ---------- Bars ---------- */
 .bars{display:grid;gap:9px}
@@ -502,8 +505,8 @@ tbody td:has(.price-trigger:is(:hover,:focus-within)){
 .bucket-note{
   margin-top:14px;padding:11px 14px;
   background:var(--surface-2);border-left:3px solid var(--warn);border-radius:2px;
-  font-size: clamp(12px, 0.2vw + 11.4px, 13px);
-  color:var(--ink-soft);line-height:1.55;
+  font-size: clamp(13.5px, 0.35vw + 12.4px, 14.5px);
+  color:var(--ink-soft);line-height:1.7;
 }
 .bucket-note + .bucket-note{margin-top:8px}
 .bucket-note b{color:var(--ink)}
@@ -677,7 +680,8 @@ tbody td:has(.price-trigger:is(:hover,:focus-within)){
 .gap-list{margin:14px 0 0;padding:0;list-style:none}
 .gap-list li{
   padding:8px 0;border-bottom:1px dotted var(--hairline);
-  font-size:13px;color:var(--ink-soft);line-height:1.55;
+  font-size: clamp(13.5px, 0.35vw + 12.4px, 14.5px);
+  color:var(--ink-soft);line-height:1.7;
 }
 .gap-list li:last-child{border-bottom:0}
 .gap-list li b{color:var(--ink);font-weight:680}

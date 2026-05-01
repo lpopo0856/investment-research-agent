@@ -26,7 +26,7 @@
   "summary": {
     "title": "今日總結",
     "subtitle": "總體 × 持股 × 風險",
-    "placeholder": "（今日總結待補）"
+    "placeholder": "（本次未提供今日總結）"
   },
   "dashboard": {
     "title": "投資組合儀表板",
@@ -63,12 +63,40 @@
     "lifetime_realized_label": "歷年已實現損益",
     "lifetime_unrealized_label": "目前未實現損益"
   },
+  "report_accuracy": {
+    "title": "報告資料品質",
+    "subtitle": "依報價、獲利面板稽核與管線錯誤計算之確定性分數 — 非績效評價",
+    "overall_label": "綜合分數",
+    "band": {
+      "high": "可信度高",
+      "medium": "參差",
+      "low": "可信度低"
+    },
+    "col_dimension": "面向",
+    "col_score": "分數（0–100）",
+    "col_detail": "診斷摘要",
+    "dim": {
+      "quote_coverage": "報價覆蓋（目前持倉）",
+      "quote_freshness": "報價新鮮度",
+      "profit_boundary": "獲利面板 — 邊界估價",
+      "profit_reconciliation": "獲利面板 — 損益勾稽",
+      "pipeline": "分析管線"
+    },
+    "detail": {
+      "quote_counts": "{with_price}/{total} 檔有最新價 · fresh {fresh} · delayed {delayed} · stale/n/a {stale}",
+      "boundary_counts": "稽核筆數 — 無歷史收盤: {a}、無收盤且無現價: {b}、缺價: {c}、未實現排除: {d}、以最新價回填邊界: {e}、無 FX 歷史: {f}",
+      "recon": "最大 |損益−(已實現+未實現Δ)| ≈ {max_abs:,.2f} · 最大相對 {max_rel:.4f}",
+      "pipeline": "硬錯誤數: {n}"
+    },
+    "missing_fx_label": "缺少匯率（帳上幣別）",
+    "footer": "分數會懲罰歷史收盤缺口、總損益與拆解勾稽落差、報價過舊，以及快照管線錯誤；不代表投資好壞。"
+  },
   "allocation": {
     "title": "配置與持股權重",
     "subtitle": "{base} 基準, {date}",
     "donut_label": "資產配置",
     "total_label": "總計",
-    "cat_us": "個股 / ETF",
+    "cat_us": "美股",
     "cat_crypto": "加密資產",
     "cat_cash": "現金",
     "cat_tw": "台股",
@@ -93,7 +121,9 @@
     "cash": "現金",
     "stock_etf": "個股 / ETF",
     "crypto": "加密資產",
+    "us": "美股",
     "tw": "台股",
+    "two": "櫃買",
     "jp": "日股",
     "hk": "港股",
     "lse": "英股",
@@ -183,6 +213,10 @@
   "analytics": {
     "performance_title": "績效歸因",
     "performance_subtitle": "交易歷史 · 排除資金流 · {base} 基準",
+    "market_breakdown_subtitle": "依市場別獲利面板（欄位與上方獲利面板相同）· {base} 基準",
+    "market_tables_footnote": "各市場淨流動未歸因（顯示 —）。報酬率分母為該市場期初持倉市值（僅部位、不含共用現金）；總表獲利面板則使用期初 NAV + 半額淨流動。入出金與全組合報酬率以總表獲利面板為準。",
+    "market_residual_title": "未歸因損益（組合 − 各市場加總）",
+    "market_residual_col_pnl": "殘差損益",
     "ending_nav": "期末 NAV",
     "ending_nav_note": "目前重播估值",
     "mwr": "MWR 年化",
@@ -198,7 +232,12 @@
     "total_pnl": "總損益",
     "top_contributors": "最大貢獻",
     "top_detractors": "最大拖累",
-    "asset_class_stock_etf": "股票 / ETF",
+    "asset_class_us": "美股",
+    "asset_class_tw": "台股",
+    "asset_class_two": "櫃買",
+    "asset_class_jp": "日股",
+    "asset_class_hk": "港股",
+    "asset_class_lse": "英股",
     "asset_class_crypto": "加密資產",
     "asset_class_fx": "外匯",
     "asset_class_cash": "現金",
@@ -219,6 +258,14 @@
     "missed_saved": "少賺 / 避損",
     "no_closed_trades": "無已平倉交易",
     "no_buy_followups": "無買入後追蹤",
+    "recent_activity_subtitle": "近期交易追蹤 · 賣出後是否少賺、買入後是否套牢",
+    "no_recent_activity": "無近期交易",
+    "activity_date": "日期",
+    "activity_action": "行動",
+    "activity_qty": "數量",
+    "activity_price": "價格",
+    "action_buy": "買入",
+    "action_sell": "賣出",
     "discipline_title": "紀律檢查",
     "discipline_subtitle": "部位、資金部署、批次品質與資料缺口",
     "deposit_to_buy": "入金 → 買入",
@@ -234,15 +281,34 @@
     "loss_lots": "最大浮虧批次",
     "gain_lots": "最大浮盈批次"
   },
+  "psychology": {
+    "title": "近期交易心態與可改進處",
+    "subtitle": "依交易紀錄與紀律檢查的證據進行評估",
+    "placeholder": "（本次沒有可顯示的交易心理區塊）",
+    "observations_label": "近期行為觀察",
+    "improvements_label": "可改進的部分",
+    "strengths_label": "值得保留的紀律",
+    "evidence_prefix": "證據",
+    "suggestion_prefix": "建議",
+    "no_observations": "本次無顯著行為樣態",
+    "no_improvements": "本次無建議改進項",
+    "tone_pos": "正向",
+    "tone_neu": "中性",
+    "tone_warn": "警示",
+    "tone_neg": "扣分",
+    "priority_high": "優先",
+    "priority_medium": "次要",
+    "priority_low": "提醒"
+  },
   "theme_sector": {
     "title": "主題與行業暴險",
     "subtitle": "{base} 基準 · 含 ETF 穿透分配",
-    "placeholder": "（主題與行業暴險待補 — 由 agent 在執行時依 §4.3 自動分類後，將預先渲染的 HTML 透過 context.theme_sector_html 注入）"
+    "placeholder": "（本次沒有可顯示的主題與行業暴險）"
   },
   "news": {
     "title": "最新重大新聞",
     "subtitle": "每核心部位 1–3 則",
-    "placeholder": "（最新重大新聞待補 — 由 agent 在執行時擷取 1–3 則／核心部位）",
+    "placeholder": "（本次未列入重大新聞）",
     "positive": "正面",
     "neutral": "中性",
     "negative": "負面",
@@ -284,7 +350,7 @@
   "adjustments": {
     "title": "建議調整",
     "subtitle": "具體標的 · 動作 · 觸發",
-    "placeholder": "（建議調整清單待 agent 補入）",
+    "placeholder": "（本次無建議調整）",
     "ticker": "標的",
     "current": "目前",
     "recommendation": "建議",
@@ -298,7 +364,7 @@
     "may_do": "可做",
     "avoid": "不建議",
     "need_data": "補資料",
-    "placeholder": "（行動清單待補）"
+    "placeholder": "（本次無行動項目）"
   },
   "pm": {
     "tag": "標籤",
@@ -329,6 +395,7 @@
   "sources": {
     "title": "資料來源與缺口",
     "subtitle": "每筆價格的取得方式與新鮮度 · 待補資料逐項列出",
+    "strategy_readout_heading": "投資策略筆記",
     "audit_heading": "最新價來源稽核",
     "gaps_heading": "資料缺口",
     "profit_panel_gap": "獲利面板資料缺口",

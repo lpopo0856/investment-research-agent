@@ -1,0 +1,662 @@
+[
+  {
+    "date": "2024-01-08",
+    "type": "DEPOSIT",
+    "amount": 820000,
+    "currency": "USD",
+    "cash_account": "USD",
+    "market": "US"
+  },
+  {
+    "date": "2024-01-09",
+    "type": "DEPOSIT",
+    "amount": 3200000,
+    "currency": "TWD",
+    "cash_account": "TWD",
+    "market": "TW"
+  },
+  {
+    "date": "2024-01-12",
+    "type": "BUY",
+    "ticker": "QQQ",
+    "qty": 120,
+    "price": 428.0,
+    "bucket": "Long Term",
+    "market": "US",
+    "currency": "USD",
+    "cash_account": "USD"
+  },
+  {
+    "date": "2024-01-18",
+    "type": "BUY",
+    "ticker": "MSFT",
+    "qty": 80,
+    "price": 378.0,
+    "bucket": "Long Term",
+    "market": "US",
+    "currency": "USD",
+    "cash_account": "USD"
+  },
+  {
+    "date": "2024-01-25",
+    "type": "BUY",
+    "ticker": "NVDA",
+    "qty": 140,
+    "price": 56.5,
+    "bucket": "Mid Term",
+    "market": "US",
+    "currency": "USD",
+    "cash_account": "USD"
+  },
+  {
+    "date": "2024-02-01",
+    "type": "BUY",
+    "ticker": "AMD",
+    "qty": 160,
+    "price": 148.0,
+    "bucket": "Mid Term",
+    "market": "US",
+    "currency": "USD",
+    "cash_account": "USD"
+  },
+  {
+    "date": "2024-02-06",
+    "type": "DIVIDEND",
+    "ticker": "MSFT",
+    "amount": 140.0,
+    "currency": "USD",
+    "cash_account": "USD",
+    "market": "US"
+  },
+  {
+    "date": "2024-02-14",
+    "type": "BUY",
+    "ticker": "2330.TW",
+    "qty": 500,
+    "price": 718.0,
+    "bucket": "Long Term",
+    "market": "TW",
+    "currency": "TWD",
+    "cash_account": "TWD"
+  },
+  {
+    "date": "2024-02-22",
+    "type": "BUY",
+    "ticker": "GOOGL",
+    "qty": 70,
+    "price": 141.0,
+    "bucket": "Mid Term",
+    "market": "US",
+    "currency": "USD",
+    "cash_account": "USD"
+  },
+  {
+    "date": "2024-03-05",
+    "type": "SELL",
+    "ticker": "NVDA",
+    "qty": 45,
+    "price": 88.5,
+    "market": "US",
+    "currency": "USD",
+    "cash_account": "USD"
+  },
+  {
+    "date": "2024-03-06",
+    "type": "FEE",
+    "amount": 6.25,
+    "currency": "USD",
+    "cash_account": "USD",
+    "market": "US"
+  },
+  {
+    "date": "2024-03-18",
+    "type": "BUY",
+    "ticker": "BTC",
+    "qty": 1.2,
+    "price": 67200.0,
+    "bucket": "Mid Term",
+    "market": "crypto",
+    "currency": "USD",
+    "cash_account": "USD"
+  },
+  {
+    "date": "2024-04-02",
+    "type": "BUY",
+    "ticker": "QQQ",
+    "qty": 50,
+    "price": 436.0,
+    "bucket": "Long Term",
+    "market": "US",
+    "currency": "USD",
+    "cash_account": "USD"
+  },
+  {
+    "date": "2024-04-16",
+    "type": "SELL",
+    "ticker": "QQQ",
+    "qty": 30,
+    "price": 448.0,
+    "market": "US",
+    "currency": "USD",
+    "cash_account": "USD"
+  },
+  {
+    "date": "2024-04-22",
+    "type": "DIVIDEND",
+    "ticker": "QQQ",
+    "amount": 210.0,
+    "currency": "USD",
+    "cash_account": "USD",
+    "market": "US"
+  },
+  {
+    "date": "2024-05-03",
+    "type": "BUY",
+    "ticker": "MSFT",
+    "qty": 50,
+    "price": 408.0,
+    "bucket": "Long Term",
+    "market": "US",
+    "currency": "USD",
+    "cash_account": "USD"
+  },
+  {
+    "date": "2024-05-20",
+    "type": "BUY",
+    "ticker": "NVDA",
+    "qty": 60,
+    "price": 95.2,
+    "bucket": "Mid Term",
+    "market": "US",
+    "currency": "USD",
+    "cash_account": "USD"
+  },
+  {
+    "date": "2024-06-07",
+    "type": "SELL",
+    "ticker": "AMD",
+    "qty": 70,
+    "price": 152.0,
+    "market": "US",
+    "currency": "USD",
+    "cash_account": "USD"
+  },
+  {
+    "date": "2024-06-18",
+    "type": "BUY",
+    "ticker": "2330.TW",
+    "qty": 350,
+    "price": 868.0,
+    "bucket": "Long Term",
+    "market": "TW",
+    "currency": "TWD",
+    "cash_account": "TWD"
+  },
+  {
+    "date": "2024-07-01",
+    "type": "BUY",
+    "ticker": "GOOGL",
+    "qty": 40,
+    "price": 168.0,
+    "bucket": "Mid Term",
+    "market": "US",
+    "currency": "USD",
+    "cash_account": "USD"
+  },
+  {
+    "date": "2024-07-15",
+    "type": "WITHDRAW",
+    "amount": 55000,
+    "currency": "USD",
+    "cash_account": "USD",
+    "market": "US"
+  },
+  {
+    "date": "2024-07-22",
+    "type": "DEPOSIT",
+    "amount": 180000,
+    "currency": "USD",
+    "cash_account": "USD",
+    "market": "US"
+  },
+  {
+    "date": "2024-08-01",
+    "type": "BUY",
+    "ticker": "SMR",
+    "qty": 600,
+    "price": 7.8,
+    "bucket": "Short Term",
+    "market": "US",
+    "currency": "USD",
+    "cash_account": "USD"
+  },
+  {
+    "date": "2024-08-20",
+    "type": "BUY",
+    "ticker": "BTC",
+    "qty": 0.9,
+    "price": 69800.0,
+    "bucket": "Mid Term",
+    "market": "crypto",
+    "currency": "USD",
+    "cash_account": "USD"
+  },
+  {
+    "date": "2024-09-03",
+    "type": "SELL",
+    "ticker": "GOOGL",
+    "qty": 35,
+    "price": 162.0,
+    "market": "US",
+    "currency": "USD",
+    "cash_account": "USD"
+  },
+  {
+    "date": "2024-09-16",
+    "type": "BUY",
+    "ticker": "AMD",
+    "qty": 100,
+    "price": 158.0,
+    "bucket": "Mid Term",
+    "market": "US",
+    "currency": "USD",
+    "cash_account": "USD"
+  },
+  {
+    "date": "2024-09-30",
+    "type": "DIVIDEND",
+    "ticker": "MSFT",
+    "amount": 95.0,
+    "currency": "USD",
+    "cash_account": "USD",
+    "market": "US"
+  },
+  {
+    "date": "2024-10-10",
+    "type": "BUY",
+    "ticker": "NVDA",
+    "qty": 40,
+    "price": 132.0,
+    "bucket": "Mid Term",
+    "market": "US",
+    "currency": "USD",
+    "cash_account": "USD"
+  },
+  {
+    "date": "2024-10-28",
+    "type": "SELL",
+    "ticker": "SMR",
+    "qty": 250,
+    "price": 9.4,
+    "market": "US",
+    "currency": "USD",
+    "cash_account": "USD"
+  },
+  {
+    "date": "2024-11-05",
+    "type": "BUY",
+    "ticker": "QQQ",
+    "qty": 35,
+    "price": 488.0,
+    "bucket": "Long Term",
+    "market": "US",
+    "currency": "USD",
+    "cash_account": "USD"
+  },
+  {
+    "date": "2024-11-12",
+    "type": "FEE",
+    "amount": 4.99,
+    "currency": "USD",
+    "cash_account": "USD",
+    "market": "US"
+  },
+  {
+    "date": "2024-12-02",
+    "type": "BUY",
+    "ticker": "MSFT",
+    "qty": 25,
+    "price": 418.0,
+    "bucket": "Long Term",
+    "market": "US",
+    "currency": "USD",
+    "cash_account": "USD"
+  },
+  {
+    "date": "2024-12-15",
+    "type": "DIVIDEND",
+    "ticker": "AMD",
+    "amount": 18.0,
+    "currency": "USD",
+    "cash_account": "USD",
+    "market": "US"
+  },
+  {
+    "date": "2025-01-08",
+    "type": "BUY",
+    "ticker": "GOOGL",
+    "qty": 55,
+    "price": 188.0,
+    "bucket": "Mid Term",
+    "market": "US",
+    "currency": "USD",
+    "cash_account": "USD"
+  },
+  {
+    "date": "2025-01-20",
+    "type": "SELL",
+    "ticker": "MSFT",
+    "qty": 40,
+    "price": 434.0,
+    "market": "US",
+    "currency": "USD",
+    "cash_account": "USD"
+  },
+  {
+    "date": "2025-02-03",
+    "type": "BUY",
+    "ticker": "SMR",
+    "qty": 450,
+    "price": 14.2,
+    "bucket": "Short Term",
+    "market": "US",
+    "currency": "USD",
+    "cash_account": "USD"
+  },
+  {
+    "date": "2025-02-18",
+    "type": "SELL",
+    "ticker": "NVDA",
+    "qty": 55,
+    "price": 138.0,
+    "market": "US",
+    "currency": "USD",
+    "cash_account": "USD"
+  },
+  {
+    "date": "2025-03-01",
+    "type": "BUY",
+    "ticker": "BTC",
+    "qty": 0.55,
+    "price": 84200.0,
+    "bucket": "Mid Term",
+    "market": "crypto",
+    "currency": "USD",
+    "cash_account": "USD"
+  },
+  {
+    "date": "2025-03-14",
+    "type": "BUY",
+    "ticker": "2330.TW",
+    "qty": 220,
+    "price": 942.0,
+    "bucket": "Long Term",
+    "market": "TW",
+    "currency": "TWD",
+    "cash_account": "TWD"
+  },
+  {
+    "date": "2025-03-28",
+    "type": "DIVIDEND",
+    "ticker": "QQQ",
+    "amount": 165.0,
+    "currency": "USD",
+    "cash_account": "USD",
+    "market": "US"
+  },
+  {
+    "date": "2025-04-08",
+    "type": "BUY",
+    "ticker": "AMD",
+    "qty": 120,
+    "price": 144.0,
+    "bucket": "Mid Term",
+    "market": "US",
+    "currency": "USD",
+    "cash_account": "USD"
+  },
+  {
+    "date": "2025-04-22",
+    "type": "SELL",
+    "ticker": "BTC",
+    "qty": 0.35,
+    "price": 71200.0,
+    "market": "crypto",
+    "currency": "USD",
+    "cash_account": "USD"
+  },
+  {
+    "date": "2025-05-01",
+    "type": "DEPOSIT",
+    "amount": 260000,
+    "currency": "USD",
+    "cash_account": "USD",
+    "market": "US"
+  },
+  {
+    "date": "2025-05-12",
+    "type": "BUY",
+    "ticker": "NVDA",
+    "qty": 35,
+    "price": 114.0,
+    "bucket": "Mid Term",
+    "market": "US",
+    "currency": "USD",
+    "cash_account": "USD"
+  },
+  {
+    "date": "2025-06-01",
+    "type": "SELL",
+    "ticker": "QQQ",
+    "qty": 25,
+    "price": 502.0,
+    "market": "US",
+    "currency": "USD",
+    "cash_account": "USD"
+  },
+  {
+    "date": "2025-06-20",
+    "type": "BUY",
+    "ticker": "MSFT",
+    "qty": 30,
+    "price": 440.0,
+    "bucket": "Long Term",
+    "market": "US",
+    "currency": "USD",
+    "cash_account": "USD"
+  },
+  {
+    "date": "2025-07-08",
+    "type": "BUY",
+    "ticker": "SMR",
+    "qty": 320,
+    "price": 17.6,
+    "bucket": "Short Term",
+    "market": "US",
+    "currency": "USD",
+    "cash_account": "USD"
+  },
+  {
+    "date": "2025-07-25",
+    "type": "SELL",
+    "ticker": "AMD",
+    "qty": 90,
+    "price": 168.0,
+    "market": "US",
+    "currency": "USD",
+    "cash_account": "USD"
+  },
+  {
+    "date": "2025-08-05",
+    "type": "DIVIDEND",
+    "ticker": "MSFT",
+    "amount": 125.0,
+    "currency": "USD",
+    "cash_account": "USD",
+    "market": "US"
+  },
+  {
+    "date": "2025-08-18",
+    "type": "BUY",
+    "ticker": "GOOGL",
+    "qty": 30,
+    "price": 164.0,
+    "bucket": "Mid Term",
+    "market": "US",
+    "currency": "USD",
+    "cash_account": "USD"
+  },
+  {
+    "date": "2025-09-02",
+    "type": "BUY",
+    "ticker": "BTC",
+    "qty": 0.4,
+    "price": 91500.0,
+    "bucket": "Mid Term",
+    "market": "crypto",
+    "currency": "USD",
+    "cash_account": "USD"
+  },
+  {
+    "date": "2025-09-16",
+    "type": "SELL",
+    "ticker": "SMR",
+    "qty": 400,
+    "price": 16.8,
+    "market": "US",
+    "currency": "USD",
+    "cash_account": "USD"
+  },
+  {
+    "date": "2025-10-01",
+    "type": "BUY",
+    "ticker": "QQQ",
+    "qty": 40,
+    "price": 512.0,
+    "bucket": "Long Term",
+    "market": "US",
+    "currency": "USD",
+    "cash_account": "USD"
+  },
+  {
+    "date": "2025-10-15",
+    "type": "FEE",
+    "amount": 8.0,
+    "currency": "USD",
+    "cash_account": "USD",
+    "market": "US"
+  },
+  {
+    "date": "2025-11-04",
+    "type": "BUY",
+    "ticker": "NVDA",
+    "qty": 25,
+    "price": 192.0,
+    "bucket": "Mid Term",
+    "market": "US",
+    "currency": "USD",
+    "cash_account": "USD"
+  },
+  {
+    "date": "2025-11-22",
+    "type": "SELL",
+    "ticker": "GOOGL",
+    "qty": 40,
+    "price": 178.0,
+    "market": "US",
+    "currency": "USD",
+    "cash_account": "USD"
+  },
+  {
+    "date": "2025-12-08",
+    "type": "BUY",
+    "ticker": "AMD",
+    "qty": 80,
+    "price": 122.0,
+    "bucket": "Mid Term",
+    "market": "US",
+    "currency": "USD",
+    "cash_account": "USD"
+  },
+  {
+    "date": "2026-01-06",
+    "type": "BUY",
+    "ticker": "MSFT",
+    "qty": 18,
+    "price": 428.0,
+    "bucket": "Long Term",
+    "market": "US",
+    "currency": "USD",
+    "cash_account": "USD"
+  },
+  {
+    "date": "2026-01-24",
+    "type": "SELL",
+    "ticker": "BTC",
+    "qty": 0.5,
+    "price": 102000.0,
+    "market": "crypto",
+    "currency": "USD",
+    "cash_account": "USD"
+  },
+  {
+    "date": "2026-02-03",
+    "type": "BUY",
+    "ticker": "SMR",
+    "qty": 280,
+    "price": 21.4,
+    "bucket": "Short Term",
+    "market": "US",
+    "currency": "USD",
+    "cash_account": "USD"
+  },
+  {
+    "date": "2026-02-14",
+    "type": "DIVIDEND",
+    "ticker": "MSFT",
+    "amount": 88.0,
+    "currency": "USD",
+    "cash_account": "USD",
+    "market": "US"
+  },
+  {
+    "date": "2026-03-03",
+    "type": "BUY",
+    "ticker": "2330.TW",
+    "qty": 150,
+    "price": 988.0,
+    "bucket": "Long Term",
+    "market": "TW",
+    "currency": "TWD",
+    "cash_account": "TWD"
+  },
+  {
+    "date": "2026-03-18",
+    "type": "SELL",
+    "ticker": "NVDA",
+    "qty": 30,
+    "price": 118.0,
+    "market": "US",
+    "currency": "USD",
+    "cash_account": "USD"
+  },
+  {
+    "date": "2026-04-01",
+    "type": "BUY",
+    "ticker": "GOOGL",
+    "qty": 25,
+    "price": 154.0,
+    "bucket": "Mid Term",
+    "market": "US",
+    "currency": "USD",
+    "cash_account": "USD"
+  },
+  {
+    "date": "2026-04-10",
+    "type": "FEE",
+    "amount": 5.5,
+    "currency": "USD",
+    "cash_account": "USD",
+    "market": "US"
+  }
+]

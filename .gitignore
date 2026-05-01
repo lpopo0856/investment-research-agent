@@ -16,7 +16,10 @@ market_data_cache.db-shm
 .omc/
 .claude/
 /scripts/__pycache__/
+/demo/__pycache__/
 prices.json
 prices_history.json
+report_snapshot.json
 report_context.json
+demo/report_snapshot.json
 temp/

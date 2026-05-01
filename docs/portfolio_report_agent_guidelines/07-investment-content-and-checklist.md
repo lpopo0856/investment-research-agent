@@ -4,7 +4,7 @@ Renderer-owned PM math. Agent passes raw fields through `report_context.json["ad
 
 Helpers from `scripts.generate_report`: `compute_rr_ratio`, `format_rr_string`, `check_rails(...) → RailReport`, `format_portfolio_fit_line`, `length_budget_status`, `validate_recommendation_block`.
 
-Strategy policy: no lever block / keyword inference. Read whole `SETTINGS.md` `## Investment Style And Strategy`; act as the user. Stop width, sizing band, lot ordering, contrarian latitude, tone, no-go zones flow from that prose. `context["strategy_readout"]` (legacy `style_readout`) is first-person SETTINGS-language prose, rendered verbatim as first item under §10.11.
+Strategy policy: no lever block / keyword inference. Read whole `SETTINGS.md` `## Investment Style And Strategy`; act as the user. Stop width, sizing band, lot ordering, contrarian latitude, tone, no-go zones flow from that prose. `context["strategy_readout"]` (legacy `style_readout`) is first-person SETTINGS-language prose, rendered verbatim as the first labeled prose block under §10.11 — above the source-audit table and the data-gaps list, never as an item inside the gaps `<ul>`.
 
 ### 15.1 Voice, stance, phase order
 
@@ -22,18 +22,24 @@ Dynamic `transactions.db.open_lots`; never hard-code. Judge long-term core, mid-
 
 Buckets, in order, translated: `Must do`, `May do`, `Avoid`, `Need data`. Empty buckets allowed/preferred over filler (`— none today —`).
 
-Executable `Must do` / `May do` items must carry:
+`actions` shape is always an object with four list buckets: `must_do`, `may_do`, `avoid`, `need_data`. Executable `Must do` / `May do` items must be structured objects, not prose strings, and must carry:
 
 - `variant_tag ∈ {consensus-aligned, variant, contrarian, rebalance}`; contrarian is ceiling not quota.
 - `sized_pp_delta` or renderer-computed `target_pct`, expressed as percentage points of total NAV including cash (`+2.0pp`, `trim 1.5pp`, `cut to 0pp`; never ambiguous %).
 - R:R per §15.4 or allowed `n/a (binary outcome — see kill criteria)` / `n/a (rebalance / tax / rail)`.
 - Kill per §15.5; rebalance kill = `rails restored` or `n/a (housekeeping)`.
 
-Incomplete executable item → fill or move to `Need data`. Non-executable statuses (`hold`, `watch`, `do not add`, `avoid chasing`, `wait`, placeholders) do **not** get fake R:R/kill/NAV strings; show wait trigger or data need only. Agent must not hand-write `R:R`, `pp of NAV`, `Portfolio fit`, or PM-meta HTML in prose; pass structured fields (`variant_tag`, `sized_pp_delta`, `target_pct`, `entry_price`, `target_price`, `stop_price`, `kill_trigger`, `kill_action`, `correlated_with`, `theme_overlap`, etc.) and let renderer format. Invalid R:R inputs → omit/move to Need data; never print `R:R=n/a (inputs incomplete)`.
+Incomplete executable item → fill or move to `Need data`. Non-executable statuses (`hold`, `watch`, `do not add`, `avoid chasing`, `wait`, placeholders) do **not** get fake R:R/kill/NAV strings; show wait trigger or data need only. Agent must not hand-write `R:R`, `pp of NAV`, `Portfolio fit`, or PM-meta HTML in prose; pass structured fields (`text`, `ticker`, `action`, `variant_tag`, `sized_pp_delta`, `target_pct`, `entry_price`, `target_price`, `stop_price`, `kill_trigger`, `kill_action`, `correlated_with`, `theme_overlap`, etc.) and let renderer format. Invalid R:R inputs → omit/move to Need data; never print `R:R=n/a (inputs incomplete)`. `scripts/validate_report_context.py` fails executable string items in `must_do` / `may_do`.
+
+### 15.3.1 Recommended adjustments (`adjustments`) (HARD)
+
+`context["adjustments"]` must be a **non-empty** array. Every report includes at least one §10.9 table row authored by the agent, each with non-empty `ticker`, `action`, `action_label`, `why`, and `trigger` (columns rendered by `scripts/generate_report.py`). There is no “skip the table” option: if no NAV-changing trade is warranted, emit explicit `hold` / `watch` / `wait` rows with triggers tied to evidence (earnings dates, thesis checkpoints, rails). An empty `[]` fails `scripts/validate_report_context.py`. Actionable rows still require the PM-grade field bundle per §15.4–15.6.
 
 ### 15.4 Variant view & asymmetry (HARD)
 
 Applies to actionable §10.8/§10.9/§10.10 rows: NAV-changing or buy/add/sell/trim/cut/hedge. Non-action `sized_pp_delta=0` rows skip template.
+
+For §10.8 `high_opps`, each row must explicitly set `"actionable": true|false`. Actionable opportunity rows carry the same PM fields as §10.9; non-action watchlist rows must include `ticker`, `why`, and `trigger` or `watch`.
 
 | Field | Required format |
 |---|---|
@@ -114,7 +120,7 @@ Single source of truth for user identity. Whole `## Investment Style And Strateg
 
 Untraceable judgment → mark readout `inferred — pin to confirm`, downsize/soften, reviewer-note. Strategy drift is a defect.
 
-**Strategy readout:** first item under §10.11 Sources & data gaps; one paragraph ≤90 words; first person as user; SETTINGS language; covers relevant temperament/drawdown, conviction/sizing, holding period, entry discipline, contrarian appetite, hype tolerance, off-limits; cites SETTINGS bullets. Missing strategy → explicitly say neutral fallback. If recommendation differs under another strategy, state consequence inline.
+**Strategy readout:** rendered as the first labeled prose block under §10.11 Sources & data gaps (above the source-audit table and the data-gaps list, not as an item inside the gaps `<ul>`); one paragraph ≤90 words; first person as user; SETTINGS language; covers relevant temperament/drawdown, conviction/sizing, holding period, entry discipline, contrarian appetite, hype tolerance, off-limits; cites SETTINGS bullets. Missing strategy → explicitly say neutral fallback. If recommendation differs under another strategy, state consequence inline. Reviewer notes for `strategy_readout` attach to this block, not to the gaps list.
 
 #### 15.7.1 Translation contract
 
@@ -131,19 +137,27 @@ Review targets: sizing vs strategy; anchor quality; kill realism/action consiste
 ```jsonc
 {
   "reviewer_pass": {
+    "completed": true,
+    "reviewed_sections": [
+      "alerts", "watchlist", "adjustments", "actions", "strategy_readout",
+      "trading_psychology", "theme_sector", "news_events"
+    ],
     "summary": ["cross-cutting concern; final reviewer-summary block under §10.11; Strategy readout remains first"],
     "by_section": {
       "alerts": ["..."],
       "watchlist": ["..."],
       "adjustments": ["..."],
       "actions": ["..."],
-      "strategy_readout": ["..."]
+      "strategy_readout": ["..."],
+      "trading_psychology": ["..."],
+      "theme_sector": ["..."],
+      "news_events": ["..."]
     }
   }
 }
 ```
 
-Inline per-row preferred: add `"reviewer_notes":["..."]` to `adjustments[i]`, `watchlist[i]`, or `actions[bucket][i]`. Renderer displays notes alongside content with translated `Reviewer note`; summary with translated `Reviewer summary` as final reviewer-summary block under §10.11. Empty block renders nothing.
+Inline per-row preferred: add `"reviewer_notes":["..."]` to `adjustments[i]`, `watchlist[i]`, or `actions[bucket][i]`. Renderer displays notes alongside content with translated `Reviewer note`; summary with translated `Reviewer summary` as final reviewer-summary block under §10.11. Empty notes are expressed as `summary: []` and `by_section: {}`, but `completed: true` and full `reviewed_sections` remain required so the reviewer pass cannot be silently skipped.
 
 #### 15.8.2 Discipline
 
@@ -201,7 +215,7 @@ Reply in SETTINGS language with absolute HTML path, most important alerts, data 
 
 ### A.11 Investment content
 
-- [ ] Phase ordering + Phase A follow-up research; PM voice; recommendations action+band+trigger; trims name lots and respect §15.6.1; translated 4 action buckets and empty buckets allowed; executable Must/May fields variant tag + sized pp + R:R + kill; Strategy readout first under §10.11, first-person, ≤90 words, whole SETTINGS strategy reflected or fallback flagged; continuous strategy-anchor trace for every actionable judgment; actionable rows carry Variant/Consensus/Anchor or carve-out; non-action rows avoid fake PM strings; no fabricated consensus/anchors; R:R/kill/Portfolio fit complete; NAV math renderer-owned; rail breaches handled; contrarian appetite ceiling; hype tolerance base/bull/bear and bull ≤1.5× base unless comparable; length budgets; translation contract.
+- [ ] Phase ordering + Phase A follow-up research; PM voice; recommendations action+band+trigger; trims name lots and respect §15.6.1; translated 4 action buckets and empty buckets allowed; executable Must/May fields variant tag + sized pp + R:R + kill; mandatory `trading_psychology` authored from `snapshot.transaction_analytics`; `theme_sector_audit` and `research_coverage` complete; `scripts/validate_report_context.py` passes; Strategy readout first under §10.11, first-person, ≤90 words, whole SETTINGS strategy reflected or fallback flagged; continuous strategy-anchor trace for every actionable judgment; actionable rows carry Variant/Consensus/Anchor or carve-out; non-action rows avoid fake PM strings; no fabricated consensus/anchors; R:R/kill/Portfolio fit complete; NAV math renderer-owned; rail breaches handled; contrarian appetite ceiling; hype tolerance base/bull/bear and bull ≤1.5× base unless comparable; length budgets; translation contract.
 
 ### A.12 Reply
 
@@ -209,4 +223,4 @@ Reply in SETTINGS language with absolute HTML path, most important alerts, data 
 
 ### A.13 Reviewer pass
 
-- [ ] Phase C executed before render; reviewer annotations do not replace content; empty notes allowed/filler rejected; third-person reviewer voice; note/summary length budgets; translated labels/prose; serious defects sent back to earlier phase; reviewer summary rendered as final reviewer-summary block under §10.11 when present.
+- [ ] Phase C executed before render; `reviewer_pass.completed=true` and required `reviewed_sections` present; reviewer annotations do not replace content; empty notes allowed/filler rejected; third-person reviewer voice; note/summary length budgets; translated labels/prose; serious defects sent back to earlier phase; reviewer summary rendered as final reviewer-summary block under §10.11 when present.
