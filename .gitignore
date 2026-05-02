@@ -30,3 +30,5 @@ report_snapshot.json
 report_context.json
 demo/report_snapshot.json
 temp/
+*.bak
+*.db

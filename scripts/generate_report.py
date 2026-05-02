@@ -22,9 +22,20 @@ USAGE
         --context report_context.json \
         --output reports/2026-04-28_1330_portfolio_report.html
 
-The CSS / layout chrome is read from `reports/_sample_redesign.html` (the canonical
-visual reference per §14.9). To change the look, edit that file — never duplicate the
-styles here.
+The CSS / layout chrome is owned by this module (§14.9 — single source of style
+truth). Three constants compose the report's <style> block:
+
+  * `_BASE_CSS`      — canonical desktop chrome, typography tokens, KPI/table
+                       chrome, tablet (≤880px) and phone (≤600px) breakpoints.
+  * `_REVIEWER_CSS`  — reviewer annotation chrome (§15.8).
+  * `_RWA_CSS`       — responsive overlay tightening phone rendering (≤600px and
+                       ≤420px). All mobile reflows live here.
+
+`reports/_sample_redesign.html` is a static design reference only; it is not
+read at runtime. Pass `--sample <path>` to override the base CSS for design
+experiments. Editorial HTML supplied via `report_context.json` is sanitized by
+`_sanitize_html_fragment()` so it cannot define page-level CSS — generate_report.py
+is the only authority on report styling.
 
 CONTEXT FILE SHAPE  (report_context.json)
 -----------------------------------------
@@ -764,14 +775,787 @@ def resolve_ui_bundle(
 
 
 # ----------------------------------------------------------------------------- #
-# CSS extraction from the canonical sample (§14.9)
+# CSS — generate_report.py is the single source of truth for report styling
+# (§14.9). The canonical desktop chrome lives in `_BASE_CSS`, reviewer
+# annotations in `_REVIEWER_CSS`, and the responsive (RWA) overlay for
+# tablet/phone in `_RWA_CSS`. All three are concatenated into the rendered
+# document's <style> block. `reports/_sample_redesign.html` is now a static
+# design reference only — it is no longer required at runtime.
 # ----------------------------------------------------------------------------- #
 
 _STYLE_RE = re.compile(r"<style[^>]*>(.*?)</style>", re.DOTALL | re.IGNORECASE)
 
+# Canonical desktop chrome — typography tokens, KPI strip, tables, popovers,
+# tablet (≤880px) and phone (≤600px) base breakpoints. Owned by this file.
+_BASE_CSS = r"""
+/* =========================================================
+   Portfolio Research Note — sample redesign
+   Editorial × research-desk look. Self-contained, no CDN.
+   Reference implementation for portfolio_report_agent_guidelines.md
+   ========================================================= */
+
+:root{
+  /* Surface */
+  --paper:        #f7f5ef;
+  --surface:      #ffffff;
+  --surface-2:    #fbfaf6;
+  --hairline:     #e7e3d8;
+  --hairline-2:   #d8d3c6;
+
+  /* Ink */
+  --ink:          #15191f;
+  --ink-soft:     #2c333d;
+  --muted:        #6b7280;
+  --muted-2:      #8a8f99;
+
+  /* Semantic */
+  --pos:          #15703d;
+  --neg:          #b42318;
+  --warn:         #b15309;
+  --info:         #1d4690;
+  --accent:       #1f2937;
+  --accent-warm:  #8a5a1c;
+
+  /* Layering */
+  --table-header-z: 70;
+  --popover-host-z: 40;
+  --popover-z:      50;
+}
+
+*{box-sizing:border-box}
+html{background:var(--paper);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+body{
+  margin:0;
+  color:var(--ink);
+  background:var(--paper);
+  font-family:
+    "SF Pro Text", -apple-system, BlinkMacSystemFont,
+    "Segoe UI Variable Text", "Segoe UI",
+    "PingFang TC", "Microsoft JhengHei UI", "Microsoft JhengHei",
+    "Noto Sans CJK TC", system-ui, sans-serif;
+  font-feature-settings: "ss01", "cv11", "tnum" 1, "lnum" 1;
+  font-size: clamp(14px, 0.85vw + 11.6px, 15.5px);
+  line-height:1.62;
+  letter-spacing:.005em;
+}
+.num, td.num, th.num,
+.kpi .v, .bar-value, table td, .stat{
+  font-variant-numeric: tabular-nums lining-nums;
+  font-feature-settings: "tnum" 1, "lnum" 1;
+}
+
+.wrap{
+  max-width:1180px;
+  margin:0 auto;
+  padding:56px 40px 80px;
+}
+
+/* ---------- Masthead ---------- */
+.masthead{
+  border-top:3px solid var(--ink);
+  border-bottom:1px solid var(--hairline-2);
+  padding:18px 0 22px;
+  margin-bottom:34px;
+}
+.eyebrow{
+  font-size: clamp(10px, 0.15vw + 9.5px, 11.5px);
+  letter-spacing:.22em;
+  text-transform:uppercase;
+  color:var(--muted);
+  font-weight:700;
+}
+.masthead h1{
+  margin:8px 0 10px;
+  font-family:
+    "SF Pro Display", -apple-system, BlinkMacSystemFont,
+    "Segoe UI Variable Display", "Segoe UI",
+    "PingFang TC", "Microsoft JhengHei UI", system-ui, sans-serif;
+  font-weight:680;
+  font-size: clamp(22px, 3vw + 10px, 36px);
+  line-height:1.18;
+  letter-spacing:-.012em;
+  color:var(--ink);
+}
+.dek{
+  max-width:780px;
+  color:var(--ink-soft);
+  font-size: clamp(13.5px, 0.4vw + 12px, 15px);
+  line-height:1.55;
+}
+.masthead-meta{
+  margin-top:14px;
+  display:flex;
+  flex-wrap:wrap;
+  gap:10px 24px;
+  font-size: clamp(11.5px, 0.2vw + 10.8px, 12.5px);
+  color:var(--muted);
+}
+.masthead-meta b{color:var(--ink-soft);font-weight:650}
+
+/* ---------- Section ---------- */
+.section{margin-top:38px}
+.section-head{
+  display:flex;
+  align-items:baseline;
+  justify-content:space-between;
+  gap:16px;
+  border-bottom:1px solid var(--hairline);
+  padding-bottom:8px;
+  margin-bottom:18px;
+}
+.section-head h2{
+  margin:0;
+  font-family:
+    "SF Pro Display", -apple-system, BlinkMacSystemFont,
+    "Segoe UI Variable Display","PingFang TC","Microsoft JhengHei UI",
+    system-ui, sans-serif;
+  font-weight:650;
+  font-size: clamp(15px, 0.6vw + 13px, 19px);
+  letter-spacing:-.005em;
+}
+.section-head .sub{color:var(--muted);font-size:12.5px}
+
+/* ---------- Warning callout ---------- */
+.callout{
+  position:relative;
+  padding:18px 22px 18px 26px;
+  background:var(--surface-2);
+  border:1px solid var(--hairline);
+  border-left:3px solid var(--neg);
+  border-radius:4px;
+}
+.callout .ctitle{
+  display:flex;align-items:center;gap:10px;
+  font-weight:700;color:#7a1414;font-size:13px;
+  letter-spacing:.04em;
+  margin-bottom:8px;
+}
+.badge{
+  background:#fee4e2;color:#7a1414;
+  font-size:10.5px;font-weight:800;letter-spacing:.06em;
+  padding:2px 7px;border-radius:3px;
+}
+.callout ul{
+  margin:0;padding-left:18px;
+  columns:2;column-gap:34px;
+  color:var(--ink-soft);font-size:13.5px;line-height:1.55;
+}
+.callout li{break-inside:avoid;margin:0 0 6px}
+
+/* ---------- KPI strip ---------- */
+.kpis{
+  display:grid;
+  grid-template-columns:repeat(4, minmax(0,1fr));
+  border-top:1px solid var(--hairline);
+  border-bottom:1px solid var(--hairline);
+}
+.kpi{padding:18px 22px 18px 0;border-right:1px solid var(--hairline)}
+.kpi:last-child{border-right:0;padding-right:0}
+.kpi:not(:first-child){padding-left:22px}
+.kpi .k{
+  font-size: clamp(10px, 0.15vw + 9.5px, 11.5px);
+  letter-spacing:.18em;color:var(--muted);font-weight:700;
+}
+.kpi .v{
+  margin-top:8px;
+  font-family:
+    "SF Pro Display", -apple-system, BlinkMacSystemFont,
+    "Segoe UI Variable Display", system-ui, sans-serif;
+  font-size: clamp(22px, 1.5vw + 16px, 30px);
+  font-weight:620;letter-spacing:-.015em;color:var(--ink);line-height:1.1;
+}
+.kpi .delta{margin-top:6px;font-size: clamp(11.5px, 0.2vw + 10.8px, 12.5px);color:var(--muted)}
+.kpi .delta.pos{color:var(--pos);font-weight:600}
+.kpi .delta.neg{color:var(--neg);font-weight:600}
+.kpi .delta.warn{color:var(--warn);font-weight:600}
+
+/* ---------- Two-col grid ---------- */
+.cols-2{display:grid;grid-template-columns:1.05fr .95fr;gap:34px}
+
+/* ---------- Prose ---------- */
+.prose p{margin:0 0 12px;color:var(--ink-soft);font-size: clamp(13.5px, 0.35vw + 12.4px, 14.5px);line-height:1.7}
+.prose p:last-child{margin-bottom:0}
+/* Secondary emphasis — used in tables, footnotes, NA cells; inherits surrounding font-size */
+.muted{color:var(--muted);}
+.prose p.muted{color:var(--muted);}
+
+/* ---------- Bars ---------- */
+.bars{display:grid;gap:9px}
+.bar-row{
+  display:grid;
+  grid-template-columns:96px minmax(80px,1fr) 84px;
+  align-items:center;
+  gap:14px;
+}
+.bar-label{font-size:13px;font-weight:600;color:var(--ink-soft);letter-spacing:-.005em}
+.bar-track{height:6px;background:#ebe7da;border-radius:2px;overflow:hidden}
+.bar{height:100%;background:var(--ink);border-radius:2px}
+.bar.pos{background:var(--pos)}
+.bar.neg{background:var(--neg)}
+.bar.warn{background:var(--warn)}
+.bar.info{background:var(--info)}
+.bar-value{text-align:right;font-size:13px;color:var(--ink-soft);font-weight:600}
+
+/* ---------- Donut ---------- */
+.donut-wrap{display:grid;grid-template-columns:180px 1fr;gap:22px;align-items:center}
+.donut-wrap svg{display:block;width:180px;height:180px}
+.legend{display:flex;flex-direction:column;gap:6px;font-size:13px}
+.legend .row{
+  display:grid;grid-template-columns:14px 1fr auto;gap:10px;align-items:center;
+  padding:6px 0;border-bottom:1px dotted var(--hairline);
+}
+.legend .row:last-child{border-bottom:0}
+.legend .sw{width:10px;height:10px;border-radius:2px}
+.legend .pct{color:var(--ink);font-weight:650;font-variant-numeric:tabular-nums}
+
+/* ---------- Holdings table ---------- */
+.tbl-wrap{
+  border-top:1px solid var(--ink);
+  border-bottom:1px solid var(--ink);
+  margin:0 -20px;padding:0 20px;
+  /* No overflow on desktop — table fits within container and popovers escape freely.
+     Browsers coerce overflow-y to auto when overflow-x is auto, which would clip popovers,
+     so overflow-x:auto is enabled only at the tablet/phone breakpoints (where popovers
+     also switch to fixed bottom-sheet, escaping the wrap entirely). */
+}
+/* Scrollable variant — opt-in for tables that have NO popovers (events, sources).
+   The holdings table must NOT use this modifier because overflow:auto would clip
+   its desktop popovers. Sticky header still works inside the scroll container. */
+.tbl-wrap.scroll-y{
+  max-height: clamp(360px, 60vh, 640px);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+/* Holdings table — fixed column widths so the long, free-form Action cell never
+   squeezes the price / weight / value columns. Action wraps onto multiple lines
+   instead of monopolising the row. Numeric columns stay tabular and tight. */
+.tbl-wrap table.holdings-tbl{table-layout:fixed;min-width:880px}
+.tbl-wrap table.holdings-tbl td.col-action,
+.tbl-wrap table.holdings-tbl th.col-action{
+  white-space:normal;
+  overflow-wrap:anywhere;
+  word-break:break-word;
+  line-height:1.5;
+}
+/* Signed P&L cells — never break on the slash separator (e.g. "+$11,792 / +29.1%").
+   The signed amount + percentage is read as one atomic value; mid-token wrapping
+   is harder to scan than a wider column. */
+.tbl-wrap table.holdings-tbl td.num.pos-txt,
+.tbl-wrap table.holdings-tbl td.num.neg-txt{
+  white-space:nowrap;
+}
+.tbl-wrap table{min-width:760px}
+table{
+  width:100%;border-collapse:collapse;
+  font-size: clamp(12.5px, 0.3vw + 11.6px, 13.5px);
+  color:var(--ink-soft);
+}
+thead th{
+  position:sticky;top:0;background:var(--paper);
+  z-index:var(--table-header-z);
+  text-align:left;
+  padding:10px 12px;
+  font-size: clamp(10px, 0.15vw + 9.5px, 11.5px);
+  letter-spacing:.12em;font-weight:700;color:var(--muted);
+  border-bottom:1px solid var(--hairline-2);
+  box-shadow:0 1px 0 var(--hairline-2);
+}
+tbody td{
+  padding:11px 12px;
+  border-bottom:1px solid var(--hairline);
+  vertical-align:top;
+}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:hover{background:var(--surface-2)}
+td.num,th.num{text-align:right}
+
+/* Symbol cell — ticker only, hover-activated popover trigger */
+.sym-trigger{
+  display:inline-block;
+  color:var(--ink);
+  font-weight:680;letter-spacing:-.005em;
+  font-size: clamp(13px, 0.35vw + 12px, 14.5px);
+  cursor:help;
+  text-decoration:none;
+  outline:0;
+}
+.sym-trigger:hover,.sym-trigger:focus-visible{
+  text-decoration:underline dotted;text-underline-offset:3px;outline:0;
+}
+
+/* Price cell — static latest-price snapshot, hover-activated popover trigger */
+.price-cell{position:relative}
+.price-trigger{
+  display:inline-flex;flex-direction:column;align-items:flex-end;gap:2px;
+  cursor:help;text-align:right;
+  width:100%;
+  color:inherit;outline:0;
+}
+.price-trigger:hover,.price-trigger:focus-visible{outline:0}
+.price-trigger:hover .price-num,.price-trigger:focus-visible .price-num{text-decoration:underline dotted;text-underline-offset:3px}
+.price-num{
+  font-size: clamp(15px, 0.6vw + 13px, 17px);
+  font-weight:600;color:var(--ink);
+  font-variant-numeric:tabular-nums lining-nums;
+}
+.price-sub{
+  font-size:11.5px;color:var(--muted);
+  font-variant-numeric:tabular-nums;
+  display:inline-flex;align-items:center;gap:6px;
+}
+.price-sub.pos{color:var(--pos);font-weight:600}
+.price-sub.neg{color:var(--neg);font-weight:600}
+
+/* P&L colors */
+.pos-txt{color:var(--pos);font-weight:600}
+.neg-txt{color:var(--neg);font-weight:600}
+.na{color:var(--muted-2);text-align:right;font-weight:500}
+
+/* Tag chips */
+.tag{
+  display:inline-block;
+  font-size: clamp(10px, 0.15vw + 9.5px, 11px);
+  font-weight:700;letter-spacing:.04em;
+  color:var(--muted);
+  padding:2px 6px;border:1px solid var(--hairline-2);border-radius:3px;
+  background:var(--surface-2);margin-left:4px;
+}
+.tag.pos  {color:var(--pos);     border-color:#bce3c8;background:#f0faf3}
+.tag.neg  {color:var(--neg);     border-color:#f3c5c0;background:#fdf3f2}
+.tag.warn {color:var(--warn);    border-color:#ecd1a6;background:#fbf5e8}
+
+/* ---------- Popover (Symbol & Price) — hover-based, light-styled ---------- */
+/* Triggers must establish positioning context for the absolute popover */
+.sym-trigger,.price-trigger{position:relative}
+
+.pop{
+  position:absolute;
+  z-index:var(--popover-z);
+  /* Anchor: just below the trigger, slight indent so it does not crowd the cell edge */
+  top:calc(100% + 8px);
+  left:0;
+
+  /* Light surface — paper-tinted, no reverse colors */
+  background:var(--surface);
+  color:var(--ink);
+  border:1px solid var(--hairline-2);
+  border-radius:4px;
+  padding:12px 14px;
+
+  /* Subtle elevation only — popovers are the single allowed exception to the no-shadow rule */
+  box-shadow:0 6px 20px rgba(15,25,31,.10), 0 1px 2px rgba(0,0,0,.04);
+
+  /* Sizing */
+  width:max-content;
+  min-width:min(300px, calc(100vw - 64px));
+  max-width:min(560px, calc(100vw - 64px));
+
+  /* Typography (matches body palette, not reversed) */
+  font-size: clamp(12px, 0.25vw + 11.4px, 13px);
+  line-height:1.55;
+  text-align:left;
+  overflow-wrap:normal;
+
+  /* Hidden by default with fade transition */
+  opacity:0;
+  visibility:hidden;
+  transform:translateY(-4px);
+  transition:opacity .18s ease, transform .18s ease, visibility 0s linear .18s;
+  pointer-events:none;
+}
+
+/* Edge handling: cells in the right half of the table anchor the popover to the right */
+.tbl-wrap td:nth-last-child(-n+3) .pop{left:auto;right:0}
+
+/* Raise the active table cell so descendant popovers are not trapped below sticky cells. */
+tbody td:has(.sym-trigger:is(:hover,:focus-within)),
+tbody td:has(.price-trigger:is(:hover,:focus-within)){
+  position:relative;
+  z-index:var(--popover-host-z);
+}
+
+/* Show on hover OR keyboard focus (descendant popover stays open while hovering its content) */
+.sym-trigger:hover > .pop,
+.sym-trigger:focus-visible > .pop,
+.sym-trigger:focus-within > .pop,
+.price-trigger:hover > .pop,
+.price-trigger:focus-visible > .pop,
+.price-trigger:focus-within > .pop{
+  opacity:1;
+  visibility:visible;
+  transform:translateY(0);
+  transition:opacity .18s ease, transform .18s ease, visibility 0s;
+  pointer-events:auto;
+}
+
+/* Internal layout — light theme tokens throughout */
+.pop h4{margin:0 0 6px;font-size:13px;font-weight:680;color:var(--ink);letter-spacing:0}
+.pop .pop-sub{font-size:11.5px;color:var(--muted);margin-bottom:8px}
+.pop table{
+  width:100%;font-size:11.5px;color:var(--ink-soft);min-width:0;border:0;
+  table-layout:auto;
+}
+.pop table th,.pop table td{white-space:nowrap;overflow-wrap:normal}
+.pop thead th{
+  position:static;background:transparent;color:var(--muted);
+  z-index:auto;box-shadow:none;
+  font-size:10px;letter-spacing:.08em;
+  padding:4px 6px;border-bottom:1px solid var(--hairline);text-transform:none;
+}
+.pop tbody td{
+  padding:5px 6px;border-bottom:1px dotted var(--hairline);color:var(--ink-soft);
+  vertical-align:top;font-variant-numeric:tabular-nums lining-nums;
+}
+.pop tbody tr:last-child td{border-bottom:0}
+.pop tfoot.summary td,.pop .summary td{
+  border-top:1px solid var(--hairline-2);padding-top:7px;font-weight:680;color:var(--ink);
+}
+.pop .pop-row{display:flex;justify-content:space-between;gap:14px;padding:4px 0;border-bottom:1px dotted var(--hairline)}
+.pop .pop-row:last-child{border-bottom:0}
+.pop .pop-row .k{color:var(--muted);flex:0 0 auto}
+.pop .pop-row .v{
+  color:var(--ink);
+  font-weight:600;
+  flex:1 1 auto;
+  min-width:0;
+  text-align:right;
+  overflow-wrap:break-word;
+}
+.pop .pop-pos{color:var(--pos);font-weight:600}
+.pop .pop-neg{color:var(--neg);font-weight:600}
+
+/* Tablet & touch-only: switch to fixed bottom-sheet so popovers escape the table's
+   overflow context (which only activates on these breakpoints).
+   Tablet still has hover, so we keep hover-open behavior; the slide-from-bottom
+   animation makes the position-fixed transition feel intentional rather than jarring. */
+@media (max-width:880px), (hover:none){
+  .pop{
+    position:fixed;
+    left:max(12px, env(safe-area-inset-left));
+    right:max(12px, env(safe-area-inset-right));
+    bottom:max(12px, env(safe-area-inset-bottom));
+    top:auto;
+    width:auto;max-width:none;
+    max-height:calc(100vh - 32px);
+    max-height:min(72vh, calc(100dvh - 32px));
+    overflow:auto;
+    overscroll-behavior:contain;
+    -webkit-overflow-scrolling:touch;
+    transform:translateY(20px);
+    box-shadow:0 10px 30px rgba(15,25,31,.18), 0 2px 6px rgba(0,0,0,.08);
+  }
+  .pop table{table-layout:fixed}
+  .pop table th,.pop table td{white-space:normal;overflow-wrap:anywhere}
+  .sym-trigger:hover > .pop,
+  .sym-trigger:focus-within > .pop,
+  .price-trigger:hover > .pop,
+  .price-trigger:focus-within > .pop{
+    opacity:1;visibility:visible;transform:translateY(0);pointer-events:auto;
+    transition:opacity .22s ease, transform .22s ease, visibility 0s;
+  }
+}
+
+/* Touch-only override: suppress hover-show — only tap (focus-within) opens the sheet */
+@media (hover:none){
+  .sym-trigger:hover > .pop,
+  .price-trigger:hover > .pop{opacity:0;visibility:hidden;transform:translateY(20px);pointer-events:none}
+  .sym-trigger:focus-within > .pop,
+  .price-trigger:focus-within > .pop{
+    opacity:1;visibility:visible;transform:translateY(0);pointer-events:auto;
+  }
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce){
+  .pop{transition:opacity .01s linear, visibility 0s !important;transform:none !important}
+}
+
+/* ---------- Holding period & pacing ---------- */
+.period-strip{
+  display:flex;width:100%;height:10px;
+  border-radius:2px;overflow:hidden;
+  border:1px solid var(--hairline);
+  background:var(--surface-2);
+}
+.period-strip span{display:block;height:100%;font-size:0;line-height:0;color:transparent}
+.period-legend{
+  display:flex;flex-wrap:wrap;gap:8px 18px;
+  margin-top:10px;font-size:12.5px;color:var(--ink-soft);
+}
+.period-legend span{display:inline-flex;align-items:center;gap:7px}
+.period-legend i{display:inline-block;width:10px;height:10px;border-radius:2px}
+.bucket-note{
+  margin-top:14px;padding:11px 14px;
+  background:var(--surface-2);border-left:3px solid var(--warn);border-radius:2px;
+  font-size: clamp(13.5px, 0.35vw + 12.4px, 14.5px);
+  color:var(--ink-soft);line-height:1.7;
+}
+.bucket-note + .bucket-note{margin-top:8px}
+.bucket-note b{color:var(--ink)}
+
+/* ---------- Risk grid ---------- */
+.risk-grid{
+  display:grid;grid-template-columns:repeat(5, minmax(0,1fr));
+  gap:1px;background:var(--hairline-2);
+  border:1px solid var(--hairline-2);
+}
+.risk{
+  background:var(--surface);
+  padding:14px 14px 12px;
+  display:flex;flex-direction:column;gap:4px;
+  min-height:96px;
+  position:relative;
+}
+.risk:before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--muted-2)}
+.risk.r-low:before {background:#9bb6d6}
+.risk.r-mid:before {background:var(--warn)}
+.risk.r-high:before{background:var(--neg)}
+.risk .t{font-weight:700;color:var(--ink);font-size:14px;overflow-wrap:anywhere}
+.risk .s{font-size:11px;color:var(--muted);letter-spacing:.04em;overflow-wrap:anywhere;word-break:break-word;line-height:1.45}
+.risk .m{font-size:12.5px;color:var(--ink-soft);font-variant-numeric:tabular-nums;margin-top:auto;overflow-wrap:anywhere}
+
+/* ---------- Action list ---------- */
+.actions{margin:0;padding:0;list-style:none}
+.actions li{
+  display:grid;grid-template-columns:84px 1fr;gap:14px;
+  padding:11px 0;border-bottom:1px dotted var(--hairline);
+  font-size: clamp(13px, 0.3vw + 12px, 14px);color:var(--ink-soft);
+}
+.actions li:last-child{border-bottom:0}
+.actions .lbl{
+  font-size: clamp(10px, 0.15vw + 9.5px, 11px);
+  font-weight:700;letter-spacing:.1em;
+  color:var(--muted);padding-top:2px;
+}
+.actions .lbl.do {color:#7a1414}
+.actions .lbl.may{color:var(--info)}
+.actions .lbl.no {color:var(--muted)}
+.actions .lbl.fix{color:var(--accent-warm)}
+
+/* ---------- News list ---------- */
+.news{display:flex;flex-direction:column;gap:0}
+.news .item{
+  display:grid;grid-template-columns:72px 1fr auto;
+  gap:16px;
+  padding:14px 0;
+  border-bottom:1px solid var(--hairline);
+  align-items:start;
+}
+.news .item:last-child{border-bottom:0}
+.news .meta{font-size:11.5px;color:var(--muted);letter-spacing:.04em;line-height:1.4}
+.news .meta .tk{font-weight:700;color:var(--ink);display:block;margin-bottom:2px;font-size:13px}
+.news .body .head{font-weight:600;color:var(--ink);font-size: clamp(13px, 0.3vw + 12px, 14px);margin-bottom:4px;line-height:1.4}
+.news .body .src{font-size:11.5px;color:var(--muted)}
+.news .body .src a{color:var(--info);text-decoration:none}
+.news .body .src a:hover{text-decoration:underline}
+.news .impact{
+  align-self:start;
+  font-size:10.5px;font-weight:700;letter-spacing:.06em;
+  padding:2px 7px;border-radius:3px;
+  border:1px solid var(--hairline-2);
+  color:var(--muted);background:var(--surface-2);
+  white-space:nowrap;
+}
+.news .impact.pos{color:var(--pos);border-color:#bce3c8;background:#f0faf3}
+.news .impact.neg{color:var(--neg);border-color:#f3c5c0;background:#fdf3f2}
+.news .impact.neu{color:var(--ink-soft);border-color:var(--hairline-2);background:var(--surface-2)}
+
+/* ---------- Forward event timeline ---------- */
+.timeline{
+  position:relative;
+  height:78px;
+  margin:14px 0 18px;
+}
+.timeline .axis{
+  position:absolute;left:0;right:0;top:30px;height:1px;background:var(--hairline-2);
+}
+.timeline .tick{
+  position:absolute;top:30px;
+  width:1px;height:6px;background:var(--hairline-2);
+}
+.timeline .tick-label{
+  position:absolute;top:38px;
+  font-size:10px;color:var(--muted);
+  letter-spacing:.08em;text-transform:uppercase;font-weight:700;
+  transform:translateX(-50%);
+  white-space:nowrap;
+}
+.timeline .pin{
+  position:absolute;top:18px;
+  width:14px;height:14px;border-radius:50%;
+  background:var(--accent);
+  border:3px solid var(--paper);
+  transform:translateX(-50%);
+}
+.timeline .pin.warn{background:var(--warn)}
+.timeline .pin.neg {background:var(--neg)}
+.timeline .pin.info{background:var(--info)}
+.timeline .pin.pos {background:var(--pos)}
+.timeline .pin-label{
+  position:absolute;top:0;
+  font-size:11px;color:var(--ink);font-weight:650;
+  transform:translateX(-50%);
+  white-space:nowrap;
+}
+
+/* ---------- Two-column high-risk vs high-opportunity ---------- */
+.opp-list{display:flex;flex-direction:column;gap:0}
+.opp-list .item{
+  display:grid;
+  /* Use fr units for both why and trig so a long trig string can't squeeze why
+     to nothing. minmax(0,_) prevents the column from refusing to shrink below
+     its longest unbreakable token. */
+  grid-template-columns:64px minmax(0,1.4fr) minmax(0,1fr);
+  gap:14px;
+  padding:11px 0;border-bottom:1px solid var(--hairline);
+  align-items:start;
+}
+.opp-list .item:last-child{border-bottom:0}
+.opp-list .tk{font-weight:680;color:var(--ink);font-size:13.5px;overflow-wrap:anywhere}
+.opp-list .why{font-size:13px;color:var(--ink-soft);line-height:1.5;overflow-wrap:anywhere;word-break:break-word;min-width:0}
+.opp-list .trig{
+  font-size:11.5px;color:var(--info);font-weight:600;
+  font-variant-numeric:tabular-nums;
+  /* Wrap long trigger sentences instead of forcing the row wider — keeps the
+     why column readable when triggers are paragraph-length. */
+  white-space:normal;line-height:1.5;
+  overflow-wrap:anywhere;word-break:break-word;min-width:0;
+}
+
+/* ---------- Recommended adjustments ---------- */
+.adj-tbl thead th{font-size:10.5px}
+.adj-tbl{table-layout:fixed}
+.adj-tbl .why{
+  color:var(--ink-soft);font-size:12.5px;line-height:1.5;
+  overflow-wrap:anywhere;word-break:break-word;
+}
+.adj-tbl .trig{
+  font-size:11.5px;color:var(--info);font-weight:600;
+  font-variant-numeric:tabular-nums;
+  /* Allow wrap so a long trigger sentence doesn't squeeze adjacent columns. */
+  white-space:normal;line-height:1.5;
+  overflow-wrap:anywhere;word-break:break-word;
+}
+.adj-action{
+  display:inline-block;font-weight:700;font-size:11.5px;letter-spacing:.04em;
+  padding:2px 7px;border-radius:3px;
+  border:1px solid var(--hairline-2);background:var(--surface-2);
+  color:var(--muted);
+}
+.adj-action.trim{color:var(--neg);border-color:#f3c5c0;background:#fdf3f2}
+.adj-action.add {color:var(--pos);border-color:#bce3c8;background:#f0faf3}
+.adj-action.hold{color:var(--ink-soft)}
+.adj-action.exit{color:#fff;background:var(--neg);border-color:var(--neg)}
+.adj-action.watch{color:var(--warn);border-color:#ecd1a6;background:#fbf5e8}
+
+/* ---------- Sources & data-gaps audit ---------- */
+.src-tbl thead th{font-size:10.5px}
+.src-tbl .freshness{
+  font-size:11px;letter-spacing:.04em;font-weight:700;
+  padding:1px 6px;border-radius:2px;border:1px solid var(--hairline-2);
+  color:var(--muted);background:var(--surface-2);
+  white-space:nowrap;
+}
+.src-tbl .freshness.fresh{color:var(--pos);border-color:#bce3c8;background:#f0faf3}
+.src-tbl .freshness.delayed{color:var(--warn);border-color:#ecd1a6;background:#fbf5e8}
+.src-tbl .freshness.stale{color:var(--neg);border-color:#f3c5c0;background:#fdf3f2}
+.gap-list{margin:14px 0 0;padding:0;list-style:none}
+.gap-list li{
+  padding:8px 0;border-bottom:1px dotted var(--hairline);
+  font-size: clamp(13.5px, 0.35vw + 12.4px, 14.5px);
+  color:var(--ink-soft);line-height:1.7;
+  overflow-wrap:anywhere;word-break:break-word;
+}
+.gap-list li:last-child{border-bottom:0}
+.gap-list li b{color:var(--ink);font-weight:680}
+.gap-list li code{
+  background:var(--surface-2);padding:1px 5px;border-radius:2px;
+  font-size:.92em;color:var(--ink);
+}
+.gap-list .gap-sublist{
+  margin:6px 0 0;padding:0 0 0 18px;list-style:disc;
+}
+.gap-list .gap-sublist li{
+  padding:3px 0;border-bottom:0;line-height:1.55;
+}
+.gap-list .gap-sublist li.gap-overflow{color:var(--ink-soft);font-style:italic}
+
+/* ---------- Cash vs risk-asset bar (single horizontal split) ---------- */
+.cash-bar{
+  display:flex;width:100%;height:14px;
+  border-radius:2px;overflow:hidden;
+  border:1px solid var(--hairline);
+  background:var(--surface-2);
+}
+.cash-bar .seg{height:100%;display:block}
+.cash-bar .seg.risk{background:var(--ink)}
+.cash-bar .seg.cash{background:var(--accent-warm)}
+.cash-legend{
+  display:flex;flex-wrap:wrap;gap:6px 18px;
+  margin-top:8px;font-size:12.5px;color:var(--ink-soft);
+}
+.cash-legend span{display:inline-flex;align-items:center;gap:7px}
+.cash-legend i{display:inline-block;width:10px;height:10px;border-radius:2px}
+
+/* ---------- Footer ---------- */
+.footer{
+  margin-top:48px;padding-top:18px;border-top:1px solid var(--hairline-2);
+  font-size: clamp(11px, 0.15vw + 10.6px, 12px);
+  color:var(--muted);line-height:1.6;
+}
+
+/* ---------- Tablet (≤ 880px) ---------- */
+@media (max-width:880px){
+  .wrap{padding:32px 20px 56px}
+  .kpis{grid-template-columns:repeat(2,1fr)}
+  .kpi{border-right:0;border-bottom:1px solid var(--hairline);padding:14px 0}
+  .kpi:nth-child(2n){border-left:1px solid var(--hairline);padding-left:18px}
+  .kpi:nth-child(2n+1){padding-right:18px}
+  .cols-2{grid-template-columns:1fr}
+  .donut-wrap{grid-template-columns:1fr;justify-items:center;text-align:center}
+  .callout ul{columns:1}
+  .risk-grid{grid-template-columns:repeat(2,1fr)}
+  .bar-row{grid-template-columns:72px 1fr 70px;gap:10px}
+  /* Now safe to enable horizontal scroll — popover switches to fixed bottom-sheet
+     at the same breakpoint and no longer relies on the wrap's positioning context. */
+  .tbl-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+}
+
+/* ---------- Phone (≤ 600px) — HARD font floors ---------- */
+@media (max-width:600px){
+  body{font-size:14px}                              /* floor */
+  .wrap{padding:24px 16px 48px}
+  .masthead{padding:14px 0 18px;margin-bottom:24px}
+  .masthead-meta{gap:6px 14px}
+  .section{margin-top:28px}
+  .kpis{grid-template-columns:1fr}
+  .kpi{padding:12px 0;border-right:0;border-left:0!important;padding-left:0!important;padding-right:0!important;border-bottom:1px solid var(--hairline)}
+  .kpi:last-child{border-bottom:0}
+  .kpi .v{font-size:24px}                           /* floor */
+  .tbl-wrap{margin:0 -16px;padding:0 16px}
+  .tbl-wrap table{min-width:680px;font-size:12.5px} /* floor */
+  th,td{padding:9px 8px}
+  td:first-child,th:first-child{
+    position:sticky;left:0;z-index:1;
+    background:var(--surface);
+    box-shadow:1px 0 0 var(--hairline);
+  }
+  thead th:first-child{z-index:calc(var(--table-header-z) + 1);background:var(--paper)}
+  tr:hover td:first-child{background:var(--surface-2)}
+  .price-num{font-size:15px}                        /* floor */
+  .period-strip{height:14px}
+  .period-legend{font-size:11.5px;gap:6px 14px}
+  .risk-grid{grid-template-columns:1fr}
+  .risk{min-height:auto}
+  .actions li{grid-template-columns:64px 1fr;gap:10px}
+  .footer{font-size:11.5px}
+  .pop{font-size:12px}                              /* floor */
+}
+"""
+
 # §15.8 — reviewer-pass styling. Visually distinct from the user's prose so
-# annotations are obviously the reviewer's voice, not the user's. Appended to
-# the loaded sample CSS via `_REVIEWER_CSS` in the rendered HTML.
+# annotations are obviously the reviewer's voice, not the user's.
 _REVIEWER_CSS = """
 .reviewer-note-block { margin-top: 12px; padding: 10px 12px; border-left: 3px solid #94a3b8; background: rgba(148, 163, 184, 0.08); border-radius: 4px; }
 .reviewer-note-block ul { margin: 0; padding-left: 0; list-style: none; }
@@ -824,19 +1608,342 @@ li.reviewer-summary { margin-top: 8px; padding-top: 8px; border-top: 1px dashed 
 .kpis.kpis-solo .kpi { padding-left: 0; }
 """
 
+_RWA_CSS = """
+/* ============================================================
+   Responsive overlay (RWA) — owned by generate_report.py.
+   Tightens phone rendering so the report reads cleanly on
+   iPhone-class viewports (375–414px) and small phones (≤360px).
+   Overrides the canonical desktop chrome where the original
+   rules were too desktop-centric.
+   ============================================================ */
 
-def load_canonical_css(sample_path: Path) -> str:
-    """Read the <style>...</style> block from `reports/_sample_redesign.html`."""
-    if not sample_path.exists():
-        raise FileNotFoundError(
-            f"Canonical sample not found at {sample_path}. The sample is the "
-            "single source of styles per §14.9 — restore it before generating reports."
-        )
-    text = sample_path.read_text(encoding="utf-8")
-    m = _STYLE_RE.search(text)
-    if not m:
-        raise ValueError(f"No <style> block found in {sample_path}")
-    return m.group(1)
+/* Universal: never let a rogue inline width/height push the page wider
+   than the viewport. The wrap already caps at 1180px on desktop; on phones
+   the safe-area + side padding governs. */
+img, svg, table { max-width: 100%; }
+.wrap { overflow-x: hidden; }
+
+/* Horizontal-scroll affordance for tables on tablet/phone — a soft
+   right-edge fade tells the reader "there is more content to swipe to". */
+@media (max-width:880px){
+  .tbl-wrap{
+    -webkit-mask-image:linear-gradient(to right, #000 calc(100% - 18px), transparent 100%);
+            mask-image:linear-gradient(to right, #000 calc(100% - 18px), transparent 100%);
+  }
+  .tbl-wrap.scroll-y{
+    -webkit-mask-image:none; mask-image:none;
+  }
+}
+
+/* ---------- Phone (≤ 600px) ---------- */
+@media (max-width:600px){
+  /* Tighter side padding so 16px content edges feel intentional.
+     Restores balanced ink/paper ratio at narrow widths. */
+  .wrap{padding:20px 14px 40px}
+
+  /* Section spacing tighter on phone — desktop's 38px feels cavernous */
+  .section{margin-top:24px}
+  .section-head{padding-bottom:6px;margin-bottom:14px;gap:10px}
+  .section-head .sub{font-size:11.5px}
+
+  /* Masthead — h1 floor, meta wraps neatly */
+  .masthead{padding:12px 0 14px;margin-bottom:20px}
+  .masthead h1{font-size:clamp(20px, 5vw, 26px);line-height:1.22}
+  .dek{font-size:13.5px;line-height:1.55}
+
+  /* Callout — single column, less padding */
+  .callout{padding:14px 14px 14px 18px}
+  .callout ul{columns:1;padding-left:18px;font-size:13px}
+
+  /* Bar rows — tighter label column so values fit */
+  .bar-row{grid-template-columns:minmax(64px,28%) minmax(0,1fr) minmax(48px,18%);gap:8px}
+  .bar-label{font-size:12.5px}
+  .bar-value{font-size:12.5px}
+
+  /* Two-col grids inside subsections — also collapse to 1 column on phone
+     even when child widgets supply align-items:start. */
+  .cols-2{grid-template-columns:1fr;gap:18px}
+  .subsection .cols-2{gap:14px}
+
+  /* News list — stack vertically: ticker/date row, then headline, then impact tag.
+     The desktop 72px / 1fr / auto grid is too cramped for narrow widths. */
+  .news .item{
+    grid-template-columns:1fr auto;
+    grid-template-areas: "meta impact" "body body";
+    gap:6px 10px;
+    padding:12px 0;
+  }
+  .news .meta{grid-area:meta}
+  .news .body{grid-area:body}
+  .news .impact{grid-area:impact;justify-self:end;align-self:start}
+  .news .meta .tk{display:inline;margin-right:8px}
+  .news .body .head{font-size:13.5px;line-height:1.45;margin-bottom:3px}
+
+  /* Opportunity / risk list — stack so trigger sentences are not crushed
+     into 1fr-wide columns. */
+  .opp-list .item{
+    grid-template-columns:1fr;
+    gap:6px;
+    padding:12px 0;
+  }
+  .opp-list .tk{font-size:13.5px}
+  .opp-list .why{font-size:13px}
+  .opp-list .trig{font-size:12px}
+
+  /* Adjustments table — keep the table semantics but allow narrower min-width
+     than the holdings table (no popovers, simpler columns). */
+  .adj-tbl{min-width:560px}
+
+  /* Recommended-actions list — preserve the label column layout but
+     tighter (already at 64px from base 600px rule). */
+  .actions li{padding:10px 0}
+
+  /* Holding period legend — wrap with smaller gaps */
+  .period-legend{gap:4px 12px;font-size:11px}
+  .period-legend i{width:9px;height:9px}
+
+  /* Cash bar legend wraps cleanly */
+  .cash-legend{gap:4px 12px;font-size:11.5px}
+
+  /* Timeline — pin labels often collide on narrow screens. Drop them to
+     a smaller font and add ellipsis so they stack legibly. */
+  .timeline{height:88px;margin:14px 0 10px}
+  .timeline .pin-label{font-size:10px;max-width:88px;white-space:normal;overflow:hidden;text-overflow:ellipsis}
+  .timeline .tick-label{font-size:9.5px}
+
+  /* Risk grid — single column already at base; ensure rows have airy padding */
+  .risk{padding:12px 12px 10px;min-height:auto}
+  .risk .t{font-size:13.5px}
+  .risk .m{font-size:12px}
+
+  /* Trading-psychology lists — tighter spacing */
+  .psych-list li{margin-bottom:8px;font-size:13.5px;line-height:1.65}
+
+  /* Reviewer note blocks — smaller padding so they don't dwarf 1-line notes */
+  .reviewer-note-block{padding:8px 10px}
+
+  /* KPI strips — collapse to 2-up grid on phone instead of the canonical
+     1-column stack. The 4-cell strips (dashboard, perf-attribution, trade-
+     quality, discipline-check, holding-period) drop from ~480px tall to
+     ~240px. The 2-cell profit-panel strip stays as one row. The single-cell
+     `.kpis-solo` variant (report accuracy) keeps full width.
+     Each cell gets tighter typography so 7-character $ values still fit.
+     The dashboard's 4th KPI hosts a full-width cash-bar legend; the
+     `:has(.cash-bar)` rule promotes it back to span both columns. */
+  .kpis:not(.kpis-solo){grid-template-columns:repeat(2,minmax(0,1fr))}
+  .kpis:not(.kpis-solo) .kpi{
+    padding:10px 12px 10px 0!important;
+    border-right:1px solid var(--hairline)!important;
+    border-left:0!important;
+    border-bottom:1px solid var(--hairline)!important;
+  }
+  .kpis:not(.kpis-solo) .kpi:nth-child(2n){
+    padding-right:0!important;padding-left:12px!important;border-right:0!important;
+  }
+  .kpis:not(.kpis-solo) .kpi:nth-last-child(-n+2){border-bottom:0!important}
+  .kpis:not(.kpis-solo) .kpi .v{font-size:20px;line-height:1.18}
+  .kpis:not(.kpis-solo) .kpi .k{font-size:9.5px;letter-spacing:.14em}
+  .kpis:not(.kpis-solo) .kpi .delta{font-size:10.5px;margin-top:4px;line-height:1.4}
+  .kpis:not(.kpis-solo) .kpi:has(.cash-bar){
+    grid-column:1/-1;
+    padding:12px 0!important;
+    border-right:0!important;
+    border-bottom:0!important;
+  }
+
+  /* Compact tables that should FIT inside the phone viewport — `.periods-tbl`
+     (profit panel, per-market analytics, residual P&L), `.dim-tbl` (report-
+     accuracy detail), `.adj-tbl` (recommended adjustments), `.src-tbl`
+     (sources & gaps), and all `.tbl-wrap.scroll-y` tables (top-weight list,
+     loss/gain lot lists, recent activity). These have 2–8 simple columns
+     and DO NOT need the canonical 760-/880-px min-width.
+     Forcing min-width:0 + tight typography lets them render without
+     horizontal-scroll bleed at ≤430px viewports. The holdings table is
+     the ONLY table that legitimately needs horizontal scroll on phone. */
+  .tbl-wrap table.periods-tbl,
+  .tbl-wrap table.dim-tbl,
+  .tbl-wrap table.adj-tbl,
+  .tbl-wrap table.src-tbl,
+  .tbl-wrap.scroll-y table{
+    min-width:0!important;
+    font-size:11px;
+    table-layout:auto;
+  }
+  .tbl-wrap table.periods-tbl th,
+  .tbl-wrap table.periods-tbl td,
+  .tbl-wrap table.dim-tbl th,
+  .tbl-wrap table.dim-tbl td,
+  .tbl-wrap table.adj-tbl th,
+  .tbl-wrap table.adj-tbl td,
+  .tbl-wrap table.src-tbl th,
+  .tbl-wrap table.src-tbl td,
+  .tbl-wrap.scroll-y th,
+  .tbl-wrap.scroll-y td{
+    padding:6px 4px;
+    line-height:1.4;
+  }
+  .tbl-wrap table.periods-tbl th,
+  .tbl-wrap table.dim-tbl th,
+  .tbl-wrap table.adj-tbl th,
+  .tbl-wrap table.src-tbl th,
+  .tbl-wrap.scroll-y th{
+    font-size:9.5px;
+    letter-spacing:.04em;
+    padding:7px 4px;
+  }
+  /* Adjustments + sources tables — long-text columns (理由/觸發/備註) wrap;
+     short ticker/action/state cells stay tight. Drop colgroup-driven
+     desktop col widths in favor of natural sizing on phone. */
+  .tbl-wrap table.adj-tbl,
+  .tbl-wrap table.src-tbl{table-layout:auto!important}
+  .tbl-wrap table.adj-tbl colgroup col,
+  .tbl-wrap table.src-tbl colgroup col{width:auto!important}
+  .tbl-wrap table.adj-tbl td,
+  .tbl-wrap table.src-tbl td{
+    overflow-wrap:anywhere;
+    word-break:break-word;
+    line-height:1.45;
+  }
+  /* Period tables: first column ("1日", "近1月", "歷年") stays nowrap so
+     period rows never wrap. The boundary date in `<span class="muted">
+     (自 2026-05-01)</span>` is informative but not essential — hiding it
+     on phone shrinks the period column from ~125px to ~40px and the whole
+     table fits within 430px viewport instead of horizontally scrolling. */
+  .tbl-wrap table.periods-tbl td:first-child{
+    white-space:nowrap;
+    font-size:10.5px;
+    color:var(--ink-soft);
+    font-variant-numeric:tabular-nums;
+  }
+  .tbl-wrap table.periods-tbl td:first-child > .muted{display:none}
+  /* Dimension tables (report accuracy): first column has multi-character
+     Chinese labels ("獲利面板 — 邊界估價") that benefit from wrapping. */
+  .tbl-wrap table.dim-tbl td:first-child{
+    font-size:10.5px;
+    color:var(--ink-soft);
+    line-height:1.4;
+    overflow-wrap:anywhere;
+    word-break:break-word;
+  }
+  .tbl-wrap.scroll-y td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
+
+  /* Holdings table is the ONLY one that genuinely needs horizontal scroll
+     on phone (7 fixed columns + free-form action narrative). Keep nowrap
+     on the first column so the holding row never wraps. */
+  .tbl-wrap table.holdings-tbl td:first-child,
+  .tbl-wrap table.holdings-tbl th:first-child{white-space:nowrap}
+
+  /* Drop the right-edge fade mask for tables that fit. Only the
+     holdings-tbl and adj-tbl keep the mask as a swipe affordance. */
+  .tbl-wrap:has(table.periods-tbl),
+  .tbl-wrap.scroll-y{
+    -webkit-mask-image:none!important;
+            mask-image:none!important;
+  }
+
+  /* Tag chip — tighter padding so wrapping is rare */
+  .tag{margin-left:3px;padding:1px 5px}
+
+  /* Sources/freshness chip — keep on one line via shrink */
+  .src-tbl .freshness{font-size:10.5px;padding:1px 5px}
+
+  /* Footer — tighter padding */
+  .footer{margin-top:32px;padding-top:14px}
+}
+
+/* ---------- Small phone (≤ 420px) ---------- */
+@media (max-width:420px){
+  .wrap{padding:18px 12px 36px}
+  .masthead{padding:10px 0 12px;margin-bottom:18px}
+  .masthead h1{font-size:21px;line-height:1.22}
+  .masthead-meta{font-size:11px;gap:4px 12px}
+
+  .kpi .v{font-size:22px}
+  .kpi .k{font-size:10px;letter-spacing:.16em}
+
+  /* Bar rows — 1-col fall-through: label and value share top row, bar full width */
+  .bar-row{
+    grid-template-columns:1fr auto;
+    grid-template-areas: "label value" "track track";
+    row-gap:4px;column-gap:8px;
+  }
+  .bar-label{grid-area:label;font-size:12px}
+  .bar-track{grid-area:track;height:5px}
+  .bar-value{grid-area:value;font-size:12px}
+
+  /* Section heads — allow sub to drop under title */
+  .section-head{flex-wrap:wrap;align-items:flex-end}
+  .section-head .sub{flex-basis:100%;font-size:11px}
+
+  /* Callout — even tighter */
+  .callout{padding:12px 12px 12px 14px;border-left-width:2px}
+  .callout ul{font-size:12.5px;padding-left:16px}
+
+  /* Donut — slightly smaller so it doesn't dominate */
+  .donut-wrap svg{width:148px;height:148px}
+
+  /* Holdings table — relax the min-width floor a touch so the swipe is shorter */
+  .tbl-wrap table.holdings-tbl{min-width:760px}
+  .tbl-wrap table{min-width:600px;font-size:12px}
+  th,td{padding:7px 6px}
+  thead th{font-size:10px;letter-spacing:.08em}
+
+  /* News & opp-list — already vertical from 600px breakpoint */
+  .news .body .head{font-size:13px}
+
+  /* Adj table — narrow min-width OK, fixed col widths recompute */
+  .adj-tbl{min-width:520px}
+  .adj-action{font-size:10.5px;padding:1px 5px}
+}
+"""
+
+# Sanitizer — strip <style>/<script>/<link>/<base>/<meta>/<iframe> from
+# any HTML fragment supplied by the editorial context (e.g. theme_sector_html).
+# Inline `style="..."` attributes are permitted because they're per-element
+# (legitimate per-row width / colour) and cannot define @media or pseudo-class
+# rules. Page-level CSS is the renderer's exclusive responsibility per §14.9.
+_INPUT_TAG_RES = [
+    re.compile(r"<style\b[^>]*>.*?</style\s*>", re.DOTALL | re.IGNORECASE),
+    re.compile(r"<script\b[^>]*>.*?</script\s*>", re.DOTALL | re.IGNORECASE),
+    re.compile(r"<link\b[^>]*/?\s*>", re.IGNORECASE),
+    re.compile(r"<base\b[^>]*/?\s*>", re.IGNORECASE),
+    re.compile(r"<meta\b[^>]*/?\s*>", re.IGNORECASE),
+    re.compile(r"<iframe\b[^>]*>.*?</iframe\s*>", re.DOTALL | re.IGNORECASE),
+]
+
+
+def _sanitize_html_fragment(fragment: Optional[str]) -> str:
+    """Remove document-scoped tags from agent-supplied HTML.
+
+    The renderer is the single point of control for the whole report style
+    (§14.9). External fragments may carry per-element ``style=\"...\"`` (kept,
+    they're scoped) but must not introduce page-level ``<style>`` blocks,
+    ``<script>``, or external ``<link rel=\"stylesheet\">``.
+    """
+    if not fragment:
+        return ""
+    out = fragment
+    for rx in _INPUT_TAG_RES:
+        out = rx.sub("", out)
+    return out
+
+
+def load_canonical_css(sample_path: Optional[Path] = None) -> str:
+    """Return the report CSS owned by this module.
+
+    By default returns the embedded ``_BASE_CSS``. If ``sample_path`` is
+    provided AND the file exists, its first ``<style>`` block is returned
+    instead — this is an explicit override for design experiments. The
+    renderer always appends ``_REVIEWER_CSS`` and ``_RWA_CSS`` after this
+    base, regardless of which source supplied it.
+    """
+    if sample_path is not None and sample_path.exists():
+        text = sample_path.read_text(encoding="utf-8")
+        m = _STYLE_RE.search(text)
+        if m:
+            return m.group(1)
+        # Fall through to embedded if the file lacks a <style> block.
+    return _BASE_CSS
 
 
 # ----------------------------------------------------------------------------- #
@@ -1264,7 +2371,7 @@ def render_profit_panel(context: Dict[str, Any]) -> str:
       <span class="sub">{_esc(_ui("profit_panel.subtitle", base=ACTIVE_BASE_CURRENCY))}</span>
     </div>{kpi_html}
     <div class="tbl-wrap" style="margin-top:14px">
-      <table class="holdings-tbl">
+      <table class="periods-tbl">
 {_profit_panel_thead_html()}
         <tbody>
 {chr(10).join(body_rows)}
@@ -1373,7 +2480,7 @@ def render_report_accuracy(context: Dict[str, Any]) -> str:
       </div>
     </div>
     <div class="tbl-wrap" style="margin-top:14px">
-      <table class="holdings-tbl">
+      <table class="dim-tbl">
         <thead><tr>
           <th>{_esc(_ui("report_accuracy.col_dimension"))}</th>
           <th class="num">{_esc(_ui("report_accuracy.col_score"))}</th>
@@ -1512,7 +2619,7 @@ def render_performance_attribution(context: Dict[str, Any]) -> str:
     <div class="subsection" style="margin-top:20px">
       <h3 class="eyebrow">{_esc(_asset_class_label(m))}</h3>
       <div class="tbl-wrap" style="margin-top:8px">
-        <table class="holdings-tbl">
+        <table class="periods-tbl">
 {_profit_panel_thead_html()}
           <tbody>
 {chr(10).join(m_body)}
@@ -1558,7 +2665,7 @@ def render_performance_attribution(context: Dict[str, Any]) -> str:
     <div class="subsection" style="margin-top:20px">
       <h3 class="eyebrow">{_esc(_ui("analytics.market_residual_title"))}</h3>
       <div class="tbl-wrap" style="margin-top:8px">
-        <table class="holdings-tbl">
+        <table class="periods-tbl">
           <thead>
             <tr>
               <th>{_esc(_ui("profit_panel.col_period"))}</th>
@@ -2436,9 +3543,11 @@ def render_theme_sector(context: Dict[str, Any]) -> str:
     The CLI pre-render validator requires this field and theme_sector_audit.
     The placeholder branch is defensive for direct function callers only.
     """
-    body = context.get("theme_sector_html") or (
-        f'<div class="prose"><p>{_esc(_ui("theme_sector.placeholder"))}</p></div>'
-    )
+    raw_theme = context.get("theme_sector_html")
+    if raw_theme:
+        body = _sanitize_html_fragment(raw_theme)
+    else:
+        body = f'<div class="prose"><p>{_esc(_ui("theme_sector.placeholder"))}</p></div>'
     return f"""\
   <section class="section">
     <div class="section-head">
@@ -3189,7 +4298,7 @@ def render_html(
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{_esc(context.get('title', _ui('masthead.title')))}</title>
-<style>{css}{_REVIEWER_CSS}</style>
+<style>{css}{_REVIEWER_CSS}{_RWA_CSS}</style>
 </head>
 <body>
 <div class="wrap">
@@ -3228,8 +4337,11 @@ def _cli(argv: Optional[List[str]] = None) -> argparse.Namespace:
                         "and pass the translated JSON here.")
     p.add_argument("--context", default=None, type=Path,
                    help="Editorial context JSON (today summary, news, actions, ...)")
-    p.add_argument("--sample", default=Path(__file__).resolve().parent.parent / "reports" / "_sample_redesign.html",
-                   type=Path, help="Canonical visual reference (read-only, supplies CSS)")
+    p.add_argument("--sample", default=None, type=Path,
+                   help="Optional override CSS source. By default the embedded "
+                        "_BASE_CSS in this module is used (§14.9 — single source of "
+                        "style truth). Pass a path to an HTML file with a <style> "
+                        "block to swap in alternative chrome for experiments.")
     p.add_argument("--output", default=None, type=Path,
                    help="Output HTML path; default: reports/<timestamp>_portfolio_report.html")
     p.add_argument("--self-check", action="store_true",
