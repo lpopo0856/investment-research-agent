@@ -175,6 +175,15 @@ The user may hand you any of:
 - **Existing iteration-2 `HOLDINGS.md`** — if present, prefer the
   `migrate` path in §6.5.
 
+For Taiwan stock positions, recommend the user supply a Taiwan Stock
+Exchange (TWSE) export when available. 
+
+If a PDF is password-protected,tell the user to open it in a browser and use the browser's Print function
+to save a password-free PDF before importing. 
+
+If the transaction file is very large, especially a PDF, ask the user to split it into smaller files
+and import the batches one at a time.
+
 ### 6.2 Conversion procedure
 
 > **Token discipline (HARD; per `docs/context_drop_protocol.md` and
