@@ -37,14 +37,11 @@ You don't need to learn any commands, schemas, or files. Pick whichever line bel
 > "Deposited $5,000."
 > "Here's my Schwab CSV — please import it." *(other broker exports work too; see `docs/`)*
 
-For Taiwan stock positions, recommend the user supply a Taiwan Stock
-Exchange (TWSE) export when available. 
+For Taiwan stock positions, recommend the user supply a Taiwan Stock Exchange (TWSE) export when available.
 
-If a PDF is password-protected,tell the user to open it in a browser and use the browser's Print function
-to save a password-free PDF before importing. 
+If a PDF is password-protected, tell the user to open it in a browser and use the browser's Print function to save a password-free PDF before importing.
 
-If the transaction file is very large, especially a PDF, ask the user to split it into smaller files
-and import the batches one at a time.
+If the transaction file is very large, especially a PDF, ask the user to split it into smaller files and import the batches one at a time.
 
 **Ask a research question:**
 

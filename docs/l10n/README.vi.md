@@ -37,6 +37,12 @@ Bạn không cần học lệnh, schema hay cấu trúc file trước. Chọn đ
 > "Nạp 5,000 đô vào tài khoản."
 > "Đây là CSV tôi xuất từ Schwab — nhập giúp tôi." *(file xuất từ broker khác cũng được xử lý theo `docs/`)*
 
+Với vị thế cổ phiếu Đài Loan, hãy khuyên người dùng cung cấp bản xuất từ Sở giao dịch chứng khoán Đài Loan (TWSE) nếu có thể.
+
+Nếu PDF có mật khẩu, hãy bảo người dùng mở bằng trình duyệt và dùng chức năng In của trình duyệt để lưu thành PDF không mật khẩu trước khi nhập.
+
+Nếu tệp giao dịch rất lớn (đặc biệt là PDF), hãy yêu cầu người dùng chia thành các tệp nhỏ hơn và nhập từng lô một.
+
 **Hỏi kiểu nghiên cứu:**
 
 > "Phân tích NVDA so với danh mục hiện tại của tôi."
