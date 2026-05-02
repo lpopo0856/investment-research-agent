@@ -22,6 +22,32 @@ DB is the single source of truth; consumers either read the balance tables direc
 
 ---
 
+## 0. Token discipline (HARD)
+
+Per `docs/context_drop_protocol.md`. The DB grows over time; what was 5
+rows during onboarding becomes 500+ after a year of recording. Reading
+the whole ledger into agent context every turn is unnecessary and
+expensive.
+
+- **`db dump` is for backup, not for context.** Never paste `db dump` output
+  into the conversation to "see what's there." Use `db stats` for shape
+  (counts by type, date range), `transactions.py snapshot` /
+  `transactions.py analytics` / `transactions.py pnl` for the canonical
+  compact analytical views, or narrow SQL (`sqlite3 transactions.db
+  "SELECT … LIMIT 50"`) for targeted lookups.
+- **Bulk-import preview is path + sample, not full row list.** For batches
+  > 20 rows, show counts, the `/tmp/...json` path, and `jq '.[0:5]' <path>`
+  — same rule as `docs/onboarding_agent_guidelines.md` §6.3.
+- **Schema-validate canonical JSON in an isolated context for large imports.**
+  A brokerage CSV with 200+ rows is research-class — delegate parsing /
+  mapping / validation to a temp-researcher per
+  `docs/temp_researcher_contract.md` (using whatever isolation primitive
+  the runtime provides). The parent reads only the summary + the
+  `/tmp/...json` path before §3.7 confirmation.
+
+These rules do not weaken any §1 safety rule below — backup, plan,
+confirm, verify still apply unchanged.
+
 ## 1. Hard safety rules
 
 1. **Never** UPDATE or DELETE rows in `transactions` or `sell_lot_consumption`

@@ -14,7 +14,7 @@ market_data_cache.db-shm
 /reports/*_portfolio_report*.md
 .DS_Store
 .omc/
-.claude/
+.claude/settings.local.json
 /scripts/__pycache__/
 /demo/__pycache__/
 demo/market_data_cache.db

@@ -24,7 +24,7 @@ The demo runbook (`demo/README.md`) shows the full canonical command set.
 
 ## Language
 
-- english
+- traditional chinese
 
 ## Investment Style And Strategy
 

@@ -8,6 +8,17 @@
 > compute pacing, score risk, or run §11 checks itself. Authoring agents
 > inspect the snapshot to see the prepared numbers before drafting editorial
 > context; the renderer never re-derives them.
+>
+> **Token discipline (HARD; per `docs/context_drop_protocol.md`).** Authoring
+> agents read `report_snapshot.json` and `report_context.json` **field-narrow
+> via `jq`**, never whole-file. Examples: `jq '.profit_panel'`,
+> `jq '.transaction_analytics.discipline_check.top_position_weights'`,
+> `jq '.aggregates | keys'`. The full files routinely exceed 8K–25K tokens
+> each; whole-file Reads load that into the parent agent's context for the
+> rest of the session, with no editorial benefit (the renderer reads the
+> files from disk and that path is unchanged). `transactions.py snapshot` /
+> `analytics` / `pnl` are the canonical compact views — `db dump` is for
+> backup, not for "give me transaction context."
 
 **Path convention (HARD):** Unqualified filenames `report_snapshot.json`, `report_context.json`, and `prices.json` in this part file refer to those **basenames inside** `$REPORT_RUN_DIR` under `/tmp` for a normal report run (see `/docs/portfolio_report_agent_guidelines.md` — Intermediate files). Do not write these artifacts to the repository root.
 
@@ -84,7 +95,7 @@ Cell-level only. Never blank cells; never write "missing/unknown/data gap" insid
    **Authoring is judgment, not compute (HARD)**. Pure rules cannot match the user's strategy-specific framing — the same averaging-up pattern is "discipline drift" for one user and "right-sided conviction" for another. The agent operating the pipeline (whatever LLM — Claude, Codex, Gemini, automated runner, human) reads the snapshot data + `SETTINGS.md ## Investment Style And Strategy` and authors the JSON during the report run, before invoking `generate_report.py`. There is no hardcoded LLM provider, no rule-based code generator, and no "auto-fill" script — the spec below is the contract; `scripts/validate_report_context.py` is only a pre-render gate that catches schema and coverage violations.
 
    **Pipeline placement (mandatory gate)**: between `python scripts/transactions.py snapshot` and `python scripts/generate_report.py`, the agent must:
-   1. Read `report_snapshot.json` (specifically the analytics paths listed under "Authoring rules" below).
+   1. Read `report_snapshot.json` **field-narrow via `jq`** (not whole-file). Use the specific analytics paths listed under "Authoring rules" below — e.g. `jq '.transaction_analytics.discipline_check.latest_lot_cost_flags' "$REPORT_RUN_DIR/report_snapshot.json"`. Whole-file Reads of `report_snapshot.json` are forbidden in agent context per `docs/context_drop_protocol.md`; the renderer reads the file from disk and that path is unaffected.
    2. Read `SETTINGS.md ## Investment Style And Strategy` to anchor improvements.
    3. Synthesize patterns (not enumerate datapoints) into the schema below.
    4. Merge into `report_context.json` under `"trading_psychology"`.
@@ -282,6 +293,23 @@ Every non-cash ticker in `report_snapshot.json["aggregates"]` must have one audi
 
 ETF look-through mandatory for index ETFs using latest issuer/index composition; document as-of. If unavailable: sectors 100% `多元 ETF / 指數`; themes most-applicable single theme; flag Sources gap.
 
+Bar row markup (HARD; common failure mode). Each `.bar-row` MUST emit exactly three children, in this order, all `<div>`:
+
+```html
+<div class="bar-row">
+  <div class="bar-label">AI 算力</div>
+  <div class="bar-track"><div class="bar warn" style="width:100%"></div></div>
+  <div class="bar-value">15.5%</div>
+</div>
+```
+
+Two non-negotiable invariants the validator enforces:
+
+1. Child order is `bar-label → bar-track → bar-value`. `.bar-row` is a CSS grid with columns `96px minmax(80px,1fr) 84px`; any other order puts `bar-track` into the 84px right gutter and the chart looks broken.
+2. The colored fill is `<div class="bar ...">`, never `<span class="bar ...">`. The `.bar` CSS rule has no `display:block`, so an inline `<span>` collapses to zero width and the fill never paints.
+
+Do not nest the percentage inside `bar-label`; `bar-value` is its own grid column. Do not omit `bar-value` (use an empty `<div class="bar-value"></div>` only if you also drop `bar-label`'s percentage — which the template doesn't).
+
 Bar class first-match wins:
 
 | Class | Trigger |
@@ -300,13 +328,15 @@ Bucket-note callouts immediately after `cols-2`, multiple allowed, omit if none:
 - Single sector > `sector_concentration_warn` default 30% → `<b>行業集中：</b>{sector} 佔 {pct}%，超過 {threshold}% 單一行業上限。`
 - ETF fallback → `<b>ETF 穿透不可得：</b>{ticker} ({pct}%) 暫以「多元 ETF / 指數」整塊計入；待補底層權重後重算。`
 
-Self-check: sectors sum exactly 100% cash/FX excluded; every non-cash/non-FX ticker exactly one sector; top theme ≤100%; visible themes ≤7; order/color rules followed; bucket-note wording token-for-token. Items 1-3 hard fail; 4-7 flag in Sources if imperfect.
+Self-check: sectors sum exactly 100% cash/FX excluded; every non-cash/non-FX ticker exactly one sector; top theme ≤100%; visible themes ≤7; **every `.bar-row` has exactly three children in order `bar-label → bar-track → bar-value`, with the colored fill as `<div class="bar ...">` (never `<span>`)**; order/color rules followed; bucket-note wording token-for-token. Items 1-3 plus the bar-row markup item are hard fail (validator blocks render); remaining items flag in Sources if imperfect.
 
 ### 10.5 News & event coverage (HARD; agent owns web)
 
 Renderer only formats `context["news"]` / `context["events"]`; `scripts/fetch_prices.py` is prices only. Agent must also write `context["research_coverage"]`. Empty news/events without search audit is violation and pre-render validation failure.
 
-Workflow:
+**Subagent isolation (HARD; per `docs/context_drop_protocol.md` and `docs/temp_researcher_contract.md`).** §10.5 + §10.6 research is the largest token sink in the pipeline (typically 30k–80k tokens of WebSearch/WebFetch results across the cover universe). It **must** be delegated to a temp-researcher per the brand-agnostic contract — using whatever isolation primitive the runtime provides (Claude Code subagent, Codex fresh session, Gemini CLI subagent, or equivalent). It must not run in the parent agent's context. The parent's brief includes: cover-universe ticker list (from `transactions.db.open_lots` minus cash/cash-equivalents, plus extras from §10.6/§10.9), this §10.5 + §10.6 spec text, and the path `$REPORT_RUN_DIR/report_context.json`. The temp-researcher runs the WebSearch / WebFetch / source-fetching workflow below in its own context, writes `context["news"]`, `context["events"]`, and `context["research_coverage"]` directly into the file, validates the JSON, and returns only `{result_file: <path>, summary: ≤200 words, audit: {bytes, sha256, record_count, sources_count, gaps}}` per the contract's §4 return shape. **The parent agent must not paste the temp-researcher's findings or search snippets back into its own response** — that defeats the protocol. The parent reads from `report_context.json` lazily (via `jq`) only when Phase B authoring needs a specific field. The `MEMORY.md` rule "agent owns live WebSearch/WebFetch for §10.5 — empty section without audit trail = workflow violation" is satisfied because the audit (sources, URLs, search reasoning) lives in `context["research_coverage"]` and the per-news/per-event records — exactly as before, just produced inside the isolated context.
+
+Workflow (executed inside the temp-researcher's isolated context):
 
 1. Cover universe = every `transactions.db.open_lots` position except cash/pure cash-equivalents, de-duped, plus extra tickers surfaced in §10.6/§10.9.
 2. Per ticker run ≥1 WebSearch: `"<ticker> <company name>" earnings OR guidance OR downgrade OR upgrade OR catalyst <YYYY-MM>` using current and previous report month. TW also query 繁中: `"<code> <公司名>" 法說 OR 營收 OR 財報 OR 重大訊息`. Fetch/read promising URLs; no SERP-only items.

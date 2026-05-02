@@ -177,11 +177,29 @@ The user may hand you any of:
 
 ### 6.2 Conversion procedure
 
+> **Token discipline (HARD; per `docs/context_drop_protocol.md` and
+> `docs/temp_researcher_contract.md`).** Statement extraction (PDF / image /
+> multi-page CSV / XLSX) is research-class — raw file content can be 5K–60K
+> tokens. Delegate the extraction to a temp-researcher (using whatever
+> isolation primitive the runtime provides — Claude Code subagent, Codex
+> fresh session, Gemini CLI subagent, etc.) whenever the input is anything
+> other than a small text snippet (≤ ~30 rows of CSV / a brief pasted email).
+> The brief includes: the input file path, the output JSON path
+> (`/tmp/onboarding_<broker>_<ts>.json`), and the canonical schema excerpt
+> from `docs/transactions_agent_guidelines.md` §2 + §3.2. The temp-researcher
+> reads/OCRs/parses, writes the canonical JSON, validates, and returns only
+> `{result_file, summary, audit: {row_count, type_counts, currencies,
+> date_range, assumed_fields, gaps}}` per the contract's §4 return shape.
+> The parent agent then runs §6.3 confirmation against the *summary* and the
+> JSON file (read narrowly via `jq '.[0:10]'` for the row preview); the parent
+> must not paste raw extracted rows or OCR output back into its own response.
+
 1. **Read or receive** the file. For text files (CSV / JSON / TXT / HTML)
-   read directly. For PDF / XLSX use the runtime's available extraction
-   (`pdftotext`, `python -m pdfminer`, `openpyxl`, etc.). For images, use
-   the runtime's vision capability or ask the user to paste the relevant
-   numbers as text. **Never** invent rows you cannot read.
+   read directly **only if the file is small** (under ~30 canonical rows);
+   otherwise delegate to a temp-researcher per the discipline note above.
+   For PDF / XLSX / images, always delegate. For runtimes without an
+   isolation primitive, ask the user to paste the relevant numbers as text.
+   **Never** invent rows you cannot read.
 2. **Identify the schema** the file uses. Show the user the first 5–10
    parsed rows in a small table so they can sanity-check the column
    mapping before any write.
@@ -231,9 +249,14 @@ batch:
 1. **Summary** — N rows parsed: counts by type, date range, distinct
    tickers, currencies seen, total deposits, total cost basis. Flag any
    row where a required field defaulted (`(assumed)`).
-2. **Plan** — one-line per row or, for large batches, the path you will
-   pass to `db import-json`. Show the resulting balance impact: open_lots
-   row count, per-currency cash totals.
+2. **Plan** — for batches **≤ 20 rows**, list one line per row. For batches
+   **> 20 rows**, show only: row count, type counts, the
+   `/tmp/onboarding_<broker>_<ts>.json` path, and a 5-row sample obtained
+   via `jq '.[0:5]' /tmp/onboarding_<broker>_<ts>.json`. Show the resulting
+   balance impact (open_lots row count, per-currency cash totals) either
+   way. Do not paste the full row list — at 200+ rows it overflows context
+   for no editorial gain (the user can `jq` the file themselves if they
+   want to spot-check beyond the sample).
 3. **JSON file path** — point at the `/tmp/` file the agent wrote.
 4. **Question** — literal prompt: `Confirm and write? (yes / no / edit)`.
 

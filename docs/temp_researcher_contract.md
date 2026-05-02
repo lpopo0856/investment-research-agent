@@ -1,0 +1,129 @@
+# Temp-Researcher — Brand-Agnostic Contract
+
+The execution contract any agent runtime must satisfy when fulfilling a research-class phase under `docs/context_drop_protocol.md`.
+
+This document is **runtime-agnostic**. It describes the *role* and the *interface* — not which subagent primitive to use. Any runtime that can isolate a unit of work in its own context window and return only a final message can satisfy the contract: Claude Code (via Task tool), OpenAI Codex (via its own subagent or fresh-session primitive), Gemini CLI (similar), or a hand-rolled "spawn a fresh session, hand it the brief, take only the result file" pattern.
+
+When a guideline in this repo says "delegate to `temp-researcher`" or "run inside the temp-researcher subagent," what it requires is satisfaction of *this contract* — not a specific Claude Code agent file.
+
+---
+
+## 1. Purpose
+
+A temp-researcher absorbs the token cost of research-class work (large WebSearch / WebFetch dumps, PDF / image / multi-file extraction, broad codebase or DB scans) inside an isolated context that dies on exit, returning to the parent only:
+
+- a path to a durable result file, and
+- a short summary plus audit fields.
+
+The parent never sees the raw `tool_use_result` content. The cost the parent would otherwise carry forward across every subsequent turn is paid once, inside the subagent, then discarded.
+
+The trigger to delegate is "this phase will produce > ~5K tokens of raw tool output and the deliverable is a file or short summary."
+
+## 2. Inputs the parent provides
+
+The parent's invocation brief MUST include all five fields. If any is missing, the temp-researcher refuses and asks the parent for the missing piece — it does not guess.
+
+| Field | What it is | Example |
+|------|-----------|---------|
+| `task` | What to research / extract / gather, in plain language | "Research §10.5 news + §10.6 events for these 12 tickers, populate context fragments" |
+| `result_file` | Absolute path where the temp-researcher will write the artifact | `/tmp/investments_portfolio_report_20260502_1700/report_context.json` |
+| `schema` | The shape the result file must match — JSON schema fragment, key list, or pointer to the spec excerpt | "see §10.5 Records subsection" |
+| `spec_excerpts` | The relevant agent-guideline text the temp-researcher must comply with | excerpts from §10.5 + §10.6 |
+| `quality_requirements` | HARD rules the deliverable must satisfy | "every news entry must have a source URL"; "OCR'd values must be flagged in `assumed_fields`" |
+
+## 3. What the temp-researcher does
+
+1. **Reads the spec excerpts in full.** They are normative. Compliance with them is the temp-researcher's only job.
+2. **Runs the research.** Uses whatever tools the runtime gives it — web search, web fetch, file read, OCR, shell, narrow SQL. Inside its own context the cost of these is amortized to zero on exit.
+3. **Validates as it goes.** Required fields that cannot be sourced get the protocol-mandated empty value (typically `[]` or `null`) plus an explicit reason in the audit log. **Never invents data** to fill required fields.
+4. **Writes the result file** at the exact path the parent specified. JSON deliverables must be schema-valid; the temp-researcher must verify with `jq . <path> > /dev/null` (or equivalent) before finishing. An invalid artifact is a contract failure — worse than no artifact.
+5. **Computes audit fields.** Always: `bytes` (file size), `sha256` (first 16 hex chars), `record_count`, `sources_count`. Plus task-specific: `assumed_fields` (for OCR / parsing tasks where some fields are inferred), `gaps` (entities or fields with no data and why).
+
+## 4. Return shape (strict)
+
+The temp-researcher returns to the parent exactly this text shape, and nothing else:
+
+```
+result_file: <absolute path>
+summary: <100–200 words covering what was found, structure of the result, any gaps or warnings the parent must know for downstream judgment>
+audit:
+  bytes: <n>
+  sha256: <first 16 hex chars>
+  record_count: <n>
+  sources_count: <n>
+  assumed_fields: <list or "none">
+  gaps: <list or "none">
+```
+
+**Do not paste any portion of the result file into the return.** The parent will read what it needs from disk, narrowly, when it needs it. Pasting contents into the return value defeats the entire purpose — the data ends up in the parent's context anyway.
+
+## 5. Hard rules
+
+- **Never return raw `tool_use_result` content** — search snippets, file dumps, OCR output. Distill into the artifact.
+- **Never skip schema validation.** A schema-invalid artifact silently corrupts the next stage.
+- **Never compress facts the spec requires.** Token-saving does not license dropping required-quality fields. Examples: source URLs for §10.5 news, `(assumed)` flags for inferred fields in transactions, audit hashes.
+- **Always flag uncertainty in the artifact.** OCR confidence, ticker disambiguation, search-window staleness, parsing fallbacks — surface as explicit fields the parent can act on.
+- **Always write to the path the parent specified.** Do not invent a different path "to be safe."
+- **Stop and ask** if the brief is missing schema or contradicts the spec excerpts. The spec wins.
+
+## 6. Common task templates
+
+### 6.1 Portfolio-report Phase A — news + events research
+
+- **Inputs**: cover-universe ticker list (from `transactions.db.open_lots` minus cash/cash-equivalents, plus extras from §10.6/§10.9), `$REPORT_RUN_DIR/report_context.json` (already initialized with empty `news` and `events_30d` fields), spec excerpts from `04-computations-to-static-snapshot.md` §10.5 and §10.6.
+- **Work**: WebSearch each ticker per §10.5 step 2 (current + previous report month; TW also 繁中); WebFetch promising URLs (no SERP-only items); identify dated catalysts per §10.5 step 4 (issuer IR, exchange filings/calendar, etc.); record per the §10.5 Records spec.
+- **Artifact**: `report_context.json["news"]`, `report_context.json["events"]`, and `report_context.json["research_coverage"]` populated per the §10.5 schema.
+- **Audit specifics**: `record_count` = total news items; `sources_count` = distinct URLs read; `gaps` = any cover-universe ticker for which `news` count is zero, with the audit string from §10.5 step 3 (`news_search:<ticker>:no_material_within_14d`) or §10.5 step 4 equivalent.
+
+### 6.2 Onboarding §6.2 — statement extraction
+
+- **Inputs**: input file path (PDF / CSV / image / HTML / XLSX), output JSON path (`/tmp/onboarding_<broker>_<ts>.json`), canonical schema excerpt from `transactions_agent_guidelines.md` §2 + §3.2.
+- **Work**: read or OCR the input; identify schema; map columns to canonical fields per `transactions_agent_guidelines.md` §3.2; emit a JSON array of canonical row objects; flag every defaulted / inferred field.
+- **Artifact**: `/tmp/onboarding_<broker>_<ts>.json` — JSON array, schema-valid against `_validate_canonical_dict()`.
+- **Audit specifics**: `record_count` = row count; `assumed_fields` = list of `{row_index, field, value, reason}` for every defaulted field (`bucket=Long Term (assumed)`, `currency=USD inferred from venue`, etc.); `gaps` = rows that could not be parsed and why.
+
+### 6.3 Generic web research
+
+- **Inputs**: a question, an output path, an expected schema (often `{findings: [...], sources: [...]}`).
+- **Work**: search, fetch, distill, write, validate.
+- **Artifact**: schema-valid JSON at the specified path.
+- **Audit specifics**: standard.
+
+## 7. Edge cases
+
+- **Empty result is a real outcome.** If a search window genuinely has no news for a ticker, write `news[ticker] = {items: [], sources: [], note: "no coverage in window"}`. The parent treats this as data, not failure.
+- **Partial completion.** If half the work succeeded and half hit a hard block (rate limit, invalid input row), write what completed, document the rest in `gaps`, and return. The parent decides whether to retry.
+- **Spec conflict.** If the parent's brief contradicts the spec excerpts (e.g. "skip the source URL field" when the spec requires it), refuse and surface the conflict. The spec wins.
+
+## 8. Per-runtime adaptation
+
+The contract is identical across runtimes. The *invocation primitive* differs.
+
+### Claude Code
+
+- Agent definition at `.claude/agents/temp-researcher.md` (Claude-Code-specific frontmatter — `name`, `description`, `tools`, `model`).
+- Parent invokes via the Task tool with `subagent_type="temp-researcher"` and the brief as the prompt.
+- Subagent has its own context; on completion it returns one final message which the parent receives as the Task tool result.
+- Result-file path travels through the brief (in) and the return (out); the artifact itself crosses on disk, not in the message.
+
+### OpenAI Codex / Codex CLI
+
+- No persistent agent-file convention; the brief itself selects the role. The parent invokes a fresh Codex session (or its native subagent primitive) with: this contract document inlined or referenced, plus the five-field brief.
+- The fresh session executes per §3, writes the artifact to disk, and replies with the §4 return shape.
+- The parent reads only the reply text; the fresh session's full transcript is not preserved.
+
+### Gemini CLI
+
+- Same pattern as Codex: a fresh session or subagent invocation receives this contract + the five-field brief.
+- Gemini's native context isolation accomplishes the same drop-on-exit behavior as Claude Code subagents.
+
+### Generic / hand-rolled
+
+- Any runtime that can spawn a unit of work in its own session and surface only a final message satisfies the contract. Examples: a CI job that runs an LLM call with a constrained system prompt and captures only stdout; a `claude -p '<brief>'` one-shot invocation; an orchestrated step in a workflow runner that pipes the brief into a model invocation and pipes only the final reply back.
+- Minimum primitive: ability to (a) hand the runner a brief, (b) let it run tools / produce a file at a specified path, (c) read back only its final response without retaining the intermediate tool-use trace.
+
+If a runtime *cannot* offer context isolation, the protocol still applies but degrades to `/compact` or session-end mechanisms (per `docs/context_drop_protocol.md` §3) — research-class work should still be batched and dropped at phase boundaries even without subagents.
+
+## 9. Why this contract matters
+
+Every byte of `tool_use_result` kept out of the parent's context is a byte multiplied by every remaining turn in the parent's session. A 50K-token search dump kept out saves cumulative input tokens proportional to (turns_remaining × 0.9) — at typical session lengths that is hundreds of thousands of tokens. The artifact written by the temp-researcher is durable; the search transcript that produced it is not load-bearing once the artifact exists. The contract is what makes that economy reliable and runtime-portable.

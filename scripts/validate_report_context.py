@@ -60,6 +60,13 @@ PLACEHOLDER_RE = re.compile(
 # Require `<` to be immediately followed by an optional `/` and a tag name (not `x < y` comparisons).
 _HTML_TAG_RE = re.compile(r"</?[a-zA-Z][a-zA-Z0-9:-]*")
 
+# theme_sector_html structural checks (see docs §10.4.2 "Bar row markup (HARD)").
+# `.bar-row` is a CSS grid: 96px / minmax(80px,1fr) / 84px. The renderer's
+# stylesheet (`generate_report.py:982-997`) defines `.bar` as `height:100%` with
+# no `display:block`, so an inline `<span>` collapses and `width:%` does nothing.
+_BAR_AS_SPAN_RE = re.compile(r'<span\b[^>]*\bclass="bar(?:\s|")', re.IGNORECASE)
+_BAR_ROW_OPEN_RE = re.compile(r'<div\s+class="bar-row"\s*>', re.IGNORECASE)
+
 
 def _load_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
@@ -165,6 +172,50 @@ def _validate_today_summary(context: Dict[str, Any], errors: List[str]) -> None:
         errors.append("today_summary contains placeholder text")
 
 
+def _check_bar_row_markup(html: str, errors: List[str]) -> None:
+    """Enforce §10.4.2 "Bar row markup (HARD)" structural invariants.
+
+    The classification (which themes / sectors exist, their weights, and the
+    bar-class color choice) is editorial — that's why the agent pre-renders
+    the HTML. But the bar-row scaffolding is mechanical: every row must use
+    `<div class="bar ...">` for the fill (never `<span>`, which is inline so
+    `width:%` is silently ignored), and the grid children must appear in
+    order `bar-label → bar-track → bar-value` so the wide center column
+    holds the track instead of the 84px right gutter.
+    """
+    if _BAR_AS_SPAN_RE.search(html):
+        errors.append(
+            'theme_sector_html uses `<span class="bar ...">` for the fill; '
+            'must be `<div class="bar ...">` — `.bar` has no `display:block`, '
+            "so spans collapse to zero width and the colored bar disappears"
+        )
+
+    opens = [m.start() for m in _BAR_ROW_OPEN_RE.finditer(html)]
+    if not opens:
+        return
+    boundaries = opens + [len(html)]
+    for idx in range(len(opens)):
+        chunk = html[boundaries[idx]:boundaries[idx + 1]]
+        label_pos = chunk.find('class="bar-label"')
+        track_pos = chunk.find('class="bar-track"')
+        # `bar-value` may carry modifier classes (e.g. `pos-txt`) — match the
+        # class-name prefix without the closing quote.
+        value_pos = chunk.find('class="bar-value')
+        if min(label_pos, track_pos, value_pos) < 0:
+            errors.append(
+                f"theme_sector_html bar-row #{idx + 1} missing one of "
+                f"bar-label / bar-track / bar-value child"
+            )
+            continue
+        if not (label_pos < track_pos < value_pos):
+            errors.append(
+                f"theme_sector_html bar-row #{idx + 1} children must appear "
+                f"in order bar-label → bar-track → bar-value (the row is a "
+                f"3-column CSS grid 96px / 1fr / 84px; any other order forces "
+                f"the track into the 84px right gutter)"
+            )
+
+
 def _validate_theme_sector(
     context: Dict[str, Any],
     cover_tickers: Sequence[str],
@@ -182,6 +233,7 @@ def _validate_theme_sector(
                 errors.append(f"theme_sector_html missing required markup token {token!r}")
         if _has_placeholder(html_text):
             errors.append("theme_sector_html contains placeholder text")
+        _check_bar_row_markup(html_text, errors)
 
     audit = context.get("theme_sector_audit")
     if not isinstance(audit, dict):
