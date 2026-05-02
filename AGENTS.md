@@ -4,9 +4,13 @@
 
 Refer to `SETTINGS.md` for the user's language, full investment style, and strategy.
 
+## Multi-account model
+
+This repo uses a multi-account layout: each account owns its files under `accounts/<name>/` (e.g. `accounts/default/SETTINGS.md`, `accounts/default/transactions.db`, `accounts/default/reports/`). Pass `--account <name>` to any script to target a specific account; omitting the flag resolves via `accounts/.active` → `accounts/default/` → error. The shared price/FX cache (`market_data_cache.db`) and `demo/` directory live at the repo root and are never account-scoped. Agents running non-interactively MUST invoke `python scripts/transactions.py account migrate --yes` before any other script that reads SETTINGS.md or transactions.db. See `docs/onboarding_agent_guidelines.md` for the full migration and onboarding flow.
+
 ## New users — onboarding
 
-If `SETTINGS.md` or `transactions.db` is missing, or the user says "help me get started" / "onboard me" / "import my statement" / hands you a transaction file in any format (PDF, CSV, JSON, XLSX, HTML, screenshot, pasted text), follow `docs/onboarding_agent_guidelines.md` end-to-end. That doc handles state detection, settings bootstrap, `db init`, format conversion, the confirm-before-write contract, and verify. Once onboarding is done, route to the three normal workflows below.
+If `accounts/<active>/SETTINGS.md` or `accounts/<active>/transactions.db` is missing (or the legacy root layout is detected), or the user says "help me get started" / "onboard me" / "import my statement" / hands you a transaction file in any format (PDF, CSV, JSON, XLSX, HTML, screenshot, pasted text), follow `docs/onboarding_agent_guidelines.md` end-to-end. That doc handles state detection, settings bootstrap, `db init`, format conversion, the confirm-before-write contract, and verify. Once onboarding is done, route to the three normal workflows below.
 
 ## "What can I do here?" — capability menu
 

@@ -29,7 +29,7 @@ Read this file first, then read **every** part file below in order on every port
 - Phase B drafts all alerts, watchlists, adjustments, action items, scoring, mandatory `trading_psychology`, Strategy readout, and summary while continuously anchoring to `SETTINGS.md` `## Investment Style And Strategy`.
 - Phase C switches hat to a senior PM reviewer, annotates issues, reviews `trading_psychology`, and sends serious defects back to the relevant earlier phase before render.
 - Phase D renders one self-contained HTML file only after `scripts/validate_report_context.py --snapshot "$REPORT_RUN_DIR/report_snapshot.json" --context "$REPORT_RUN_DIR/report_context.json"` passes, runs Appendix A self-checks, **deletes `$REPORT_RUN_DIR`** (`rm -rf`), and replies with the absolute HTML path plus required audit notes.
-- `SETTINGS.md` and `transactions.db` are read-only unless the user explicitly asks to edit them.
+- `SETTINGS.md` and `transactions.db` (resolved from `accounts/<active>/` via `--account <name>` or the `accounts/.active` pointer; see §4) are read-only unless the user explicitly asks to edit them.
 
 ### Intermediate files and cleanup (HARD)
 
@@ -47,11 +47,11 @@ upstream snapshot — it does no aggregation, no FX conversion, no pacing /
 heat scoring / special checks, and does not auto-run analytics. Every numeric
 or structural field is materialized once, in this order:
 
-1. `python scripts/fetch_prices.py --output "$REPORT_RUN_DIR/prices.json"` — populates
+1. `python scripts/fetch_prices.py --account default --output "$REPORT_RUN_DIR/prices.json"` — populates
    per-ticker latest-price metadata + `prices.json["_fx"]` (§8 + §9.0).
-2. `python scripts/fetch_history.py --merge-into "$REPORT_RUN_DIR/prices.json"` — adds
+2. `python scripts/fetch_history.py --account default --merge-into "$REPORT_RUN_DIR/prices.json"` — adds
    `_history` + `_fx_history` for the profit-panel boundary lookups (§10.1.5).
-3. `python scripts/transactions.py snapshot --prices "$REPORT_RUN_DIR/prices.json"
+3. `python scripts/transactions.py snapshot --account default --prices "$REPORT_RUN_DIR/prices.json"
    --output "$REPORT_RUN_DIR/report_snapshot.json"` — runs the canonical math
    (`portfolio_snapshot.compute_snapshot`): aggregates, totals, FX-converted
    market value / P&L, book pacing, risk-heat scoring, §11 special checks,
@@ -74,16 +74,17 @@ or structural field is materialized once, in this order:
    not** re-derive any numeric field that the snapshot already exposes. The
    entire context must be linted with `python scripts/validate_report_context.py
    --snapshot "$REPORT_RUN_DIR/report_snapshot.json" --context "$REPORT_RUN_DIR/report_context.json"` before render.
-5. `python scripts/generate_report.py --snapshot "$REPORT_RUN_DIR/report_snapshot.json"
-   --context "$REPORT_RUN_DIR/report_context.json" --settings SETTINGS.md` — projects the
-   snapshot + context onto the §10 HTML.
+5. `python scripts/generate_report.py --account default --snapshot "$REPORT_RUN_DIR/report_snapshot.json"
+   --context "$REPORT_RUN_DIR/report_context.json"` — projects the
+   snapshot + context onto the §10 HTML. (Omitting `--account` resolves the active account
+   from `accounts/.active`; pass `--account <name>` to target a specific account.)
 
 The renderer's legacy `--prices --db` path remains for backwards compatibility
 but emits a deprecation warning; new agent runs must use `--snapshot`.
 
 ### Demo ledger for report generation
 
-To exercise the **same pipeline** without reading or writing the user’s root
+To exercise the **same pipeline** without reading or writing the user’s active-account
 `transactions.db`, use **`demo/`**: seed `demo/transactions_history.json` →
 `demo/transactions.db` via `python demo/bootstrap_demo_ledger.py --apply`.
 There is no demo report pipeline script and no committed demo editorial JSON; context is authored per run under `$REPORT_RUN_DIR` like production.
@@ -92,7 +93,7 @@ run the normal portfolio-report workflow, pass **`--db demo/transactions.db`**
 to `fetch_prices.py`, `fetch_history.py`, and `transactions.py snapshot`, and
 pass **`--cache demo/market_data_cache.db`** to **`fetch_history.py` and
 `fill_history_gap.py`** so demo fetches do not read or write the root
-`market_data_cache.db`. Then author the context from the snapshot, latest
+`market_data_cache.db`. (Do not use `--account` for demo runs; the explicit `--db`/`--settings` path is the intentional escape hatch.) Then author the context from the snapshot, latest
 public data, `SETTINGS.md`, and these guidelines exactly as for a production
 report. Prefer writing deliverable demo HTML under **`demo/reports/`** (same
 filename pattern) instead of `reports/` so user production reports stay

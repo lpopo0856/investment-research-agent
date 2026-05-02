@@ -6,8 +6,8 @@ something like "help me get started", "onboard me", "I'm new — how do I
 use this", "import my transactions", or hands you a statement file.
 
 The goal: take a cold-start user from an empty repo to a working
-`SETTINGS.md` + `transactions.db` that the research / report / transaction
-workflows in `README.md` can run against.
+`accounts/default/SETTINGS.md` + `accounts/default/transactions.db` that
+the research / report / transaction workflows in `README.md` can run against.
 
 This document does **not** replace `docs/transactions_agent_guidelines.md`.
 Once the DB exists and the user is recording flows, that file is the
@@ -20,15 +20,26 @@ authoritative contract. Onboarding is the on-ramp.
 Trigger on any of:
 
 - Repo state shows no `SETTINGS.md` and/or no `transactions.db` at the
-  repo root.
+  repo root **and** no `accounts/` directory, OR `accounts/` exists with
+  no account directories inside it.
 - User asks to "set up", "onboard", "get started", "import my history",
   "load my brokerage statement", "I'm new here".
 - User pastes / attaches a transaction file in any format (PDF, CSV, XLSX,
   JSON, HTML export, screenshot, plain text email).
 
-If `transactions.db` already exists and has rows, **do not** re-run
-onboarding. Route to `docs/transactions_agent_guidelines.md` §3
-(natural-language workflow) or §4 (bulk ingestion) instead.
+For net-new users (no root files, no `accounts/`), onboarding creates
+`accounts/default/` directly — **never** the legacy root layout. New users
+skip migration entirely; the migration path is only for users who already
+have root-level `SETTINGS.md` / `transactions.db` from an earlier version.
+
+> **Non-interactive agents (C-8):** Agents running non-interactively MUST
+> invoke `python scripts/transactions.py account migrate --yes` BEFORE any
+> other script that reads SETTINGS.md or transactions.db.
+
+If `transactions.db` already exists and has rows (in `accounts/<name>/` or
+at the root — see §3), **do not** re-run onboarding. Route to
+`docs/transactions_agent_guidelines.md` §3 (natural-language workflow) or
+§4 (bulk ingestion) instead.
 
 ## 2. Hard safety rules
 
@@ -60,14 +71,34 @@ onboarding too.
 
 ## 3. Detection — what state is the repo in?
 
-Before doing anything, check the four states. Run these as plain shell:
+Before doing anything, use `detect_legacy_layout()` logic to classify the
+repo into one of four states. Run these as plain shell:
 
 ```sh
+ls accounts/.active 2>/dev/null
+ls accounts/ 2>/dev/null
 ls SETTINGS.md transactions.db 2>/dev/null
 python scripts/transactions.py db stats 2>/dev/null
 ```
 
 Map the result to one of:
+
+| Detector state | Condition | Action |
+|----------------|-----------|--------|
+| **`clean`** | `accounts/` exists with ≥ 1 account directory; no root `SETTINGS.md` / `transactions.db` | Normal operation — check `accounts/.active` for the active account, then inspect that account's DB |
+| **`migrate`** | Root `SETTINGS.md` or `transactions.db` present AND `accounts/` does not exist (or has no account dirs) | DO NOT onboard; trigger migration via `account migrate --yes` (or any interactive script). See §N. |
+| **`partial`** | Both root files AND `accounts/` dirs exist | Warn the user of the dual-source-of-truth; run migration or let them sort it out manually before proceeding |
+| **`demo_only_at_root`** | Only `demo/` exists at root; no user account files | New user — continue this guide, targeting `accounts/default/` |
+
+For the common **new-user case** (no root files, no `accounts/`), map to
+`clean` (or `demo_only_at_root`) and proceed: create `accounts/default/`
+in §4 → §5 → §6.
+
+For the **existing-user case** (`migrate` state), stop here and follow §N
+before any other step.
+
+Within a clean `accounts/` setup, check the per-account DB state exactly
+as before:
 
 | State | `SETTINGS.md` | `transactions.db` | Action |
 |-------|---------------|-------------------|--------|
@@ -81,15 +112,18 @@ State the detected state to the user in one sentence before proceeding.
 
 ## 4. Settings bootstrap
 
-If `SETTINGS.md` does not exist (or exists but the user wants to
+If `accounts/default/SETTINGS.md` does not exist (or the user wants to
 revisit it before continuing), delegate to
 `docs/settings_agent_guidelines.md`. That doc handles the interview
-end-to-end: file bootstrap from the template, light-field defaults
-(`Language`, `Base currency`, time zone), the
-`Investment Style And Strategy` interview across temperament / sizing /
+end-to-end: file bootstrap from the template (`SETTINGS.example.md` at
+repo root), light-field defaults (`Language`, `Base currency`, time zone),
+the `Investment Style And Strategy` interview across temperament / sizing /
 horizon / discipline / contrarian appetite / hype tolerance / off-limits
-/ decision style, the draft-and-confirm step, and the API keys
-deferral.
+/ decision style, the draft-and-confirm step, and the API keys deferral.
+
+All writes target `accounts/default/SETTINGS.md` for net-new users.
+`account create default` (§5 below) sets up the directory and copies
+`SETTINGS.example.md` into it before this step.
 
 Onboarding does not duplicate the interview — it hands off **after** the
 posture in §4.1 is satisfied (user has been given a clear chance to write
@@ -97,7 +131,7 @@ strategy in their own words first), then proceeds to §5 (DB init) once the
 user signals the settings step is complete (`done`, `next`, `let's continue`,
 or the settings doc itself returns).
 
-`SETTINGS.md` is gitignored. The agent never commits it.
+`accounts/default/SETTINGS.md` is gitignored. The agent never commits it.
 
 ### 4.1 Investment strategy — user writes first (strong default)
 
@@ -138,18 +172,31 @@ rails, or off-limits they did not state (see §2 rule 5 and §8).
 
 ## 5. Database init
 
-If `transactions.db` is missing:
+First, create the account directory if it does not exist:
 
 ```sh
-python scripts/transactions.py db init
+python scripts/transactions.py account create default
 ```
 
-This is idempotent and creates the schema (event log + materialized
+This scaffolds `accounts/default/` (copying `SETTINGS.example.md` →
+`accounts/default/SETTINGS.md`), creates the `reports/` subdirectory, and
+runs `db init` to create `accounts/default/transactions.db`. It also writes
+`accounts/.active` = `default` so subsequent commands resolve without
+`--account`.
+
+If the directory already exists but `transactions.db` is missing, run init
+directly:
+
+```sh
+python scripts/transactions.py db init --account default
+```
+
+`db init` is idempotent and creates the schema (event log + materialized
 `open_lots` / `cash_balances` + `schema_meta`). No backup needed; nothing
 exists yet.
 
-After init, run `python scripts/transactions.py db stats` and show the
-user the empty result so they see the schema is in place.
+After init, run `python scripts/transactions.py db stats --account default`
+and show the user the empty result so they see the schema is in place.
 
 ## 6. Import — accept any format
 
@@ -272,10 +319,11 @@ batch:
 ### 6.4 Write procedure
 
 ```sh
-cp transactions.db transactions.db.bak       # only if the DB has rows
-python scripts/transactions.py db import-json --input /tmp/onboarding_<...>.json
-python scripts/transactions.py verify
-python scripts/transactions.py db stats
+cp accounts/default/transactions.db accounts/default/transactions.db.bak   # only if the DB has rows
+python scripts/transactions.py db import-json \
+    --input /tmp/onboarding_<...>.json --account default
+python scripts/transactions.py verify --account default
+python scripts/transactions.py db stats --account default
 ```
 
 `db init` already ran in §5, so `db import-json` writes against the live
@@ -283,18 +331,25 @@ schema and the auto-rebuild populates `open_lots` + `cash_balances`. On
 verify failure, restore the backup (if one was taken) and surface the
 error — do not retry silently.
 
-For very small inputs (≤ 5 rows) prefer one `db add --json '<...>'` per
-row; the per-row confirmation trail is easier to read.
+For very small inputs (≤ 5 rows) prefer one
+`db add --json '<...>' --account default` per row; the per-row confirmation
+trail is easier to read.
 
 ### 6.5 Iteration-2 `HOLDINGS.md` migration
+
+> **Note:** This section covers the **old** one-time migration from the
+> iteration-2 `HOLDINGS.md` format into `transactions.db`. It is distinct
+> from the **account migration** (`account migrate`) described in §N, which
+> moves root-level files into the `accounts/` layout.
 
 If the repo contains a non-empty `HOLDINGS.md`, prefer the dedicated
 migration path:
 
 ```sh
-python scripts/transactions.py db init
-python scripts/transactions.py migrate --holdings HOLDINGS.md
-python scripts/transactions.py verify
+python scripts/transactions.py db init --account default
+python scripts/transactions.py migrate \
+    --holdings HOLDINGS.md --account default
+python scripts/transactions.py verify --account default
 rm HOLDINGS.md HOLDINGS.md.bak HOLDINGS.example.md   # only after verify is clean
 ```
 
@@ -313,13 +368,15 @@ to `docs/transactions_agent_guidelines.md` §3.
 
 After successful onboarding:
 
-1. Run `python scripts/transactions.py db stats` and show the totals.
+1. Run `python scripts/transactions.py db stats --account default` and
+   show the totals.
 2. Remind the user of the three normal workflows from `README.md`:
    research questions, portfolio report, transaction recording.
-3. Mention that `SETTINGS.md`, `transactions.db`, and generated reports
-   are gitignored and stay local. Portfolio-report runs also keep pipeline
-   JSON under `/tmp` only (`docs/portfolio_report_agent_guidelines.md` —
-   Intermediate files); nothing ephemeral belongs in the repo root.
+3. Mention that `accounts/default/SETTINGS.md`, `accounts/default/transactions.db`,
+   and generated reports are gitignored and stay local. Portfolio-report
+   runs also keep pipeline JSON under `/tmp` only
+   (`docs/portfolio_report_agent_guidelines.md` — Intermediate files);
+   nothing ephemeral belongs in the repo root.
 4. Clean up any `/tmp/` files the agent wrote during the session.
 
 Do **not** offer to generate a portfolio report immediately — that
@@ -341,3 +398,92 @@ explicitly per `README.md` §2.
 - Skipping the confirmation step "because it's only setup". The
   append-only invariant and the `yes`-before-write rule apply from
   transaction one.
+
+## N. Multi-account migration
+
+This section applies to **existing users** whose repo has the pre-multi-account
+layout (root-level `SETTINGS.md` / `transactions.db` / `reports/`). It does
+NOT apply to net-new users, who are routed to `accounts/default/` directly via
+§4 – §6.
+
+### N.1 The four detector states
+
+The migration detector (`detect_legacy_layout()`) maps the repo into one
+of four states:
+
+| State | Meaning | Agent action |
+|-------|---------|-------------|
+| **`clean`** | `accounts/` exists with ≥ 1 account directory; no root user files | Normal multi-account operation. No migration needed. |
+| **`migrate`** | Root `SETTINGS.md` or `transactions.db` present AND `accounts/` has no account dirs | Migration required before any other operation. |
+| **`partial`** | Both root files AND `accounts/` account dirs exist | Dual-source-of-truth warning. Resolve before continuing. |
+| **`demo_only_at_root`** | Only `demo/` at root; no user account files | Treated as a fresh install. Proceed to §4. |
+
+### N.2 Migration UX — the one-shot prompt
+
+When any script (`generate_report.py`, `transactions.py`,
+`fetch_prices.py`, `fetch_history.py`, `fill_history_gap.py`,
+`portfolio_snapshot.py`, `report_archive.py`, `report_accuracy.py`,
+`validate_report_context.py`) detects the `migrate` state, it prints a
+plan and asks for confirmation before touching any file:
+
+```
+$ python scripts/generate_report.py
+⚠  Detected pre-multi-account layout.
+   I will move:
+     SETTINGS.md       → accounts/default/SETTINGS.md
+     transactions.db   → accounts/default/transactions.db
+     reports/          → accounts/default/reports/
+   And set accounts/.active = default.
+   (market_data_cache.db stays at root, shared.)
+   Backup written to .pre-migrate-backup/.
+Migrate now? [y/N]: y
+✓ Migrated. Verify passed. Continuing with --account default.
+```
+
+What migration does on `y`:
+
+1. Moves `SETTINGS.md`, `transactions.db`, `transactions.db.bak` (if
+   present), and `reports/` into `accounts/default/`.
+2. Writes `accounts/.active` = `default`.
+3. Writes `.pre-migrate-backup/` with copies of every moved file plus a
+   `migration-manifest.json` (source → target map + UTC timestamp).
+4. Runs `python scripts/transactions.py verify --account default` and
+   requires exit 0.
+5. Continues the original command (e.g., generates the report) without
+   re-prompting.
+
+**`market_data_cache.db` stays at the repo root — it is shared across all
+accounts and is never moved.**
+
+### N.3 Refusal cases
+
+- **On `N` (or Ctrl-C):** exits with a non-zero status. No filesystem
+  changes are made.
+- **Non-TTY / non-interactive:** the script refuses to proceed and prints
+  an error: `"Detected legacy layout. Run 'python scripts/transactions.py account migrate --yes' to migrate non-interactively."` Agents running
+  in CI or unattended mode must pass `--yes` explicitly (the C-8 rule).
+- **Pre-existing `.pre-migrate-backup/`:** the script refuses and prints
+  an error: `"Backup directory .pre-migrate-backup/ already exists. Remove it or inspect it before re-running migration."` This prevents a
+  second accidental migration from overwriting a prior backup.
+
+### N.4 Account management subcommands
+
+After migration (or for users setting up multiple accounts from scratch):
+
+```sh
+# List all accounts; marks the active one with (*)
+python scripts/transactions.py account list
+
+# Switch the active account
+python scripts/transactions.py account use <name>
+
+# Create a new account (scaffolds directory + SETTINGS.md from template + db init)
+python scripts/transactions.py account create <name>
+
+# Run migration non-interactively (agents / CI)
+python scripts/transactions.py account migrate --yes
+```
+
+Account names follow the pattern `^[a-z0-9][a-z0-9_-]{0,31}$`. Reserved
+names: `default`, `demo` (the `demo/` directory is intentionally kept at
+the repo root and is NOT under `accounts/`).

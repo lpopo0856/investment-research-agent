@@ -27,6 +27,9 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from account import autodetect_and_migrate_or_exit
+
 
 ACTION_BUCKETS = ("must_do", "may_do", "avoid", "need_data")
 ACTIONABLE_ACTIONS = {
@@ -694,6 +697,7 @@ def _cli(argv: Optional[List[str]] = None) -> argparse.Namespace:
 
 
 def main(argv: Optional[List[str]] = None) -> int:
+    autodetect_and_migrate_or_exit()
     args = _cli(argv)
     if not args.snapshot.exists():
         print(f"ERROR: snapshot not found: {args.snapshot}", file=sys.stderr)

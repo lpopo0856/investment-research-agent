@@ -6,7 +6,13 @@
 
 ## New users
 
-If `SETTINGS.md` or `transactions.db` is missing, or the user asks to get started / onboard / import a statement in any format (PDF, CSV, JSON, XLSX, screenshot, pasted text), follow `docs/onboarding_agent_guidelines.md`. It is the brand-agnostic on-ramp; once the DB has rows, route to `docs/transactions_agent_guidelines.md`.
+If `accounts/<active>/SETTINGS.md` or `accounts/<active>/transactions.db` is missing (or the legacy root `SETTINGS.md` / `transactions.db` is present without an `accounts/` directory), or the user asks to get started / onboard / import a statement in any format (PDF, CSV, JSON, XLSX, screenshot, pasted text), follow `docs/onboarding_agent_guidelines.md`. It is the brand-agnostic on-ramp; once the DB has rows, route to `docs/transactions_agent_guidelines.md`.
+
+**Account detection checklist:**
+- If `accounts/` exists and contains at least one subdirectory → multi-account layout is active; use `--account` / `accounts/.active` / `accounts/default/` resolution order.
+- If root `SETTINGS.md` or `transactions.db` exists and `accounts/` is absent → legacy layout; any script will prompt migration to `accounts/default/`. Net-new users are never prompted — onboarding writes directly to `accounts/default/`.
+
+**Agent migration recipe (C-8):** Agents running non-interactively MUST invoke `python scripts/transactions.py account migrate --yes` BEFORE any other script that reads SETTINGS.md or transactions.db.
 
 ## Help — capability menu
 
@@ -14,7 +20,7 @@ If the user asks "help" / "what can I do here" / "now what" / similar overview r
 
 ## Settings interview
 
-If the user asks to set up / edit / review `SETTINGS.md` ("walk me through my settings", "set up my strategy", "review my SETTINGS", "change my base currency"), or onboarding §4 delegates to it, follow `docs/settings_agent_guidelines.md`.
+If the user asks to set up / edit / review `SETTINGS.md` ("walk me through my settings", "set up my strategy", "review my SETTINGS", "change my base currency"), or onboarding §4 delegates to it, follow `docs/settings_agent_guidelines.md`. The settings file for the active account lives at `accounts/<active>/SETTINGS.md` (not at the repo root).
 
 ## Context drop (token economy)
 
@@ -22,4 +28,4 @@ Multi-stage workflows must minimize cumulative input tokens by keeping research-
 
 ## Temp files
 
-All temporary files (smoke-test inputs, scratch JSON, intermediate prices/context fixtures, regen output for verification, etc.) **MUST** be written under `/tmp/` — never inside the repository working tree. Portfolio-report pipeline intermediates — including `prices.json` (with merged `_history` / `_fx_history`), `report_snapshot.json`, `report_context.json`, `fill_history_gap.py --merge-into` targets, and optional `--ui-dict` overlay JSON — **must** live under a single per-run directory such as `/tmp/investments_portfolio_report_<RUN>/`; after the HTML is written and checks pass, remove that directory (`rm -rf`). Production HTML goes under `reports/`; **demo-ledger** runs additionally use `--cache demo/market_data_cache.db` on `fetch_history.py` / `fill_history_gap.py` (default cache is root `market_data_cache.db`) and should write the final HTML under **`demo/reports/`** so demo output stays under `demo/`. Canonical user-local artifacts live at the repo root (`SETTINGS.md`, `transactions.db` with append-only log plus materialized `open_lots` / `cash_balances`, `reports/<dated>_portfolio_report.html`); tracked source and contracts live under `scripts/` and `docs/` (see `README.md`). Anything ephemeral goes to `/tmp` and is cleaned up after use.
+All temporary files (smoke-test inputs, scratch JSON, intermediate prices/context fixtures, regen output for verification, etc.) **MUST** be written under `/tmp/` — never inside the repository working tree. Portfolio-report pipeline intermediates — including `prices.json` (with merged `_history` / `_fx_history`), `report_snapshot.json`, `report_context.json`, `fill_history_gap.py --merge-into` targets, and optional `--ui-dict` overlay JSON — **must** live under a single per-run directory such as `/tmp/investments_portfolio_report_<RUN>/`; after the HTML is written and checks pass, remove that directory (`rm -rf`). Production HTML goes under `accounts/<name>/reports/`; **demo-ledger** runs additionally use `--cache demo/market_data_cache.db` on `fetch_history.py` / `fill_history_gap.py` (default cache is root `market_data_cache.db`) and should write the final HTML under **`demo/reports/`** so demo output stays under `demo/`. Canonical user-local artifacts live under `accounts/<name>/` (`SETTINGS.md`, `transactions.db` with append-only log plus materialized `open_lots` / `cash_balances`, `reports/<dated>_portfolio_report.html`); active account is selected by `--account` or `accounts/.active` (default: `default`). The shared price/FX cache (`market_data_cache.db`) and `demo/` directory remain at the repo root and are NOT account-scoped. Tracked source and contracts live under `scripts/` and `docs/` (see `README.md`). Anything ephemeral goes to `/tmp` and is cleaned up after use.

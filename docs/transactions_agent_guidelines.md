@@ -1,7 +1,37 @@
 # Transactions Ledger — Agent Guidelines
 
-`transactions.db` is the **only** record of the portfolio. It is a local
-SQLite database stored at the repo root and gitignored. It captures both:
+## Active-account resolution
+
+Every `transactions.py` subcommand resolves the target account in this
+priority order:
+
+1. **Explicit flag:** `--account <name>` on the command line.
+2. **Pointer file:** `accounts/.active` (single line containing the active
+   account name). Write it with `account use <name>` or `echo default > accounts/.active`.
+3. **Fallback:** `accounts/default/` if it exists and `accounts/.active` is
+   absent.
+4. **Hard error** if none of the above resolves AND no legacy root layout
+   is present.
+
+Useful account-management subcommands:
+
+```sh
+python scripts/transactions.py account list          # list accounts; marks active with (*)
+python scripts/transactions.py account use <name>    # set accounts/.active
+python scripts/transactions.py account create <name> # scaffold new account + db init
+python scripts/transactions.py account migrate --yes # non-interactive root-layout migration
+```
+
+When the active account is `default`, omitting `--account` is equivalent to
+passing `--account default`. For clarity in the examples below, `--account
+<name>` is shown explicitly wherever the target account matters. Demo
+invocations continue to use explicit `--db demo/transactions.db
+--settings demo/SETTINGS.md` paths unchanged.
+
+---
+
+`transactions.db` is the **only** record of the portfolio for each account.
+It lives at `accounts/<name>/transactions.db` (gitignored) and captures both:
 
 1. The **append-only event log** of every flow (BUY / SELL / DEPOSIT /
    WITHDRAW / DIVIDEND / FEE / FX_CONVERT / ADJUST / REVERSAL), including
@@ -33,8 +63,9 @@ expensive.
   into the conversation to "see what's there." Use `db stats` for shape
   (counts by type, date range), `transactions.py snapshot` /
   `transactions.py analytics` / `transactions.py pnl` for the canonical
-  compact analytical views, or narrow SQL (`sqlite3 transactions.db
-  "SELECT … LIMIT 50"`) for targeted lookups.
+  compact analytical views, or narrow SQL
+  (`sqlite3 accounts/<name>/transactions.db "SELECT … LIMIT 50"`)
+  for targeted lookups.
 - **Bulk-import preview is path + sample, not full row list.** For batches
   > 20 rows, show counts, the `/tmp/...json` path, and `jq '.[0:5]' <path>`
   — same rule as `docs/onboarding_agent_guidelines.md` §6.3.
@@ -237,11 +268,14 @@ acknowledgement.
 
 ### 3.7 Write procedure
 
-1. `cp transactions.db transactions.db.bak`.
-2. INSERT each transaction via `python scripts/transactions.py db add --json '<canonical-json>'`
+1. `cp accounts/<name>/transactions.db accounts/<name>/transactions.db.bak`
+   (omit if using the active account and the DB is empty).
+2. INSERT each transaction via
+   `python scripts/transactions.py db add --json '<canonical-json>' --account <name>`
    in the order the user listed them (or `db import-csv` / `db import-json`
    for a batch file). Each call auto-rebuilds the balance tables.
-3. Run `python scripts/transactions.py verify`. Must exit 0:
+   Omitting `--account` uses the active account from `accounts/.active`.
+3. Run `python scripts/transactions.py verify --account <name>`. Must exit 0:
    `OK: replay matches open_lots + cash_balances.`
 4. Reply with the inserted transaction `id`s and a one-line summary, e.g.
    `Inserted txn id=87 (NVDA BUY 30 @ $185.00); open_lots +1, USD cash 50000 → 44450.`
@@ -355,11 +389,11 @@ If you are upgrading from iteration 2 (where `HOLDINGS.md` was the
 projected ledger) and need to seed the DB:
 
 ```sh
-python scripts/transactions.py db init        # create transactions.db schema
-python scripts/transactions.py migrate \
-    --holdings HOLDINGS.md                    # synthesize BUY/DEPOSIT records
-python scripts/transactions.py verify         # confirm replay matches balance tables
-rm HOLDINGS.md HOLDINGS.md.bak HOLDINGS.example.md   # the file is no longer needed
+python scripts/transactions.py db init --account default        # create the schema
+python scripts/transactions.py migrate --account default \
+    --holdings HOLDINGS.md                                       # synthesize BUY/DEPOSIT records
+python scripts/transactions.py verify --account default         # confirm replay matches balance tables
+rm HOLDINGS.md HOLDINGS.md.bak HOLDINGS.example.md               # the file is no longer needed
 ```
 
 `migrate` produces one synthetic `BUY` per existing lot and a single
@@ -381,9 +415,12 @@ repo root. The standalone command below is for inspection/debugging; write
 
 ```
 python scripts/transactions.py profit-panel \
-    --db transactions.db --prices /tmp/investments_debug_prices.json \
-    --settings SETTINGS.md --output /tmp/investments_debug_profit_panel.json
+    --account default --prices /tmp/investments_debug_prices.json \
+    --output /tmp/investments_debug_profit_panel.json
 ```
+
+Omitting `--account` uses the active account. Explicit `--db` / `--settings`
+flags still work as an escape hatch and override the account-resolved paths.
 
 Periods covered: `1D / 7D / MTD / 1M / YTD / 1Y / ALLTIME`.
 
@@ -422,8 +459,8 @@ standalone command is for inspection/debugging or intentional override review:
 
 ```
 python scripts/transactions.py analytics \
-    --db transactions.db --prices /tmp/investments_debug_prices.json \
-    --settings SETTINGS.md --output /tmp/investments_debug_transaction_analytics.json
+    --account default --prices /tmp/investments_debug_prices.json \
+    --output /tmp/investments_debug_transaction_analytics.json
 ```
 
 The output is a JSON object with three top-level groups (`performance_attribution`,
@@ -453,7 +490,7 @@ unrealized P&L (open lots vs latest price) are produced by:
 
 ```
 python scripts/transactions.py pnl \
-    --db transactions.db --prices /tmp/investments_debug_prices.json --settings SETTINGS.md
+    --account default --prices /tmp/investments_debug_prices.json
 ```
 
 In the automated report pipeline this output is embedded by
@@ -463,16 +500,20 @@ is for inspection/debugging; do not treat it as an extra report step.
 
 ## 8. Verify, rebuild, dump, stats, self-check
 
-- `python scripts/transactions.py verify` — replay the log, compare to
-  the materialized `open_lots` + `cash_balances`. Drift means something
-  wrote the balance tables outside the rebuild path.
-- `python scripts/transactions.py db rebuild` — force-rebuild balance
-  tables from a fresh log replay (the import path runs this automatically;
-  this is the manual escape hatch).
-- `python scripts/transactions.py db dump` — emit every row as JSON
-  (suitable for ad-hoc analysis or backup).
-- `python scripts/transactions.py db stats` — count by type, distinct
-  tickers, date range, schema version.
+All commands below resolve the account via `--account <name>`, the
+`accounts/.active` pointer, or the `default` fallback. Omit `--account`
+to operate on the active account.
+
+- `python scripts/transactions.py verify [--account <name>]` — replay the
+  log, compare to the materialized `open_lots` + `cash_balances`. Drift
+  means something wrote the balance tables outside the rebuild path.
+- `python scripts/transactions.py db rebuild [--account <name>]` — force-
+  rebuild balance tables from a fresh log replay (the import path runs this
+  automatically; this is the manual escape hatch).
+- `python scripts/transactions.py db dump [--account <name>]` — emit every
+  row as JSON (suitable for ad-hoc analysis or backup).
+- `python scripts/transactions.py db stats [--account <name>]` — count by
+  type, distinct tickers, date range, schema version.
 - `python scripts/transactions.py self-check` — unit tests for parser,
   replay, P&L math, period boundaries, and the DB import paths
   (md / csv / json / db_add / load_holdings_lots round-trip). Treat

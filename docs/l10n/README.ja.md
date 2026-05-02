@@ -20,6 +20,8 @@
 
 > 「始め方を教えて。」*（または証券会社の残高・取引明細などを、PDF／CSV／JSON／XLSX／画面キャプチャ／貼り付けテキストのどれでも添えて「オンボーディングして」と伝える）*
 
+スクリプトはアクティブな口座を自動的に使います（コマンドラインの `--account <name>` または `accounts/.active` で指定。既定は `accounts/default/`）。
+
 **ここで何ができるか知りたい？**
 
 > 「ここで何ができる？」
@@ -52,9 +54,29 @@
 
 データを書き換える変更は、進める前に必ずあなたへの確認があります。普段どおり日本語で頼んでください。エージェントが `docs/` の契約に沿って最後まで処理します。
 
+## マルチアカウント
+
+各口座は `accounts/<name>/` 以下に独自の設定・取引台帳・レポートを持ちます（例：`accounts/default/SETTINGS.md`、`accounts/default/transactions.db`、`accounts/default/reports/`）。
+
+**選択の優先順位**（高い順）：
+1. コマンドラインの `--account <name>`
+2. ポインタファイル `accounts/.active`（1 行に口座名）
+3. 存在すれば `accounts/default/`
+
+**ルートレイアウトの移行：** リポジトリのルートに `SETTINGS.md` または `transactions.db` があり、`accounts/` ディレクトリがない場合、スクリプトはレガシーレイアウトを検出し `Migrate? [y/N]` と促します。`y` と答えるとファイルが `accounts/default/` に移動し、バックアップが `.pre-migrate-backup/` に書き込まれ、コマンドは続行します。新規ユーザーには表示されません——オンボーディングが直接 `accounts/default/` を作成します。
+
+**口座スコープ外：** `market_data_cache.db`（共有の価格・為替キャッシュ）と `demo/` はリポジトリのルートに残り、`accounts/` には移動しません。
+
+**口座管理コマンド：**
+```bash
+python scripts/transactions.py account list          # 口座一覧とアクティブ表示
+python scripts/transactions.py account use <name>    # アクティブ口座を切り替え
+python scripts/transactions.py account create <name> # 新規口座のひな形を作成
+```
+
 ## プライバシー
 
-設定、取引データベース（SQLite）、生成されたレポートはすべてローカルに残り、**Git には含まれません**。バージョン管理されるのはエージェント仕様、サンプルテンプレート、Python スクリプトのみです。
+設定、取引データベース（SQLite）、生成されたレポートはすべてローカルの `accounts/<name>/` に残り、**Git には含まれません**。バージョン管理されるのはエージェント仕様、サンプルテンプレート、Python スクリプトのみです。
 
 ## サードパーティ・データ
 

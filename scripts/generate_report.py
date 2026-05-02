@@ -173,6 +173,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parent))
+from account import (add_account_args, resolve_account, autodetect_and_migrate_or_exit, check_pairing)
+
 # Reuse the lot shape + market routing from the sister script.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fetch_prices import (                                    # noqa: E402
@@ -4324,10 +4329,10 @@ def _cli(argv: Optional[List[str]] = None) -> argparse.Namespace:
                         "merge_prices, book_pacing, build_risk_heat_items, special_checks, "
                         "auto-FX, and auto-analytics — all numeric work happens upstream. "
                         "This is the canonical pipeline path; --prices/--db is a fallback.")
-    p.add_argument("--db", default=Path("transactions.db"), type=Path,
+    p.add_argument("--db", default=None, type=Path,
                    help="Fallback path: transactions.db source for positions when "
                         "--snapshot is not supplied.")
-    p.add_argument("--settings", default="SETTINGS.md", type=Path)
+    p.add_argument("--settings", default=None, type=Path)
     p.add_argument("--prices", required=False, type=Path,
                    help="Fallback path: prices.json from scripts/fetch_prices.py. Ignored "
                         "when --snapshot is supplied.")
@@ -4349,6 +4354,7 @@ def _cli(argv: Optional[List[str]] = None) -> argparse.Namespace:
                         "the canonical math (R:R, rails, style readout, lever inference) "
                         "without rendering a report. Use this in CI to catch silent drift.")
     p.add_argument("--verbose", "-v", action="store_true")
+    add_account_args(p)
     return p.parse_args(argv)
 
 
@@ -4555,6 +4561,7 @@ def _build_snapshot_from_legacy_inputs(args: argparse.Namespace) -> Tuple[Option
 
 
 def main(argv: Optional[List[str]] = None) -> int:
+    autodetect_and_migrate_or_exit()
     args = _cli(argv)
     logging.basicConfig(level=logging.INFO if args.verbose else logging.WARNING,
                         format="%(asctime)s [%(levelname)s] %(message)s")
@@ -4562,20 +4569,41 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.self_check:
         return _run_self_check()
 
+    paths = resolve_account(args)
+    db_path = args.db if args.db is not None else paths.db
+    settings_path = args.settings if args.settings is not None else paths.settings
+    warn = check_pairing(db_path, settings_path)
+    if warn:
+        print(f"WARNING: {warn}", file=sys.stderr)
+
+    # AC-DEF-1: default --output goes under accounts/<active>/reports/
+    if args.output is None:
+        ts = _dt.datetime.now().strftime("%Y-%m-%d_%H%M")
+        output_path = paths.reports_dir / f"{ts}_portfolio_report.html"
+        paths.reports_dir.mkdir(parents=True, exist_ok=True)
+    else:
+        output_path = args.output
+
+    # Propagate resolved paths back onto args so downstream helpers
+    # (_build_snapshot_from_legacy_inputs, archive block, etc.) see them.
+    args.db = db_path
+    args.settings = settings_path
+    args.output = output_path
+
     # Defense-in-depth: warn if --output lands under demo/ but --settings is
     # the root default. Mirrors the cache + archive demo-isolation guards.
     output_under_demo = (
-        args.output is not None
-        and "demo" in {p.lower() for p in args.output.resolve().parts}
+        output_path is not None
+        and "demo" in {p.lower() for p in output_path.resolve().parts}
     )
     if (
         output_under_demo
-        and Path(args.settings).resolve().name == "SETTINGS.md"
-        and Path(args.settings).resolve().parent.name != "demo"
+        and settings_path.resolve().name == "SETTINGS.md"
+        and settings_path.resolve().parent.name != "demo"
     ):
         print(
-            f"WARNING: --output {args.output} appears to be a demo report but --settings "
-            f"is the root default ({args.settings}). Pass --settings demo/SETTINGS.md to "
+            f"WARNING: --output {output_path} appears to be a demo report but --settings "
+            f"is the root default ({settings_path}). Pass --settings demo/SETTINGS.md to "
             "keep the demo run from reading your real strategy / language / API keys.",
             file=sys.stderr,
         )

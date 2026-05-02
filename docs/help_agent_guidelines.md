@@ -25,21 +25,40 @@ render the help menu — route directly to the relevant workflow doc.
 
 ## 2. State-aware reply
 
-Before rendering the menu, check repo state in one shell call:
+Before rendering the menu, check repo state using the account-aware
+detection:
 
 ```sh
-ls SETTINGS.md transactions.db 2>/dev/null
+# Detect active account (multi-account layout)
+python scripts/transactions.py account list 2>/dev/null \
+  || ls accounts/ 2>/dev/null \
+  || echo "(no accounts)"
+
+# Check settings + DB for the active account
 python scripts/transactions.py db stats 2>/dev/null
+```
+
+For a simpler one-shot check when `transactions.py` is not yet available:
+
+```sh
+ls accounts/.active accounts/ SETTINGS.md transactions.db 2>/dev/null
 ```
 
 Tailor the reply:
 
-- **Cold start** (`SETTINGS.md` and/or `transactions.db` missing) — lead
-  with onboarding. Tell the user the other workflows depend on having
-  those two artifacts in place. Point at `docs/onboarding_agent_guidelines.md`.
-- **Empty DB** (`transactions.db` exists, 0 rows) — lead with transaction
-  recording. The other workflows work but will be empty.
-- **Ready** (settings + DB with rows) — render the full four-item menu.
+- **Cold start** (`accounts/` missing or empty, and no root `SETTINGS.md` /
+  `transactions.db`) — lead with onboarding. Tell the user the other
+  workflows depend on having those two artifacts in place. Point at
+  `docs/onboarding_agent_guidelines.md`.
+- **Legacy layout detected** (root `SETTINGS.md` or `transactions.db`
+  present, no `accounts/`) — note that migration is needed and any script
+  run will prompt for it automatically.
+- **Empty DB** (active account's `transactions.db` exists, 0 rows) — lead
+  with transaction recording. The other workflows work but will be empty.
+- **Ready** (active account has settings + DB with rows) — render the full
+  four-item menu.
+- **Multiple accounts exist** (`account list` shows ≥ 2 entries) — after
+  the four-item menu, add a **"Switch account"** sub-action (see §3 E).
 
 State the detected state in one sentence at the top so the user knows
 which mode they are in.
@@ -99,6 +118,20 @@ rows.
   consent before sending tickers to external market-data sources.
   Contract: `docs/portfolio_report_agent_guidelines.md` and every
   numbered file under `docs/portfolio_report_agent_guidelines/`.
+
+### E. Switch account (conditional — show only when ≥ 2 accounts exist)
+
+- **Ask like:** "Switch to my Roth account." / "Use the 'trading' account."
+  / "Which account am I on?" / "List my accounts."
+- **Agent does:** runs `python scripts/transactions.py account list` to
+  show all accounts (active marked with `*`), then runs
+  `python scripts/transactions.py account use <name>` on the user's choice.
+  All subsequent commands in the session resolve against the new active
+  account (equivalent to passing `--account <name>` on every call).
+  No writes to any DB. Contract: `docs/transactions_agent_guidelines.md`
+  (Active-account resolution section).
+
+Hide this item when only one account exists.
 
 ## 4. Customisation pointer
 

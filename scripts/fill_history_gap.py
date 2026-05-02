@@ -37,6 +37,7 @@ from typing import Any, Dict, List, Optional
 
 # Reuse cache writers + canonical types from the fetcher.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from account import autodetect_and_migrate_or_exit  # noqa: E402
 from fetch_history import (  # noqa: E402
     DEFAULT_CACHE_PATH,
     cache_put_fx_rows,
@@ -184,6 +185,7 @@ def fill_fx(pair: str,
 
 
 def main(argv: Optional[List[str]] = None) -> int:
+    autodetect_and_migrate_or_exit()
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--cache", default=DEFAULT_CACHE_PATH, type=Path,

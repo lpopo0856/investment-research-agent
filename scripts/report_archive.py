@@ -37,6 +37,9 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from account import add_account_args, resolve_account, autodetect_and_migrate_or_exit, check_pairing  # noqa: E402
+
 ARCHIVE_SCHEMA_VERSION = 1
 DEFAULT_DB_PATH = Path("transactions.db")
 REPORT_ID_RE = re.compile(r"(\d{4}-\d{2}-\d{2}_\d{4})")
@@ -248,9 +251,12 @@ def _backfill(reports_dir: Path, db_path: Path) -> int:
 
 
 def main(argv: Optional[List[str]] = None) -> int:
+    autodetect_and_migrate_or_exit()
+
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--db", type=Path, default=DEFAULT_DB_PATH)
+    p.add_argument("--db", type=Path, default=None)
+    add_account_args(p)
     sub = p.add_subparsers(dest="cmd", required=True)
 
     pa = sub.add_parser("archive", help="Insert/update one report row")
@@ -266,18 +272,22 @@ def main(argv: Optional[List[str]] = None) -> int:
     ps.add_argument("report_id")
 
     pb = sub.add_parser("backfill", help="Register HTML files under reports/")
-    pb.add_argument("--reports-dir", type=Path, default=Path("reports"))
+    pb.add_argument("--reports-dir", type=Path, default=None)
 
     args = p.parse_args(argv)
+
+    paths = resolve_account(args)
+    db_path = args.db if args.db is not None else paths.db
+
     if args.cmd == "archive":
         row = archive_report(args.report_id, args.snapshot, args.context,
-                             args.html, args.db)
+                             args.html, db_path)
         print(f"archived {row['report_id']} "
               f"(holdings={row['holdings_count']}, news={row['news_count']}, "
               f"events={row['events_count']})")
         return 0
     if args.cmd == "list":
-        rows = list_archive(args.db, limit=args.limit)
+        rows = list_archive(db_path, limit=args.limit)
         if not rows:
             print("(empty)")
             return 0
@@ -289,15 +299,16 @@ def main(argv: Optional[List[str]] = None) -> int:
                             for c in cols))
         return 0
     if args.cmd == "show":
-        row = read_archive(args.report_id, args.db)
+        row = read_archive(args.report_id, db_path)
         if not row:
             print(f"no row for {args.report_id}", file=sys.stderr)
             return 1
         print(json.dumps(row, indent=2, ensure_ascii=False, default=str))
         return 0
     if args.cmd == "backfill":
-        n = _backfill(args.reports_dir, args.db)
-        print(f"backfilled {n} report(s) from {args.reports_dir}")
+        reports_dir = args.reports_dir if args.reports_dir is not None else paths.reports_dir
+        n = _backfill(reports_dir, db_path)
+        print(f"backfilled {n} report(s) from {reports_dir}")
         return 0
     return 1
 

@@ -4,7 +4,8 @@
 
 ## Execution Contract
 
-- The portfolio report HTML under `reports/` is the final deliverable; pipeline JSON stays under `/tmp` in `$REPORT_RUN_DIR` and is deleted after success (main guidelines — Intermediate files). This is not a frontend project.
+- The portfolio report HTML under `accounts/<active>/reports/` is the final deliverable; pipeline JSON stays under `/tmp` in `$REPORT_RUN_DIR` and is deleted after success (main guidelines — Intermediate files). This is not a frontend project.
+- Account resolution: pass `--account <name>` to target a specific account; omitting it resolves the active account from `accounts/.active`, falling back to `accounts/default/`. All pipeline inputs (`transactions.db`, `SETTINGS.md`, `reports/`) are read from `accounts/<active>/`.
 - Do not split the user-facing report into executable scripts, external CSS, external JS, external chart libraries, or runtime data fetches.
 - This spec is the single source of truth for any "portfolio health check" / "portfolio report" run.
 - Follow the required bundle from [`../portfolio_report_agent_guidelines.md`](../portfolio_report_agent_guidelines.md) end-to-end, in order.

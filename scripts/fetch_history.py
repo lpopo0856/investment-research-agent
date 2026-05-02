@@ -88,6 +88,13 @@ _SCRIPTS_DIR = Path(__file__).resolve().parent
 if str(_SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS_DIR))
 
+from account import (  # type: ignore[import-not-found]
+    add_account_args,
+    resolve_account,
+    autodetect_and_migrate_or_exit,
+    check_pairing,
+)
+
 from fetch_prices import (  # type: ignore[import-not-found]
     COINGECKO_ID_MAP,
     KNOWN_CRYPTO_SYMBOLS,
@@ -911,10 +918,13 @@ def format_history_gaps(ticker_gaps: List[Dict[str, Any]],
 
 
 def main(argv: Optional[List[str]] = None) -> int:
+    autodetect_and_migrate_or_exit()
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--db", default=Path("transactions.db"), type=Path,
-                   help="Path to transactions.db (canonical source; default: ./transactions.db)")
-    p.add_argument("--settings", default="SETTINGS.md", type=Path)
+    p.add_argument("--db", default=None, type=Path,
+                   help="Path to transactions.db; default: resolved from --account / accounts/.active / 'default'")
+    p.add_argument("--settings", default=None, type=Path,
+                   help="Path to SETTINGS.md; default: resolved from --account / accounts/.active / 'default'")
+    add_account_args(p)
     p.add_argument(
         "--output",
         default=None,
@@ -944,54 +954,47 @@ def main(argv: Optional[List[str]] = None) -> int:
     logging.basicConfig(level=logging.INFO if args.verbose else logging.WARNING,
                         format="%(asctime)s [%(levelname)s] %(message)s")
 
+    paths = resolve_account(args)
+    db_path = args.db if args.db is not None else paths.db
+    settings_path = args.settings if args.settings is not None else paths.settings
+
     # Defense-in-depth: warn if a demo db is paired with the root cache or
-    # with the root SETTINGS.md.
-    db_under_demo = (
-        args.db is not None
-        and Path(args.db).resolve().parent.name == "demo"
-    )
+    # with a non-demo SETTINGS.md.
+    db_under_demo = Path(db_path).resolve().parent.name == "demo"
     if (
         db_under_demo
         and not args.no_cache
         and Path(args.cache).resolve() == DEFAULT_CACHE_PATH.resolve()
     ):
         print(
-            f"WARNING: --db {args.db} appears to be a demo ledger but --cache is the "
+            f"WARNING: --db {db_path} appears to be a demo ledger but --cache is the "
             f"root default ({DEFAULT_CACHE_PATH}). Pass --cache demo/market_data_cache.db "
             "to keep demo and production caches separate.",
             file=sys.stderr,
         )
-    if (
-        db_under_demo
-        and Path(args.settings).resolve().name == "SETTINGS.md"
-        and Path(args.settings).resolve().parent.name != "demo"
-    ):
-        print(
-            f"WARNING: --db {args.db} appears to be a demo ledger but --settings is the "
-            f"root default ({args.settings}). Pass --settings demo/SETTINGS.md to keep "
-            "the demo run from reading your real strategy / base currency / API keys.",
-            file=sys.stderr,
-        )
+    warn = check_pairing(db_path, settings_path)
+    if warn:
+        print(f"WARNING: {warn}", file=sys.stderr)
 
     # Probe yfinance once upfront so the install prompt fires before any
     # fetch work. If the user declines (or stdin isn't a TTY), the chain
     # falls through to other sources without prompting again per ticker.
     _try_import_yfinance()
 
-    if args.db and args.db.exists():
+    if db_path and db_path.exists():
         # Use the fetch *universe* (current holdings + sold-off tickers) so
         # historical-boundary valuations in compute_profit_panel can resolve
         # closes for tickers that have since been fully sold.
         from transactions import load_fetch_universe_lots  # type: ignore[import-not-found]
-        lots = load_fetch_universe_lots(args.db)
+        lots = load_fetch_universe_lots(db_path)
     else:
-        print(f"ERROR: no source found at --db {args.db}. "
+        print(f"ERROR: no source found at --db {db_path}. "
               f"Run `python scripts/transactions.py db init` and import transactions first.",
               file=sys.stderr)
         return 2
     history = collect_history(
         lots,
-        args.settings,
+        settings_path,
         lookback_days=args.lookback_days,
         cache_path=None if args.no_cache else args.cache,
         cache_max_stale_days=args.cache_max_stale_days,

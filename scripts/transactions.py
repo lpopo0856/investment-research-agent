@@ -63,6 +63,19 @@ from fetch_prices import (  # type: ignore[import-not-found]
     parse_holdings,
 )
 
+from account import (  # type: ignore[import-not-found]
+    add_account_args,
+    resolve_account,
+    autodetect_and_migrate_or_exit,
+    prompt_and_migrate,
+    validate_account_name,
+    list_accounts,
+    create_account_scaffold,
+    read_active_pointer,
+    write_active_pointer,
+    check_pairing,
+)
+
 # --------------------------------------------------------------------------- #
 # Constants
 # --------------------------------------------------------------------------- #
@@ -2858,9 +2871,12 @@ def load_transactions(
 # --------------------------------------------------------------------------- #
 
 def _add_source_args(sp: argparse.ArgumentParser) -> None:
-    """Common --db flag."""
-    sp.add_argument("--db", default=DEFAULT_DB_PATH, type=Path,
-                    help="SQLite store (default: transactions.db)")
+    """Common --db and --account flags. Default for --db is None (sentinel)
+    so resolve_account() can detect "not explicitly set" and fall back to
+    the active account's transactions.db."""
+    sp.add_argument("--db", default=None, type=Path,
+                    help="SQLite store (default: active account's transactions.db)")
+    add_account_args(sp)
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -2870,24 +2886,26 @@ def _build_parser() -> argparse.ArgumentParser:
     # ---- migrate (HOLDINGS.md -> DB) -------------------------------------- #
     m = sub.add_parser("migrate", help="Bootstrap transactions.db from HOLDINGS.md (synthetic BUY+DEPOSIT entries)")
     m.add_argument("--holdings", default="HOLDINGS.md", type=Path)
-    m.add_argument("--db", default=DEFAULT_DB_PATH, type=Path)
+    m.add_argument("--db", default=None, type=Path)
     m.add_argument("--dry-run", action="store_true",
                    help="Print proposed records as JSON, do not write")
+    add_account_args(m)
 
     # ---- verify (DB replay vs balance tables) ----------------------------- #
     v = sub.add_parser("verify", help="Replay transactions.db and reconcile against open_lots + cash_balances")
-    v.add_argument("--db", default=DEFAULT_DB_PATH, type=Path)
+    v.add_argument("--db", default=None, type=Path)
+    add_account_args(v)
 
     # ---- pnl --------------------------------------------------------------- #
     pn = sub.add_parser("pnl", help="Print realized + unrealized snapshot")
     pn.add_argument("--prices", default="prices.json", type=Path)
-    pn.add_argument("--settings", default="SETTINGS.md", type=Path)
+    pn.add_argument("--settings", default=None, type=Path)
     _add_source_args(pn)
 
     # ---- profit-panel ------------------------------------------------------ #
     pp = sub.add_parser("profit-panel", help="Compute profit-panel rows")
     pp.add_argument("--prices", default="prices.json", type=Path)
-    pp.add_argument("--settings", default="SETTINGS.md", type=Path)
+    pp.add_argument("--settings", default=None, type=Path)
     pp.add_argument("--output", default=None, type=Path,
                     help="Write JSON output here (suitable for merging into report_context.json)")
     pp.add_argument("--today", default=None, help="Override today (YYYY-MM-DD); default: local date")
@@ -2896,7 +2914,7 @@ def _build_parser() -> argparse.ArgumentParser:
     # ---- analytics --------------------------------------------------------- #
     an = sub.add_parser("analytics", help="Compute transaction-driven report analytics")
     an.add_argument("--prices", default="prices.json", type=Path)
-    an.add_argument("--settings", default="SETTINGS.md", type=Path)
+    an.add_argument("--settings", default=None, type=Path)
     an.add_argument("--output", default=None, type=Path,
                     help="Write JSON output here (merge into report_context.json as transaction_analytics)")
     an.add_argument("--today", default=None, help="Override today (YYYY-MM-DD); default: local date")
@@ -2910,7 +2928,7 @@ def _build_parser() -> argparse.ArgumentParser:
                              "for `python scripts/generate_report.py --snapshot`.")
     sn.add_argument("--prices", default="prices.json", type=Path,
                     help="prices.json from scripts/fetch_prices.py")
-    sn.add_argument("--settings", default="SETTINGS.md", type=Path)
+    sn.add_argument("--settings", default=None, type=Path)
     sn.add_argument("--output", default=Path("report_snapshot.json"), type=Path,
                     help="Snapshot path; default: ./report_snapshot.json")
     sn.add_argument("--today", default=None, help="Override today (YYYY-MM-DD); default: local date")
@@ -2928,36 +2946,60 @@ def _build_parser() -> argparse.ArgumentParser:
     db_sub = db.add_subparsers(dest="db_cmd", required=True)
 
     di = db_sub.add_parser("init", help="Create transactions.db with schema (idempotent)")
-    di.add_argument("--db", default=DEFAULT_DB_PATH, type=Path)
+    di.add_argument("--db", default=None, type=Path)
+    add_account_args(di)
 
     dim = db_sub.add_parser("import-md", help="One-shot migration: import TRANSACTIONS.md into the DB")
     dim.add_argument("--input", required=True, type=Path)
-    dim.add_argument("--db", default=DEFAULT_DB_PATH, type=Path)
+    dim.add_argument("--db", default=None, type=Path)
     dim.add_argument("--delete-after", action="store_true",
                      help="Delete the source markdown file after a successful import")
+    add_account_args(dim)
 
     dic = db_sub.add_parser("import-csv", help="Import a CSV file (canonical or broker-mapped columns)")
     dic.add_argument("--input", required=True, type=Path)
-    dic.add_argument("--db", default=DEFAULT_DB_PATH, type=Path)
+    dic.add_argument("--db", default=None, type=Path)
     dic.add_argument("--mapping", default=None, type=Path,
                      help="Optional JSON: {broker_column: canonical_field}")
+    add_account_args(dic)
 
     dij = db_sub.add_parser("import-json", help="Import a JSON array / object of canonical transactions")
     dij.add_argument("--input", required=True, type=Path)
-    dij.add_argument("--db", default=DEFAULT_DB_PATH, type=Path)
+    dij.add_argument("--db", default=None, type=Path)
+    add_account_args(dij)
 
     da = db_sub.add_parser("add", help="Insert one transaction from an inline JSON blob")
     da.add_argument("--json", required=True, help="Canonical JSON object (or list)")
-    da.add_argument("--db", default=DEFAULT_DB_PATH, type=Path)
+    da.add_argument("--db", default=None, type=Path)
+    add_account_args(da)
 
     dd = db_sub.add_parser("dump", help="Dump all transactions as JSON")
-    dd.add_argument("--db", default=DEFAULT_DB_PATH, type=Path)
+    dd.add_argument("--db", default=None, type=Path)
+    add_account_args(dd)
 
     ds = db_sub.add_parser("stats", help="Print summary stats (counts by type, distinct tickers, date range)")
-    ds.add_argument("--db", default=DEFAULT_DB_PATH, type=Path)
+    ds.add_argument("--db", default=None, type=Path)
+    add_account_args(ds)
 
     drb = db_sub.add_parser("rebuild", help="Force-rebuild open_lots + cash_balances from the transactions log")
-    drb.add_argument("--db", default=DEFAULT_DB_PATH, type=Path)
+    drb.add_argument("--db", default=None, type=Path)
+    add_account_args(drb)
+
+    # ---- account <subcommand> --------------------------------------------- #
+    acct = sub.add_parser("account", help="Manage accounts (multi-account support)")
+    acct_sub = acct.add_subparsers(dest="account_cmd", required=True)
+
+    acct_use = acct_sub.add_parser("use", help="Set active account (writes accounts/.active)")
+    acct_use.add_argument("name", help="Account name (must already exist under accounts/)")
+
+    acct_create = acct_sub.add_parser("create", help="Scaffold a new account")
+    acct_create.add_argument("name", help="Account name (lowercase, [a-z0-9_-]{1,32}, not 'demo')")
+
+    acct_sub.add_parser("list", help="List all accounts; mark active")
+
+    acct_migrate = acct_sub.add_parser("migrate", help="Migrate root layout into accounts/default/")
+    acct_migrate.add_argument("--yes", action="store_true",
+                              help="Skip the [y/N] prompt (required for non-interactive contexts)")
 
     return p
 
@@ -2972,6 +3014,29 @@ def _base_currency_from_settings(path: Path) -> str:
     return "USD"
 
 
+def _resolve_paths(args: argparse.Namespace) -> Tuple[Path, Optional[Path]]:
+    """Resolve (db_path, settings_path) for the active account, honouring
+    explicit ``--db`` / ``--settings`` overrides and ``--account NAME``.
+    Emits a warning to stderr when --db and --settings come from different
+    accounts (cross-account pairing). Returns (db_path, settings_path);
+    settings_path is None for subcommands that do not consume settings."""
+    paths = resolve_account(args)
+    db_path = (
+        Path(getattr(args, "db"))
+        if getattr(args, "db", None) is not None
+        else paths.db
+    )
+    settings_attr = getattr(args, "settings", None)
+    if hasattr(args, "settings"):
+        settings_path = Path(settings_attr) if settings_attr is not None else paths.settings
+    else:
+        settings_path = None
+    warn = check_pairing(db_path, settings_path)
+    if warn:
+        print(f"WARNING: {warn}", file=sys.stderr)
+    return db_path, settings_path
+
+
 def _resolve_txns(args: argparse.Namespace) -> List[Transaction]:
     """Resolve transactions from transactions.db."""
     db = getattr(args, "db", None)
@@ -2982,14 +3047,27 @@ def _resolve_txns(args: argparse.Namespace) -> List[Transaction]:
 
 
 def main(argv: Optional[List[str]] = None) -> int:
+    # First: special-case the 'account' subcommand path so 'account migrate'
+    # works without triggering the auto-detect hook (since 'account migrate'
+    # IS the migration entry). Detect by sniffing argv[0] before parsing.
+    raw = list(argv) if argv is not None else sys.argv[1:]
+    is_account_cmd = len(raw) > 0 and raw[0] == "account"
+    if not is_account_cmd:
+        autodetect_and_migrate_or_exit()
+
     args = _build_parser().parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(message)s")
+
+    if args.cmd == "account":
+        return _handle_account_cmd(args)
 
     if args.cmd == "self-check":
         return _selfcheck()
 
     if args.cmd == "migrate":
         # HOLDINGS.md → synthetic BUY/DEPOSIT entries → transactions.db (or print).
+        db_path, _ = _resolve_paths(args)
+        args.db = db_path
         records = _holdings_to_records(args.holdings)
         if args.dry_run:
             print(json.dumps(records, indent=2, ensure_ascii=False))
@@ -3011,6 +3089,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 0
 
     if args.cmd == "verify":
+        db_path, _ = _resolve_paths(args)
+        args.db = db_path
         ok, mismatches = _verify_balance_tables(args)
         if ok:
             print("OK: replay matches open_lots + cash_balances.")
@@ -3021,6 +3101,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 1
 
     if args.cmd == "replay":
+        db_path, _ = _resolve_paths(args)
+        args.db = db_path
         txns = _resolve_txns(args)
         state = replay(txns, cutoff=args.cutoff)
         out = {
@@ -3041,6 +3123,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 0
 
     if args.cmd == "pnl":
+        db_path, settings_path = _resolve_paths(args)
+        args.db = db_path
+        args.settings = settings_path
         txns = _resolve_txns(args)
         prices = json.loads(args.prices.read_text(encoding="utf-8")) if args.prices.exists() else {}
         base = _base_currency_from_settings(args.settings)
@@ -3049,6 +3134,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 0
 
     if args.cmd == "profit-panel":
+        db_path, settings_path = _resolve_paths(args)
+        args.db = db_path
+        args.settings = settings_path
         txns = _resolve_txns(args)
         prices = json.loads(args.prices.read_text(encoding="utf-8")) if args.prices.exists() else {}
         base = _base_currency_from_settings(args.settings)
@@ -3063,6 +3151,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 0
 
     if args.cmd == "snapshot":
+        db_path, settings_path = _resolve_paths(args)
+        args.db = db_path
+        args.settings = settings_path
         # Pipeline materialization: every numeric/structural field the renderer
         # needs lives in the snapshot. The agent then authors editorial
         # context.json (news, events, alerts, adjustments, action list,
@@ -3181,6 +3272,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 0
 
     if args.cmd == "analytics":
+        db_path, settings_path = _resolve_paths(args)
+        args.db = db_path
+        args.settings = settings_path
         txns = _resolve_txns(args)
         prices = json.loads(args.prices.read_text(encoding="utf-8")) if args.prices.exists() else {}
         base = _base_currency_from_settings(args.settings)
@@ -3195,9 +3289,52 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 0
 
     if args.cmd == "db":
+        db_path, _ = _resolve_paths(args)
+        args.db = db_path
         return _dispatch_db(args)
 
     return 2
+
+
+def _handle_account_cmd(args: argparse.Namespace) -> int:
+    """Dispatch the 'account' subcommand group: use / create / list / migrate."""
+    sub = args.account_cmd
+    if sub == "use":
+        try:
+            write_active_pointer(args.name)
+        except Exception as e:
+            print(f"Error: {e}", file=sys.stderr)
+            return 1
+        print(f"Active account set to: {args.name}")
+        return 0
+    if sub == "create":
+        try:
+            validate_account_name(args.name, for_create=True)
+            paths = create_account_scaffold(args.name)
+        except Exception as e:
+            print(f"Error: {e}", file=sys.stderr)
+            return 1
+        print(f"Created account: {paths.name}")
+        print(f"  settings: {paths.settings}")
+        print(f"  db:       {paths.db}")
+        print(f"  reports:  {paths.reports_dir}")
+        print("Set as active with: python scripts/transactions.py account use", paths.name)
+        return 0
+    if sub == "list":
+        accounts = list_accounts()
+        active = read_active_pointer()
+        if not accounts:
+            print("No accounts. Run: python scripts/transactions.py account create <name>")
+            return 0
+        for name in accounts:
+            marker = "*" if name == active else " "
+            print(f" {marker} {name}")
+        return 0
+    if sub == "migrate":
+        prompt_and_migrate(assume_yes=args.yes)
+        return 0
+    print(f"Unknown account subcommand: {sub}", file=sys.stderr)
+    return 1
 
 
 # --------------------------------------------------------------------------- #

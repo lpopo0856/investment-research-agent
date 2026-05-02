@@ -20,6 +20,8 @@
 
 > 「带我入门。」*（或附上券商对账单／交割明细——PDF、CSV、JSON、XLSX、截图、粘贴的文字均可——并说「帮我做 onboarding」）*
 
+脚本会自动使用当前活动账户（通过命令行 `--account <name>` 或 `accounts/.active` 设置；默认为 `accounts/default/`）。
+
 **想看看这里能做什么？**
 
 > 「这里能做什么？」
@@ -52,9 +54,29 @@
 
 会改动你已保存数据的操作，都会先请你确认。用平常说话的方式提需求即可；助手会按 `docs/` 约定全流程执行并处理细节。
 
+## 多账户
+
+每个账户在 `accounts/<name>/` 下拥有各自的设置、交易账本与报告（例如 `accounts/default/SETTINGS.md`、`accounts/default/transactions.db`、`accounts/default/reports/`）。
+
+**选择优先级**（从高到低）：
+1. 命令行 `--account <name>`
+2. 指针文件 `accounts/.active`（单行账户名）
+3. 若存在则为 `accounts/default/`
+
+**根目录布局迁移：** 若仓库根目录存在 `SETTINGS.md` 或 `transactions.db`，且没有 `accounts/` 目录，任意脚本会检测到旧布局并提示 `Migrate? [y/N]`。回答 `y` 会将文件迁入 `accounts/default/`、备份写入 `.pre-migrate-backup/`，并继续执行你的命令。全新用户不会被提示——onboarding 会直接创建 `accounts/default/`。
+
+**不属于账户范围：** `market_data_cache.db`（共享行情／汇率缓存）与 `demo/` 留在仓库根目录，**不会**移入 `accounts/`。
+
+**账户管理命令：**
+```bash
+python scripts/transactions.py account list          # 列出所有账户并标记活动账户
+python scripts/transactions.py account use <name>    # 切换活动账户
+python scripts/transactions.py account create <name> # 脚手架新建账户
+```
+
 ## 隐私
 
-你的配置文件、交易数据库（SQLite）以及每一份生成的报告都留在本机，**不会**被 Git 追踪或上传。纳入版本控制的只有助手规格说明、示例模板与 Python 脚本。
+你的设置、交易数据库（SQLite）以及每一份生成的报告都留在本机 `accounts/<name>/` 下——**不会**被 Git 追踪。纳入版本控制的只有助手规格说明、示例模板与 Python 脚本。
 
 ## 第三方数据
 

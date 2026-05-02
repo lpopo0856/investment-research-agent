@@ -12,8 +12,30 @@ that the research and report workflows can use, with the
 downstream output sounds like the user wrote it themselves.
 
 This document does **not** replace `SETTINGS.example.md`. That file is
-the canonical template; this doc is the elicitation contract for filling
-it in.
+the canonical template at the repo root; `account create <name>` copies
+it into `accounts/<name>/SETTINGS.md` for each new account. This doc is
+the elicitation contract for filling it in.
+
+### Where SETTINGS.md lives
+
+In the multi-account layout, each account owns its settings file:
+
+```
+accounts/<active>/SETTINGS.md
+```
+
+Resolve the active account via `accounts/.active`, or use
+`--account <name>` explicitly. Before editing, confirm which account is
+active:
+
+```sh
+python scripts/transactions.py account list   # shows active account (*)
+python scripts/transactions.py account use <name>   # switch if needed
+```
+
+`SETTINGS.example.md` at the repo root is the master template. Never
+edit it directly for user settings — it is the source that
+`account create` copies from.
 
 ---
 
@@ -54,22 +76,27 @@ do **not** start the settings interview. Route to the matching doc.
 
 ## 3. Detection — what state is the file in?
 
-Before starting an interview, run:
+Before starting an interview, resolve the active account and check its
+settings file:
 
 ```sh
-ls SETTINGS.md SETTINGS.example.md 2>/dev/null
+# Determine active account
+cat accounts/.active 2>/dev/null || echo "default"
+
+# Check for the account's settings and the repo template
+ls accounts/<active>/SETTINGS.md SETTINGS.example.md 2>/dev/null
 ```
 
 Map the result:
 
 | State | Action |
 |-------|--------|
-| Neither exists | Stop and tell the user the repo template is missing — do not proceed. |
-| Only example | Cold start. Run §4 (full interview). |
-| Both exist | Read `SETTINGS.md`. Run §5 (review / edit). |
+| `SETTINGS.example.md` missing | Stop and tell the user the repo template is missing — do not proceed. |
+| Only `SETTINGS.example.md` exists (no account file) | Cold start. Run §4 (full interview); writes to `accounts/<active>/SETTINGS.md`. |
+| `accounts/<active>/SETTINGS.md` exists | Read it. Run §5 (review / edit). |
 
-Always read `SETTINGS.md` if it exists before asking anything — do not
-re-interview the user on fields they already filled in.
+Always read `accounts/<active>/SETTINGS.md` if it exists before asking
+anything — do not re-interview the user on fields they already filled in.
 
 ## 4. Cold start interview
 
@@ -77,13 +104,16 @@ Run when `SETTINGS.md` is being created from scratch.
 
 ### 4.1 Bootstrap the file
 
+`account create` (run during onboarding §5) already copies the template.
+If the directory exists but the file is missing, copy it manually:
+
 ```sh
-cp SETTINGS.example.md SETTINGS.md
+cp SETTINGS.example.md accounts/<active>/SETTINGS.md
 ```
 
-Tell the user what just happened: "Created `SETTINGS.md` from the
-template. It is gitignored — your answers stay local. I'll walk you
-through the sections that matter most."
+Tell the user what just happened: "Created `accounts/<active>/SETTINGS.md`
+from the template. It is gitignored — your answers stay local. I'll walk
+you through the sections that matter most."
 
 ### 4.2 Light fields (one batch, conversational)
 
@@ -178,9 +208,10 @@ git." Do not interview for keys.
 
 ### 4.6 Wrap-up
 
-After the file is written, run no commands; `SETTINGS.md` is read
-on-demand by every workflow. End with one line: "Done. Your settings
-are saved. Want to continue onboarding (initialise the database / import
+After the file is written, run no commands; `accounts/<active>/SETTINGS.md`
+is read on-demand by every workflow (resolved via `--account <name>` or
+`accounts/.active`). End with one line: "Done. Your settings are saved.
+Want to continue onboarding (initialise the database / import
 transactions), or ask me a research question now?"
 
 ## 5. Review / edit existing SETTINGS.md
@@ -204,7 +235,7 @@ When `SETTINGS.md` already exists:
    - **API key edits** — accept the user's pasted key as-is; never
      reformat or "validate" it. Show the masked key (`sk-…last4`) in
      the diff, not the full value.
-5. Before writing: `cp SETTINGS.md SETTINGS.md.bak`.
+5. Before writing: `cp accounts/<active>/SETTINGS.md accounts/<active>/SETTINGS.md.bak`.
 6. Show a unified diff (or full new section for strategy rewrites) and
    ask: `Confirm and write? (yes / no / edit)`.
 7. Write only on `yes`. On any failure, restore the `.bak`.

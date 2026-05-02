@@ -4,9 +4,13 @@
 
 **CRITICAL** **MUST READ** READ AGENTS.md, README.md, /docs/* under root directory
 
+## Multi-account model
+
+This repo uses a multi-account layout: each account owns its files under `accounts/<name>/` (e.g. `accounts/default/SETTINGS.md`, `accounts/default/transactions.db`, `accounts/default/reports/`). Pass `--account <name>` to any script to target a specific account; omitting the flag resolves via `accounts/.active` → `accounts/default/` → error. The shared price/FX cache (`market_data_cache.db`) and `demo/` directory live at the repo root and are never account-scoped. Agents running non-interactively MUST invoke `python scripts/transactions.py account migrate --yes` before any other script that reads SETTINGS.md or transactions.db. See `docs/onboarding_agent_guidelines.md` for the full migration and onboarding flow.
+
 ## New users
 
-If `SETTINGS.md` or `transactions.db` is missing, or the user asks to get started / onboard / import a statement in any format (PDF, CSV, JSON, XLSX, screenshot, pasted text), follow `docs/onboarding_agent_guidelines.md`. It is the brand-agnostic on-ramp; once the DB has rows, route to `docs/transactions_agent_guidelines.md`.
+If `accounts/<active>/SETTINGS.md` or `accounts/<active>/transactions.db` is missing (or the legacy root layout is detected), or the user asks to get started / onboard / import a statement in any format (PDF, CSV, JSON, XLSX, screenshot, pasted text), follow `docs/onboarding_agent_guidelines.md`. It is the brand-agnostic on-ramp; once the DB has rows, route to `docs/transactions_agent_guidelines.md`.
 
 ## Help — capability menu
 
@@ -14,7 +18,7 @@ If the user asks "help" / "what can I do here" / "now what" / similar overview r
 
 ## Settings interview
 
-If the user asks to set up / edit / review `SETTINGS.md` ("walk me through my settings", "set up my strategy", "review my SETTINGS", "change my base currency"), or onboarding §4 delegates to it, follow `docs/settings_agent_guidelines.md`.
+If the user asks to set up / edit / review `SETTINGS.md` ("walk me through my settings", "set up my strategy", "review my SETTINGS", "change my base currency"), or onboarding §4 delegates to it, follow `docs/settings_agent_guidelines.md`. The settings file for the active account lives at `accounts/<active>/SETTINGS.md` (not at the repo root).
 
 ## Context drop (token economy)
 

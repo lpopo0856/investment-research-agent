@@ -32,3 +32,15 @@ demo/report_snapshot.json
 temp/
 *.bak
 *.db
+
+# Multi-account layout — per-account private artifacts
+/accounts
+
+# Migration backup
+/.pre-migrate-backup/
+/.pre-migrate-backup-*/
+# multi-account layout
+.pre-migrate-backup/
+accounts/.active
+accounts/*/SETTINGS.md
+accounts/*/transactions.db.bak

@@ -2,6 +2,10 @@
 
 This directory exists only to provide a synthetic transaction ledger for generating a real portfolio report without touching the production `transactions.db`.
 
+## Account-model isolation note
+
+`demo/` lives as a sibling at the **repo root** — it is **NOT** under `accounts/` and is never account-scoped. The `--account` flag does not resolve `demo/`. Demo invocations must always use explicit flags: `--db demo/transactions.db --settings demo/SETTINGS.md --cache demo/market_data_cache.db`. The multi-account migration that moves root `SETTINGS.md` / `transactions.db` into `accounts/default/` does **not** touch `demo/`.
+
 The demo does **not** provide a report pipeline script, report context template, fake news, fake catalysts, fake consensus, fake recommendations, or prefilled theme/sector output. An agent generating a demo report must run the normal portfolio-report workflow end to end and use `demo/transactions.db` only as the transaction database.
 
 ## Isolation from the repo root (HARD)

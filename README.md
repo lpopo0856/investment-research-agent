@@ -20,6 +20,8 @@ You don't need to learn any commands, schemas, or files. Pick whichever line bel
 
 > "Help me get started." *(or attach a brokerage statement in any format — PDF, CSV, JSON, XLSX, screenshot, pasted text — and say "onboard me")*
 
+Scripts use your active account automatically (set via `--account <name>` or `accounts/.active`; defaults to `accounts/default/`).
+
 **Want to see what's possible?**
 
 > "What can I do here?"
@@ -52,9 +54,29 @@ You don't need to learn any commands, schemas, or files. Pick whichever line bel
 
 Anything that changes your saved data needs your confirmation first. Say what you want in everyday language; the assistant follows the contract docs under `docs/` end-to-end and handles the mechanics.
 
+## Multi-account
+
+Each account owns its own settings, transaction ledger, and reports under `accounts/<name>/` (e.g. `accounts/default/SETTINGS.md`, `accounts/default/transactions.db`, `accounts/default/reports/`).
+
+**Selection precedence** (highest to lowest):
+1. `--account <name>` flag on the command line
+2. Pointer file `accounts/.active` (single line with the account name)
+3. `accounts/default/` if it exists
+
+**Root layout migration:** If `SETTINGS.md` or `transactions.db` exist at the repo root and no `accounts/` directory is present, any script will detect the legacy layout and prompt `Migrate? [y/N]`. Answering `y` moves your files into `accounts/default/`, writes a backup to `.pre-migrate-backup/`, and continues your command. Net-new users are never prompted — onboarding creates `accounts/default/` directly.
+
+**Not account-scoped:** `market_data_cache.db` (shared price/FX cache) and `demo/` remain at the repo root and are never moved into `accounts/`.
+
+**Account management commands:**
+```bash
+python scripts/transactions.py account list          # list all accounts, mark active
+python scripts/transactions.py account use <name>    # switch active account
+python scripts/transactions.py account create <name> # scaffold a new account
+```
+
 ## Privacy
 
-Your settings, your transactions database (SQLite), and every generated report stay local — none of them are tracked in git. Only the agent specs, example templates, and the Python scripts are in version control.
+Your settings, your transactions database (SQLite), and every generated report stay local under `accounts/<name>/` — none of them are tracked in git. Only the agent specs, example templates, and the Python scripts are in version control.
 
 ## Third-party data
 

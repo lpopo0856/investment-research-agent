@@ -20,6 +20,8 @@ Bạn không cần học lệnh, schema hay cấu trúc file trước. Chọn đ
 
 > "Giúp tôi bắt đầu." *(hoặc đính kèm sao kê / bảng kê nhà môi giới ở bất kỳ định dạng nào — PDF, CSV, JSON, XLSX, ảnh chụp màn hình, chữ dán — và nói "onboard giúp tôi" / "hướng dẫn tôi làm quen với hệ thống")*
 
+Script tự dùng tài khoản đang hoạt động (thiết lập bằng `--account <name>` trên dòng lệnh hoặc `accounts/.active`; mặc định là `accounts/default/`).
+
 **Muốn biết làm được gì ở đây?**
 
 > "Ở đây tôi có thể làm những gì?"
@@ -52,9 +54,29 @@ Bạn không cần học lệnh, schema hay cấu trúc file trước. Chọn đ
 
 Mọi thao tác làm thay đổi dữ liệu đã lưu đều cần bạn xác nhận trước. Bạn nói tiếng Việt đời thường là được; trợ lý làm theo tài liệu trong `docs/` suốt quy trình và lo phần kỹ thuật.
 
+## Đa tài khoản
+
+Mỗi tài khoản có cài đặt, sổ cáo giao dịch và báo cáo riêng dưới `accounts/<name>/` (ví dụ `accounts/default/SETTINGS.md`, `accounts/default/transactions.db`, `accounts/default/reports/`).
+
+**Thứ tự ưu tiên chọn tài khoản** (cao → thấp):
+1. Cờ `--account <name>` trên dòng lệnh
+2. File con trỏ `accounts/.active` (một dòng chứa tên tài khoản)
+3. `accounts/default/` nếu tồn tại
+
+**Di chuyển bố cục gốc:** Nếu `SETTINGS.md` hoặc `transactions.db` nằm ở thư mục gốc repo và không có thư mục `accounts/`, mọi script sẽ phát hiện bố cục cũ và hỏi `Migrate? [y/N]`. Trả lời `y` sẽ chuyển file vào `accounts/default/`, ghi bản sao lưu vào `.pre-migrate-backup/`, rồi tiếp tục lệnh của bạn. Người dùng mới hoàn toàn không gặp nhắc này — onboarding tạo thẳng `accounts/default/`.
+
+**Không thuộc phạm vi tài khoản:** `market_data_cache.db` (bộ nhớ đệm giá / FX dùng chung) và `demo/` vẫn ở gốc repo và không được chuyển vào `accounts/`.
+
+**Lệnh quản lý tài khoản:**
+```bash
+python scripts/transactions.py account list          # liệt kê tài khoản, đánh dấu đang hoạt động
+python scripts/transactions.py account use <name>    # đổi tài khoản hoạt động
+python scripts/transactions.py account create <name> # tạo khung tài khoản mới
+```
+
 ## Quyền riêng tư
 
-Cài đặt, cơ sở dữ liệu giao dịch (SQLite) và mọi báo cáo được tạo đều nằm trên máy bạn — **không** được Git theo dõi hay đẩy lên remote. Trong version control chỉ có đặc tả agent, mẫu ví dụ và script Python.
+Cài đặt, cơ sở dữ liệu giao dịch (SQLite) và mọi báo cáo được tạo đều nằm cục bộ dưới `accounts/<name>/` — **không** được Git theo dõi. Trong version control chỉ có đặc tả agent, mẫu ví dụ và script Python.
 
 ## Dữ liệu bên thứ ba
 

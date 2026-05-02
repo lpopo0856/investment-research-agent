@@ -20,6 +20,8 @@
 
 > 「幫我開始。」*（或附上券商對帳單／交割資料——PDF、CSV、JSON、XLSX、截圖、貼上的文字皆可——並說「帶我做 onboarding」）*
 
+腳本會自動使用你的使用中帳戶（透過命令列 `--account <name>` 或 `accounts/.active` 設定；預設為 `accounts/default/`）。
+
 **想知道這裡能幹嘛？**
 
 > 「這裡能做什麼？」
@@ -52,9 +54,29 @@
 
 會改動你已存資料的動作，都會先請你確認。用平常講話的方式說需求即可；助理會依 `docs/` 合約從頭跑到尾並處理細節。
 
+## 多帳戶
+
+每個帳戶各自擁有設定、交易帳本與報表，路徑在 `accounts/<name>/`（例如 `accounts/default/SETTINGS.md`、`accounts/default/transactions.db`、`accounts/default/reports/`）。
+
+**選擇優先順序**（由高到低）：
+1. 命令列 `--account <name>`
+2. 指標檔 `accounts/.active`（單行帳戶名稱）
+3. 若存在則為 `accounts/default/`
+
+**根目錄版式遷移：** 若 repo 根目錄有 `SETTINGS.md` 或 `transactions.db`，且沒有 `accounts/` 目錄，任何腳本會偵測舊版配置並提示 `Migrate? [y/N]`。輸入 `y` 會將檔案移入 `accounts/default/`、備份寫入 `.pre-migrate-backup/`，並繼續執行你的指令。全新使用者不會看到此提示——onboarding 會直接建立 `accounts/default/`。
+
+**不屬帳戶範圍：** `market_data_cache.db`（共用報價／匯率快取）與 `demo/` 留在 repo 根目錄，**不會**移入 `accounts/`。
+
+**帳戶管理指令：**
+```bash
+python scripts/transactions.py account list          # 列出所有帳戶並標示使用中
+python scripts/transactions.py account use <name>    # 切換使用中帳戶
+python scripts/transactions.py account create <name> # 建立新帳戶骨架
+```
+
 ## 隱私
 
-你的設定檔、交易資料庫（SQLite）與每一份產出的報表都留在本機，**不會**被 Git 上傳或追蹤。版控裡只有助理規格、範例模板與 Python 腳本。
+你的設定、交易資料庫（SQLite）與每一份產出的報表都留在本機 `accounts/<name>/` 底下——**不會**被 Git 追蹤。版控裡只有助理規格、範例模板與 Python 腳本。
 
 ## 第三方資料
 

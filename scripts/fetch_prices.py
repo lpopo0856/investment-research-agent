@@ -108,6 +108,16 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parent))
+from account import (
+    add_account_args,
+    resolve_account,
+    autodetect_and_migrate_or_exit,
+    check_pairing,
+)
+
 # ----------------------------------------------------------------------------- #
 # Constants — edit cautiously. These mirror the spec; deviations must be agreed.
 # ----------------------------------------------------------------------------- #
@@ -1803,11 +1813,11 @@ def format_todo_required_hard_failures(failures: List[Dict[str, Any]]) -> str:
 
 def _cli_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--db", default=Path("transactions.db"), type=Path,
-                   help="Path to transactions.db (canonical source; default: ./transactions.db)")
-    p.add_argument("--settings", default="SETTINGS.md", type=Path,
-                   help="Path to SETTINGS.md for base currency and optional API keys "
-                        "(default: ./SETTINGS.md)")
+    p.add_argument("--db", default=None, type=Path,
+                   help="Path to transactions.db; default: resolved from --account / accounts/.active / 'default'")
+    p.add_argument("--settings", default=None, type=Path,
+                   help="Path to SETTINGS.md; default: resolved from --account / accounts/.active / 'default'")
+    add_account_args(p)
     p.add_argument("--output", default=None, type=Path,
                    help="Write JSON output to this path; default: stdout")
     p.add_argument("--skip-yfinance", action="store_true",
@@ -1822,7 +1832,7 @@ def _cli_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     return p.parse_args(argv)
 
 
-def _load_lots_from_db(args: argparse.Namespace) -> Tuple[List[Lot], str]:
+def _load_lots_from_db(db: Path) -> Tuple[List[Lot], str]:
     """Resolve lots from transactions.db.
 
     Returns the price-fetch *universe* — currently open lots + cash UNION stub
@@ -1832,19 +1842,27 @@ def _load_lots_from_db(args: argparse.Namespace) -> Tuple[List[Lot], str]:
     boundary valuation drops "no historical close + no latest price" audits
     that ultimately drive §10.1.5 boundary-score to 0.
     """
-    if args.db and args.db.exists():
+    if db and db.exists():
         # Lazy import to avoid circular dependency.
         from transactions import load_fetch_universe_lots  # type: ignore[import-not-found]
-        return load_fetch_universe_lots(args.db), str(args.db)
-    return [], str(args.db)
+        return load_fetch_universe_lots(db), str(db)
+    return [], str(db)
 
 
 def main(argv: Optional[List[str]] = None) -> int:
+    autodetect_and_migrate_or_exit()
     args = _cli_args(argv)
     logging.basicConfig(
         level=logging.INFO if args.verbose else logging.WARNING,
         format="%(asctime)s [%(levelname)s] %(message)s",
     )
+
+    paths = resolve_account(args)
+    db_path = args.db if args.db is not None else paths.db
+    settings_path = args.settings if args.settings is not None else paths.settings
+    warn = check_pairing(db_path, settings_path)
+    if warn:
+        print(f"WARNING: {warn}", file=sys.stderr)
 
     # Decide once, upfront — so the install prompt fires before any pipeline
     # work, not deep inside the fetch loop. `--skip-yfinance` short-circuits
@@ -1854,28 +1872,14 @@ def main(argv: Optional[List[str]] = None) -> int:
     else:
         _try_import_yfinance()
 
-    # Defense-in-depth: warn if a demo db is paired with the root SETTINGS.md.
-    if (
-        args.db is not None
-        and Path(args.db).resolve().parent.name == "demo"
-        and Path(args.settings).resolve().name == "SETTINGS.md"
-        and Path(args.settings).resolve().parent.name != "demo"
-    ):
-        print(
-            f"WARNING: --db {args.db} appears to be a demo ledger but --settings is the "
-            f"root default ({args.settings}). Pass --settings demo/SETTINGS.md to keep "
-            "the demo run from reading your real strategy / base currency / API keys.",
-            file=sys.stderr,
-        )
-
-    lots, source = _load_lots_from_db(args)
+    lots, source = _load_lots_from_db(db_path)
     if not lots:
-        print(f"ERROR: no lots resolved from --db {args.db}. "
+        print(f"ERROR: no lots resolved from --db {db_path}. "
               f"Run `python scripts/transactions.py db init` and import transactions first.",
               file=sys.stderr)
         return 3
 
-    settings_path = args.settings if args.settings.exists() else None
+    settings_path = settings_path if settings_path.exists() else None
     settings_keys = parse_settings_keys(settings_path)
     base_currency = parse_base_currency(settings_path)
     logging.info(
@@ -1899,7 +1903,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     payload["_audit"] = {
         "generated_at": _now_iso(),
         "positions_source": source,
-        "settings_file": str(args.settings) if args.settings.exists() else None,
+        "settings_file": str(settings_path) if settings_path is not None else None,
         "base_currency": base_currency,
         "lot_count": len(lots),
         "ticker_count": len(results),
