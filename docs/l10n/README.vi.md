@@ -52,6 +52,13 @@ Script tự dùng tài khoản đang hoạt động (thiết lập bằng `--acc
 > "Tạo báo cáo ‘sức khỏe’ danh mục hôm nay."
 > "Chạy báo cáo trước giờ mở cửa."
 
+**Tạo báo cáo tổng hợp toàn bộ tài khoản (chỉ phần số):**
+
+> "Tạo báo cáo tổng hợp hôm nay."
+> "Gộp tất cả tài khoản của tôi thành một báo cáo danh mục."
+
+Báo cáo tổng hợp gộp vị thế và tiền mặt của từng tài khoản, chạy cùng một lõi tính toán, nhưng bỏ qua mọi mục biên tập (tin tức, sự kiện, cảnh báo, danh sách hành động, tâm lý, chủ đề/ngành…). Ngôn ngữ mặc định là `en` (sẵn có: `en` / `zh-Hant` / `zh-Hans`), tiền tệ gốc mặc định là `USD`, và file kết quả ghi vào `accounts/_total/reports/`.
+
 Mọi thao tác làm thay đổi dữ liệu đã lưu đều cần bạn xác nhận trước. Bạn nói tiếng Việt đời thường là được; trợ lý làm theo tài liệu trong `docs/` suốt quy trình và lo phần kỹ thuật.
 
 ## Đa tài khoản

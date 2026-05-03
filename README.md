@@ -52,6 +52,13 @@ Scripts use your active account automatically (set via `--account <name>` or `ac
 > "Produce today's portfolio health check."
 > "Run my pre-market report."
 
+**Generate a total report across all your accounts (math-only):**
+
+> "Produce today's total report."
+> "Generate a portfolio report across all my accounts."
+
+Total reports union every account's positions and cash, run the same math kernel, and skip every editorial section (news, events, alerts, action items, psychology, theme/sector, ...). Default language `en` (built-in: `en` / `zh-Hant` / `zh-Hans`); default base currency `USD`. Output lands under `accounts/_total/reports/`.
+
 Anything that changes your saved data needs your confirmation first. Say what you want in everyday language; the assistant follows the contract docs under `docs/` end-to-end and handles the mechanics.
 
 ## Multi-account

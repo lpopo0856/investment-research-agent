@@ -4239,11 +4239,39 @@ def render_sources(prices: Dict[str, Any], context: Dict[str, Any]) -> str:
 # Master assembly
 # ----------------------------------------------------------------------------- #
 
+# Editorial sections excluded from --all-accounts (math-only) reports.
+# Each name is the function __name__ of a renderer that reads agent-authored
+# context fields (today_summary, alerts, news, events, adjustments, actions,
+# trading_psychology, theme_sector, transaction_analytics derivatives, sources).
+# Math-derived header content is provided by render_masthead + render_dashboard
+# (verified pure-math: render_masthead pulls only meta strings via _ui()/context
+# defaults; render_dashboard takes (aggs, total_assets, invested, cash, pnl)
+# numeric args).
+_TOTAL_MODE_SKIPPED_RENDERERS = frozenset({
+    "render_alerts",
+    "render_today_summary",
+    "render_news",
+    "render_events",
+    "render_adjustments",
+    "render_actions",
+    "render_trading_psychology",
+    "render_theme_sector",
+    "render_high_risk_opp",
+    "render_performance_attribution",
+    "render_trade_quality",
+    "render_discipline_check",
+    "render_report_accuracy",
+    "render_sources",
+})
+
+
 def render_html(
     snapshot: Snapshot,
     context: Dict[str, Any],
     css: str,
     settings: SettingsProfile,
+    *,
+    total_mode: bool = False,
 ) -> str:
     """Project a fully-resolved Snapshot onto HTML.
 
@@ -4251,6 +4279,11 @@ def render_html(
     performs no aggregation, FX conversion, pacing, heat scoring, or
     special-check computation here. Editorial content (news, events, alerts,
     adjustments, action list, theme/sector HTML) comes from `context`.
+
+    ``total_mode=True`` (set by the ``--all-accounts`` path in main()) skips
+    every renderer named in ``_TOTAL_MODE_SKIPPED_RENDERERS`` so the report
+    renders math-only sections (positions, cash, P&L numeric, allocation,
+    holding-period pacing).
     """
     try:
         today = _dt.date.fromisoformat(snapshot.today)
@@ -4271,30 +4304,36 @@ def render_html(
     cash = totals.get("cash") or 0.0
     pnl = totals.get("pnl")
 
-    # Render sections (§10 order)
+    # Render sections (§10 order).  Each entry is (function_name, callable);
+    # in total_mode any name appearing in _TOTAL_MODE_SKIPPED_RENDERERS is
+    # short-circuited to "" so the editorial section is omitted from output.
+    candidate_calls = [
+        ("render_masthead", lambda: render_masthead(context)),
+        ("render_alerts", lambda: render_alerts(context)),
+        ("render_today_summary", lambda: render_today_summary(context)),
+        ("render_dashboard", lambda: render_dashboard(aggs, total_assets, invested, cash, pnl)),
+        ("render_profit_panel", lambda: render_profit_panel(context)),
+        ("render_report_accuracy", lambda: render_report_accuracy(context)),
+        ("render_performance_attribution", lambda: render_performance_attribution(context)),
+        ("render_trade_quality", lambda: render_trade_quality(context)),
+        ("render_discipline_check", lambda: render_discipline_check(context)),
+        ("render_trading_psychology", lambda: render_trading_psychology(context)),
+        ("render_allocation_and_weight", lambda: render_allocation_and_weight(aggs, total_assets, today)),
+        ("render_holdings_table", lambda: render_holdings_table(aggs, total_assets, prices, today, context)),
+        ("render_pnl_ranking", lambda: render_pnl_ranking(aggs)),
+        ("render_holding_period", lambda: render_holding_period(snapshot.book_pacing)),
+        ("render_theme_sector", lambda: render_theme_sector(context)),
+        ("render_news", lambda: render_news(context)),
+        ("render_events", lambda: render_events(context)),
+        ("render_high_risk_opp", lambda: render_high_risk_opp(aggs, prices, total_assets, context, config,
+                                                              risk_heat=snapshot.risk_heat)),
+        ("render_adjustments", lambda: render_adjustments(context, config, aggs, total_assets)),
+        ("render_actions", lambda: render_actions(context)),
+        ("render_sources", lambda: render_sources(prices, context)),
+    ]
     sections = [
-        render_masthead(context),
-        render_alerts(context),
-        render_today_summary(context),                                     # §10.1 #1
-        render_dashboard(aggs, total_assets, invested, cash, pnl),         # §10.1 #2
-        render_profit_panel(context),                                      # §10.1.5 profit panel
-        render_report_accuracy(context),                                   # §10.1.5a data quality scores
-        render_performance_attribution(context),                           # transaction history attribution
-        render_trade_quality(context),                                     # transaction history trade review
-        render_discipline_check(context),                                  # transaction history discipline checks
-        render_trading_psychology(context),                                # §10.1.7 trading-psychology evaluation
-        render_allocation_and_weight(aggs, total_assets, today),           # §10.1 allocation + weight
-        render_holdings_table(aggs, total_assets, prices, today, context), # §10.1 #3
-        render_pnl_ranking(aggs),                                          # §10.4 chart
-        render_holding_period(snapshot.book_pacing),                       # §10.1 #4
-        render_theme_sector(context),                                      # §10.1 #5
-        render_news(context),                                              # §10.1 #6
-        render_events(context),                                            # §10.1 #7
-        render_high_risk_opp(aggs, prices, total_assets, context, config,  # §10.1 #8
-                              risk_heat=snapshot.risk_heat),
-        render_adjustments(context, config, aggs, total_assets),           # §10.1 #9
-        render_actions(context),                                           # §10.1 #10
-        render_sources(prices, context),                                   # §10.1 #11
+        "" if (total_mode and name in _TOTAL_MODE_SKIPPED_RENDERERS) else fn()
+        for name, fn in candidate_calls
     ]
 
     return f"""<!doctype html>
@@ -4354,7 +4393,17 @@ def _cli(argv: Optional[List[str]] = None) -> argparse.Namespace:
                         "the canonical math (R:R, rails, style readout, lever inference) "
                         "without rendering a report. Use this in CI to catch silent drift.")
     p.add_argument("--verbose", "-v", action="store_true")
-    add_account_args(p)
+    p.add_argument(
+        "--language",
+        default=None,
+        choices=list(BUILTIN_UI_LOCALES),
+        help="Override the renderer's UI locale.  Used with --all-accounts: "
+        "the synthetic snapshot has no per-account SETTINGS, so the runtime "
+        "locale must be passed explicitly.  Restricted to the built-in "
+        "locale set ({en, zh-Hant, zh-Hans}); other locales require a "
+        "translated --ui-dict overlay (deferred D8).",
+    )
+    add_account_args(p, support_all_accounts=True)
     return p.parse_args(argv)
 
 
@@ -4569,44 +4618,72 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.self_check:
         return _run_self_check()
 
-    paths = resolve_account(args)
-    db_path = args.db if args.db is not None else paths.db
-    settings_path = args.settings if args.settings is not None else paths.settings
-    warn = check_pairing(db_path, settings_path)
-    if warn:
-        print(f"WARNING: {warn}", file=sys.stderr)
+    total_mode = bool(getattr(args, "all_accounts", False))
 
-    # AC-DEF-1: default --output goes under accounts/<active>/reports/
-    if args.output is None:
-        ts = _dt.datetime.now().strftime("%Y-%m-%d_%H%M")
-        output_path = paths.reports_dir / f"{ts}_portfolio_report.html"
-        paths.reports_dir.mkdir(parents=True, exist_ok=True)
+    if total_mode:
+        if args.db is not None or args.settings is not None:
+            print("ERROR: --all-accounts is incompatible with --db / --settings",
+                  file=sys.stderr)
+            return 2
+        if args.context is not None:
+            print(
+                f"WARNING: --context {args.context} is ignored when --all-accounts "
+                "is set (math-only report has no agent-authored editorial fields).",
+                file=sys.stderr,
+            )
+            args.context = None
+        from account import synthetic_total_reports_dir   # noqa: WPS433
+        if args.output is None:
+            out_dir = synthetic_total_reports_dir()
+            out_dir.mkdir(parents=True, exist_ok=True)
+            ts = _dt.datetime.now().strftime("%Y-%m-%d_%H%M")
+            output_path = out_dir / f"{ts}_portfolio_report.html"
+        else:
+            output_path = args.output
+        # Total mode does not consult per-account paths; leave args.db /
+        # args.settings as None so downstream code does not try to resolve
+        # them.  paths is unused in this branch.
+        args.output = output_path
     else:
-        output_path = args.output
+        paths = resolve_account(args)
+        db_path = args.db if args.db is not None else paths.db
+        settings_path = args.settings if args.settings is not None else paths.settings
+        warn = check_pairing(db_path, settings_path)
+        if warn:
+            print(f"WARNING: {warn}", file=sys.stderr)
 
-    # Propagate resolved paths back onto args so downstream helpers
-    # (_build_snapshot_from_legacy_inputs, archive block, etc.) see them.
-    args.db = db_path
-    args.settings = settings_path
-    args.output = output_path
+        # AC-DEF-1: default --output goes under accounts/<active>/reports/
+        if args.output is None:
+            ts = _dt.datetime.now().strftime("%Y-%m-%d_%H%M")
+            output_path = paths.reports_dir / f"{ts}_portfolio_report.html"
+            paths.reports_dir.mkdir(parents=True, exist_ok=True)
+        else:
+            output_path = args.output
 
-    # Defense-in-depth: warn if --output lands under demo/ but --settings is
-    # the root default. Mirrors the cache + archive demo-isolation guards.
-    output_under_demo = (
-        output_path is not None
-        and "demo" in {p.lower() for p in output_path.resolve().parts}
-    )
-    if (
-        output_under_demo
-        and settings_path.resolve().name == "SETTINGS.md"
-        and settings_path.resolve().parent.name != "demo"
-    ):
-        print(
-            f"WARNING: --output {output_path} appears to be a demo report but --settings "
-            f"is the root default ({settings_path}). Pass --settings demo/SETTINGS.md to "
-            "keep the demo run from reading your real strategy / language / API keys.",
-            file=sys.stderr,
+        # Propagate resolved paths back onto args so downstream helpers
+        # (_build_snapshot_from_legacy_inputs, archive block, etc.) see them.
+        args.db = db_path
+        args.settings = settings_path
+        args.output = output_path
+
+    if not total_mode:
+        # Defense-in-depth: warn if --output lands under demo/ but --settings is
+        # the root default. Mirrors the cache + archive demo-isolation guards.
+        output_under_demo = (
+            output_path is not None
+            and "demo" in {p.lower() for p in output_path.resolve().parts}
         )
+        if (
+            output_under_demo
+            and settings_path.resolve().name == "SETTINGS.md"
+            and settings_path.resolve().parent.name != "demo"
+        ):
+            print(
+                f"WARNING: --output {output_path} appears to be a demo report but --settings "
+                f"is the root default ({settings_path}). Pass --settings demo/SETTINGS.md to "
+                "keep the demo run from reading your real strategy / language / API keys.",
+                file=sys.stderr,
+            )
 
     # ----------------------------------------------------------------------- #
     # Resolve the snapshot. Canonical path: --snapshot (built upstream by
@@ -4643,26 +4720,44 @@ def main(argv: Optional[List[str]] = None) -> int:
     # stays uniform across both paths.
     settings = settings_profile_for_snapshot(snapshot)
 
-    # Defense-in-depth: when --snapshot is the source, --settings is ignored
-    # for locale / display_name / raw_language (they were baked into the
-    # snapshot upstream by `transactions.py snapshot`). Surface a loud warning
-    # if the explicitly-passed --settings disagrees, so demo runs that forgot
-    # `--settings demo/SETTINGS.md` on the snapshot step do not silently
-    # render in the root profile's language.
-    if args.snapshot is not None and args.settings and Path(args.settings).exists():
-        try:
-            file_settings = parse_settings_profile(Path(args.settings))
-        except Exception:  # noqa: BLE001 — never block render on a sanity check
-            file_settings = None
-        if file_settings is not None and file_settings.locale != settings.locale:
-            print(
-                f"WARNING: --settings {args.settings} resolves to locale "
-                f"'{file_settings.locale}' ({file_settings.display_name}) but the "
-                f"snapshot baked locale '{settings.locale}' ({settings.display_name}). "
-                "Render uses the snapshot's locale; pass --settings to "
-                "`transactions.py snapshot` upstream to change it.",
-                file=sys.stderr,
-            )
+    if total_mode and args.language is not None:
+        # Total mode: --language overrides whatever the synthetic snapshot
+        # baked.  This is how the agent picks the runtime locale (the
+        # synthetic SettingsProfile in transactions.py snapshot uses 'en' as
+        # a neutral default).  Restricted to BUILTIN_UI_LOCALES by argparse
+        # choices upstream.
+        from portfolio_snapshot import DISPLAY_NAME_BY_LOCALE  # noqa: WPS433
+        new_locale = args.language
+        settings = SettingsProfile(
+            raw_language=settings.raw_language,
+            locale=new_locale,
+            display_name=DISPLAY_NAME_BY_LOCALE.get(new_locale, settings.display_name),
+            config_overrides=settings.config_overrides,
+            base_currency=settings.base_currency,
+            missing=settings.missing,
+        )
+
+    if not total_mode:
+        # Defense-in-depth: when --snapshot is the source, --settings is ignored
+        # for locale / display_name / raw_language (they were baked into the
+        # snapshot upstream by `transactions.py snapshot`). Surface a loud warning
+        # if the explicitly-passed --settings disagrees, so demo runs that forgot
+        # `--settings demo/SETTINGS.md` on the snapshot step do not silently
+        # render in the root profile's language.
+        if args.snapshot is not None and args.settings and Path(args.settings).exists():
+            try:
+                file_settings = parse_settings_profile(Path(args.settings))
+            except Exception:  # noqa: BLE001 — never block render on a sanity check
+                file_settings = None
+            if file_settings is not None and file_settings.locale != settings.locale:
+                print(
+                    f"WARNING: --settings {args.settings} resolves to locale "
+                    f"'{file_settings.locale}' ({file_settings.display_name}) but the "
+                    f"snapshot baked locale '{settings.locale}' ({settings.display_name}). "
+                    "Render uses the snapshot's locale; pass --settings to "
+                    "`transactions.py snapshot` upstream to change it.",
+                    file=sys.stderr,
+                )
 
     ui_dict_override: Optional[Dict[str, Any]] = None
     if args.ui_dict and args.ui_dict.exists():
@@ -4735,21 +4830,34 @@ def main(argv: Optional[List[str]] = None) -> int:
     if not context.get("trading_psychology") and snapshot.trading_psychology:
         context["trading_psychology"] = snapshot.trading_psychology
 
-    context_errors = validate_report_context(context, serialize_snapshot(snapshot))
-    if context_errors:
-        print(
-            f"ERROR: report_context failed pre-render validation "
-            f"({len(context_errors)} problem(s)):",
-            file=sys.stderr,
-        )
-        for err in context_errors:
-            print(f"  - {err}", file=sys.stderr)
-        print(
-            "Run `python scripts/validate_report_context.py --snapshot "
-            "report_snapshot.json --context report_context.json` before rendering.",
-            file=sys.stderr,
-        )
-        return 7
+    if total_mode:
+        # Total mode bypasses context validation: the renderer skips every
+        # editorial section via _TOTAL_MODE_SKIPPED_RENDERERS, so the
+        # validator's editorial-field requirements (today_summary, news,
+        # events, alerts, action items, ...) cannot be satisfied by design.
+        # Exit code 7 cannot be raised in total mode.
+        context_errors: List[str] = []
+        # Identify the report as the total / all-accounts variant via the
+        # masthead subtitle slot.  render_masthead falls through to
+        # _ui("masthead.title") for the eyebrow (e.g., "Investment Research
+        # Note") and consumes context["subtitle"] for the second-line label.
+        context["subtitle"] = "Total (All Accounts)"
+    else:
+        context_errors = validate_report_context(context, serialize_snapshot(snapshot))
+        if context_errors:
+            print(
+                f"ERROR: report_context failed pre-render validation "
+                f"({len(context_errors)} problem(s)):",
+                file=sys.stderr,
+            )
+            for err in context_errors:
+                print(f"  - {err}", file=sys.stderr)
+            print(
+                "Run `python scripts/validate_report_context.py --snapshot "
+                "report_snapshot.json --context report_context.json` before rendering.",
+                file=sys.stderr,
+            )
+            return 7
 
     # Surface snapshot-side errors as data gaps.
     snapshot_errors = [
@@ -4776,7 +4884,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         )
 
     css = load_canonical_css(args.sample)
-    html_doc = render_html(snapshot, context, css, settings)
+    html_doc = render_html(snapshot, context, css, settings, total_mode=total_mode)
 
     if args.output is None:
         ts = _dt.datetime.now().strftime("%Y-%m-%d_%H%M")
@@ -4784,6 +4892,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(html_doc, encoding="utf-8")
     print(f"Wrote {args.output} ({len(html_doc):,} bytes)")
+
+    if total_mode:
+        # No per-account transactions.db to archive into.  Total reports
+        # land under accounts/_total/reports/ and accumulate there until D10
+        # (retention policy) lands.  Skip the archive step entirely.
+        return 0
 
     try:
         m = re.search(r"(\d{4}-\d{2}-\d{2}_\d{4})", args.output.name)

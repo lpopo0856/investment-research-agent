@@ -28,6 +28,16 @@ passing `--account default`. For clarity in the examples below, `--account
 invocations continue to use explicit `--db demo/transactions.db
 --settings demo/SETTINGS.md` paths unchanged.
 
+**`snapshot --all-accounts`.** The `snapshot` subcommand additionally
+accepts `--all-accounts --base-currency <CCY>` to materialize a unified
+snapshot across every real account under `accounts/`. It is mutually
+exclusive with `--account` and `--db` / `--settings`; on conflict the
+script exits non-zero with a clear error. Used by the total / all-accounts
+report pipeline (see `docs/portfolio_report_agent_guidelines.md` §N). Not
+available on other subcommands (`pnl`, `profit-panel`, `analytics`,
+`replay`, `db init`, `verify`, `account migrate`, etc.) — those keep
+single-`--account` behavior.
+
 ---
 
 `transactions.db` is the **only** record of the portfolio for each account.

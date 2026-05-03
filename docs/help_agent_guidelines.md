@@ -119,7 +119,22 @@ rows.
   Contract: `docs/portfolio_report_agent_guidelines.md` and every
   numbered file under `docs/portfolio_report_agent_guidelines/`.
 
-### E. Switch account (conditional — show only when ≥ 2 accounts exist)
+### E. Generate a total report across all accounts (conditional — show only when ≥ 2 accounts exist)
+
+- **Ask like:** "Produce today's total report." / "Generate a portfolio report
+  across all my accounts." / "Run a consolidated all-accounts health check."
+- **Agent does:** runs the same Gather → Render pipeline as item D, but with
+  `--all-accounts` on every step. Math-only output (positions, cash per
+  currency, P&L numeric, allocation, holding period); editorial sections
+  (news, events, alerts, adjustments, actions, psychology, theme/sector)
+  are excluded. Default language `en` (restricted to `en` / `zh-Hant` /
+  `zh-Hans`); default base currency `USD`. Output lands under
+  `accounts/_total/reports/<dated>_portfolio_report.html`. Contract:
+  `docs/portfolio_report_agent_guidelines.md` §N.
+
+Hide this item when only one account exists.
+
+### F. Switch account (conditional — show only when ≥ 2 accounts exist)
 
 - **Ask like:** "Switch to my Roth account." / "Use the 'trading' account."
   / "Which account am I on?" / "List my accounts."

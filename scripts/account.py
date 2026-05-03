@@ -66,6 +66,15 @@ NAME_REGEX = re.compile(r"^[a-z0-9][a-z0-9_-]{0,31}$")
 RESERVED_HARD = frozenset({"demo"})
 RESERVED_SOFT = frozenset({"default"})
 
+# Synthetic write-only output sinks (e.g., accounts/_total/reports/ for the
+# total/all-accounts portfolio report).  These are never enumerated as real
+# accounts.  NAME_REGEX already rejects leading-underscore names, but we keep
+# this set as defense-in-depth for resolve_all_accounts().
+SYNTHETIC_OUTPUT_NAMES = frozenset({"_total"})
+
+# Exit code raised by resolve_all_accounts() when no real accounts exist.
+EXIT_NO_ACCOUNTS = 4
+
 DEFAULT_ACCOUNT = "default"
 
 
@@ -382,10 +391,22 @@ def create_account_scaffold(name: str) -> AccountPaths:
     base.mkdir(parents=True, exist_ok=False)
     paths.reports_dir.mkdir(parents=True, exist_ok=True)
 
-    # Copy SETTINGS.example.md if available.
+    # Copy SETTINGS.example.md if available. D11: if the example is missing
+    # we used to silently skip the copy and still print "settings: <path>"
+    # downstream — leaving the user with a half-scaffolded account. Now we
+    # roll back the partial scaffold and fail loud so the caller knows
+    # exactly why creation didn't complete.
     example = _repo_root() / "SETTINGS.example.md"
     if example.is_file():
         shutil.copy2(example, paths.settings)
+    if not paths.settings.is_file():
+        shutil.rmtree(base, ignore_errors=True)
+        raise RuntimeError(
+            f"cannot create account {name!r}: SETTINGS.example.md not found "
+            f"at {example}. Restore the example file at the repo root and re-run, "
+            f"or copy a SETTINGS.md into {paths.settings.parent} manually before "
+            f"using the account."
+        )
 
     # Initialize transactions.db via the canonical entry-point. We import
     # lazily to avoid pulling transactions.py into self-tests (which run
@@ -517,19 +538,54 @@ def detect_legacy_layout() -> str:
 # --------------------------------------------------------------------------- #
 
 
-def add_account_args(parser: argparse.ArgumentParser) -> None:
-    """Add ``--account NAME`` to a parser. Idempotent (skips if present)."""
+def add_account_args(
+    parser: argparse.ArgumentParser,
+    *,
+    support_all_accounts: bool = False,
+) -> None:
+    """Add ``--account NAME`` (and optionally ``--all-accounts``) to a parser.
+
+    Idempotent: if ``--account`` is already present on the parser, returns
+    without adding anything (mirrors the original behavior so double-calls
+    are safe across the codebase).
+
+    When ``support_all_accounts=True`` (opt-in, default ``False``), adds
+    ``--account NAME`` and ``--all-accounts`` inside a mutually-exclusive
+    group so passing both yields an argparse error and a non-zero exit.
+    Only the four pipeline scripts (``fetch_prices.py``, ``fetch_history.py``,
+    ``transactions.py snapshot``, ``generate_report.py``) opt in; every
+    other ``add_account_args`` callsite keeps single-``--account`` behavior.
+    """
     for action in parser._actions:  # type: ignore[attr-defined]
         if "--account" in getattr(action, "option_strings", []):
             return
-    parser.add_argument(
-        "--account",
-        type=str,
-        default=None,
-        metavar="NAME",
-        help="Account name under accounts/<name>/. "
-        "Defaults to accounts/.active or 'default'.",
-    )
+    if support_all_accounts:
+        grp = parser.add_mutually_exclusive_group()
+        grp.add_argument(
+            "--account",
+            type=str,
+            default=None,
+            metavar="NAME",
+            help="Account name under accounts/<name>/. "
+            "Defaults to accounts/.active or 'default'.",
+        )
+        grp.add_argument(
+            "--all-accounts",
+            action="store_true",
+            default=False,
+            help="Run across every accounts/<name>/, excluding underscore-"
+            "prefixed synthetic sinks like _total. Mutually exclusive with "
+            "--account.",
+        )
+    else:
+        parser.add_argument(
+            "--account",
+            type=str,
+            default=None,
+            metavar="NAME",
+            help="Account name under accounts/<name>/. "
+            "Defaults to accounts/.active or 'default'.",
+        )
 
 
 def _explicit(value: object) -> bool:
@@ -634,6 +690,48 @@ def resolve_account(args: argparse.Namespace) -> AccountPaths:
         "account create <name>' to create one, or 'account use <name>' "
         "to select an existing account."
     )
+
+
+def resolve_all_accounts() -> List[AccountPaths]:
+    """Return AccountPaths for every real account under accounts/.
+
+    Filters:
+      - hidden entries (names starting with '.')
+      - non-directory entries
+      - names that fail NAME_REGEX (which already rejects leading '_')
+      - names in SYNTHETIC_OUTPUT_NAMES (defense-in-depth)
+      - names starting with '_' (defense-in-depth)
+
+    If no real accounts exist, prints an error to stderr and exits with
+    EXIT_NO_ACCOUNTS (4).  Used by the four ``--all-accounts`` pipeline
+    scripts.
+    """
+    accounts = _accounts_dir()
+    names: List[str] = []
+    for raw in _populated_account_dirs():
+        if raw in SYNTHETIC_OUTPUT_NAMES:
+            continue
+        if raw.startswith("_"):
+            continue
+        names.append(raw)
+    if not names:
+        sys.stderr.write(
+            f"ERROR: --all-accounts requires at least one real account "
+            f"under {accounts}/. None found.\n"
+        )
+        sys.exit(EXIT_NO_ACCOUNTS)
+    return [_paths_for(name) for name in sorted(names)]
+
+
+def synthetic_total_reports_dir() -> Path:
+    """Return the synthetic write-only reports directory for the
+    total/all-accounts portfolio report (``accounts/_total/reports/``).
+
+    Note: this is a write-only sink — no SETTINGS.md or transactions.db is
+    ever created here, and ``list_accounts()`` / ``resolve_all_accounts()``
+    both filter ``_total`` out.
+    """
+    return _accounts_dir() / "_total" / "reports"
 
 
 # --------------------------------------------------------------------------- #

@@ -10,7 +10,7 @@ Implements `docs/portfolio_report_agent_guidelines.md` §8 (Latest-price retriev
   3. **PRIMARY**: Stooq (no-token) for listed securities — `.us`/`.uk`/`.jp`/`.hk`/`.tw` suffixes
   4. **SECONDARY**: yfinance per-ticker history (skip crypto) — used only when Stooq misses (§8.3)
   5. yfinance failure recovery — up to 3 auto-correction attempts per failure (§8.4)
-  6. Tertiary fallback: keyed APIs (Twelve Data / Finnhub / etc.) → web (manual) (§8.1, §8.5)
+  6. Tertiary fallback: exchange-native no-token endpoints (TWSE MIS, Frankfurter ECB, Open ER) → web (manual) (§8.1, §8.5)
   7. **Currency verification**: every successful price result has its `currency` confirmed
      against a live internet source (Stooq metadata, yfinance fast_info, exchange API) before
      falling back to the hardcoded MARKET_DEFAULT_CCY map.
@@ -26,8 +26,8 @@ Output JSON shape (per ticker):
         "move_pct":                1.22,
         "currency":               "USD",
         "exchange":               "NMS",
-        "price_source":           "yfinance",        // or "twelve_data", "finnhub",
-                                                     // "coingecko", "no_token:binance",
+        "price_source":           "yfinance",        // or "no_token:stooq", "coingecko",
+                                                     // "no_token:binance", "no_token:frankfurter",
                                                      // "web:yahoo", "n/a", ...
         "price_as_of":            "2026-04-28T13:30:00-04:00",
         "price_freshness":        "fresh",           // "fresh", "delayed",
@@ -557,33 +557,9 @@ def _resolve_market(market_str: Optional[str], ticker: str, bucket: str, *, is_s
 
 
 # ----------------------------------------------------------------------------- #
-# SETTINGS.md parser — extracts base currency and optional API keys.
+# SETTINGS.md parser — extracts base currency.
 # It intentionally ignores any stale user-supplied FX-rate lines.
 # ----------------------------------------------------------------------------- #
-
-API_KEY_NAMES = (
-    "TWELVE_DATA_API_KEY",
-    "FINNHUB_API_KEY",
-    "COINGECKO_DEMO_API_KEY",
-    "ALPHA_VANTAGE_API_KEY",
-    "FMP_API_KEY",
-    "TIINGO_API_KEY",
-    "POLYGON_API_KEY",
-    "JQUANTS_REFRESH_TOKEN",
-)
-
-
-def parse_settings_keys(path: Optional[Path]) -> Dict[str, str]:
-    """Extract optional API keys (§8.6). Missing file or missing keys are not errors."""
-    keys: Dict[str, str] = {}
-    if path is None or not path.exists():
-        return keys
-    text = path.read_text(encoding="utf-8")
-    for name in API_KEY_NAMES:
-        m = re.search(rf"^\s*-?\s*{re.escape(name)}\s*[:=]\s*(?P<v>\S+)\s*$", text, re.MULTILINE)
-        if m and m.group("v") not in {"", "''", '""'}:
-            keys[name] = m.group("v")
-    return keys
 
 
 def parse_base_currency(path: Optional[Path]) -> str:
@@ -880,54 +856,11 @@ def _auto_correct(
 
 
 # ----------------------------------------------------------------------------- #
-# Keyed-API fallback stubs (§8.5 / §8.6)
+# No-token fallback helpers (§8.5)
 #
-# The user must populate SETTINGS.md with the relevant API keys for these to fire.
 # Each helper returns a dict with the same shape as the yfinance branch on success,
 # or None on miss / failure.
 # ----------------------------------------------------------------------------- #
-
-def _try_twelve_data(symbol: str, key: str, session: Any) -> Optional[Dict[str, Any]]:
-    """Twelve Data /price endpoint. Fast snapshot; rate-limited on free tier."""
-    try:
-        url = f"https://api.twelvedata.com/price?symbol={symbol}&apikey={key}"
-        r = session.get(url, timeout=YF_HTTP_TIMEOUT_SEC)
-        if r.status_code != 200:
-            return None
-        data = r.json()
-        if "price" not in data:
-            return None
-        return {
-            "latest_price": float(data["price"]),
-            "price_source": "twelve_data",
-            "price_as_of": _utc_iso(),
-        }
-    except Exception:                                         # noqa: BLE001
-        return None
-
-
-def _try_finnhub(symbol: str, key: str, session: Any) -> Optional[Dict[str, Any]]:
-    """Finnhub /quote endpoint (current + previous close)."""
-    try:
-        url = f"https://finnhub.io/api/v1/quote?symbol={symbol}&token={key}"
-        r = session.get(url, timeout=YF_HTTP_TIMEOUT_SEC)
-        if r.status_code != 200:
-            return None
-        data = r.json()
-        if "c" not in data or data["c"] in (0, None):
-            return None
-        latest = float(data["c"])
-        prior = float(data.get("pc") or 0) or None
-        return {
-            "latest_price": latest,
-            "prior_close": prior,
-            "move_pct": round(((latest - prior) / prior) * 100.0, 4) if prior else None,
-            "price_source": "finnhub",
-            "price_as_of": _utc_iso(),
-        }
-    except Exception:                                         # noqa: BLE001
-        return None
-
 
 def _split_fx_pair(symbol: str) -> Optional[Tuple[str, str]]:
     """Return (base, quote) for symbols like USDTWD, USDTWD=X, or USD/TWD."""
@@ -1010,15 +943,13 @@ def _normalize_crypto_symbol(symbol: str) -> str:
     return s
 
 
-def _resolve_coingecko_id(raw_ticker: str, session: Any, key: Optional[str] = None) -> Optional[str]:
+def _resolve_coingecko_id(raw_ticker: str, session: Any) -> Optional[str]:
     symbol = _normalize_crypto_symbol(raw_ticker)
     if symbol in COINGECKO_ID_MAP:
         return COINGECKO_ID_MAP[symbol]
 
     try:
         params = {"query": symbol}
-        if key:
-            params["x_cg_demo_api_key"] = key
         r = session.get(
             "https://api.coingecko.com/api/v3/search",
             params=params,
@@ -1040,10 +971,10 @@ def _resolve_coingecko_id(raw_ticker: str, session: Any, key: Optional[str] = No
         return None
 
 
-def _try_coingecko(raw_ticker: str, session: Any, key: Optional[str] = None) -> Optional[Dict[str, Any]]:
+def _try_coingecko(raw_ticker: str, session: Any) -> Optional[Dict[str, Any]]:
     """CoinGecko simple/price endpoint with deterministic symbol→id resolution."""
     try:
-        coin_id = _resolve_coingecko_id(raw_ticker, session, key)
+        coin_id = _resolve_coingecko_id(raw_ticker, session)
         if not coin_id:
             return None
         params = {
@@ -1051,8 +982,6 @@ def _try_coingecko(raw_ticker: str, session: Any, key: Optional[str] = None) -> 
             "vs_currencies": "usd",
             "include_24hr_change": "true",
         }
-        if key:
-            params["x_cg_demo_api_key"] = key
         r = session.get(
             "https://api.coingecko.com/api/v3/simple/price",
             params=params,
@@ -1078,7 +1007,7 @@ def _try_coingecko(raw_ticker: str, session: Any, key: Optional[str] = None) -> 
             "move_pct": round(float(change_24h), 4) if change_24h is not None else None,
             "currency": "USD",
             "exchange": "CoinGecko",
-            "price_source": "coingecko_demo" if key else "coingecko",
+            "price_source": "coingecko",
             "price_as_of": _utc_iso(),
         }
     except Exception:                                         # noqa: BLE001
@@ -1257,13 +1186,12 @@ def _try_no_token_twse_mis_dual(
 # The caller loops the list and stops on the first success.
 #
 # §8.5 ORDERING — Stooq is the **primary** source for listed securities, yfinance
-# per-ticker history is the **secondary** fallback. Keyed APIs and exchange-native
-# endpoints (TWSE MIS) are tertiary. This matches the operator preference:
-# Stooq quotes are stable, no-token, and currency-verifiable; yfinance is rate-limited
-# and noisier so it is only consulted when Stooq misses.
+# per-ticker history is the **secondary** fallback. Exchange-native no-token
+# endpoints (TWSE MIS, Frankfurter ECB, Open ER) are tertiary. This matches the
+# operator preference: Stooq quotes are stable, no-token, and currency-verifiable;
+# yfinance is rate-limited and noisier so it is only consulted when Stooq misses.
 def _build_fallback_chain(
     market: MarketType,
-    keys: Dict[str, str],
     session: Any,
     yf_symbol: Optional[str],
     raw_ticker: str,
@@ -1282,18 +1210,10 @@ def _build_fallback_chain(
         # Secondary: yfinance per-ticker
         if yf_symbol:
             chain.append(("yfinance", _yf_callable(yf_symbol)))
-        # Tertiary: keyed APIs (§8.5)
-        if "TWELVE_DATA_API_KEY" in keys:
-            chain.append(("twelve_data", lambda: _try_twelve_data(s, keys["TWELVE_DATA_API_KEY"], session)))
-        if "FINNHUB_API_KEY" in keys:
-            chain.append(("finnhub", lambda: _try_finnhub(s, keys["FINNHUB_API_KEY"], session)))
-        # FMP / Tiingo / Alpha Vantage / Polygon — TODO; same pattern.
     elif market == MarketType.CRYPTO:
         # Crypto does not use Stooq or yfinance. Exchange-native spot first, then CoinGecko.
         binance_sym = f"{_normalize_crypto_symbol(raw_ticker)}USDT"
         chain.append(("no_token:binance", lambda: _try_no_token_binance(binance_sym, session)))
-        if "COINGECKO_DEMO_API_KEY" in keys:
-            chain.append(("coingecko_demo", lambda: _try_coingecko(raw_ticker, session, keys["COINGECKO_DEMO_API_KEY"])))
         chain.append(("coingecko", lambda: _try_coingecko(raw_ticker, session)))
     elif market in (MarketType.TW, MarketType.TWO):
         # Primary: Stooq for TW listed names (covers most equities/ETFs)
@@ -1313,9 +1233,6 @@ def _build_fallback_chain(
         # Secondary: yfinance per-ticker
         if yf_symbol:
             chain.append(("yfinance", _yf_callable(yf_symbol)))
-        if "JQUANTS_REFRESH_TOKEN" in keys:
-            # JQuants flow — left as TODO; auth + endpoint resolution required.
-            pass
     elif market == MarketType.LSE:
         # Primary: Stooq `.uk` (e.g. vwra.uk, lse-listed UCITS ETFs)
         chain.append(("no_token:stooq", lambda: _try_no_token_stooq(f"{raw_ticker.lower()}.uk", session)))
@@ -1329,12 +1246,10 @@ def _build_fallback_chain(
         if yf_symbol:
             chain.append(("yfinance", _yf_callable(yf_symbol)))
     elif market == MarketType.FX:
-        # FX preserves the legacy order: yfinance primary (no Stooq endpoint for FX),
-        # then keyed Twelve Data, then Frankfurter (ECB), then Open ER.
+        # FX: yfinance primary (no Stooq endpoint for FX), then Frankfurter (ECB),
+        # then Open ER — all no-token sources.
         if yf_symbol:
             chain.append(("yfinance", _yf_callable(yf_symbol)))
-        if "TWELVE_DATA_API_KEY" in keys:
-            chain.append(("twelve_data_fx", lambda: _try_twelve_data(s, keys["TWELVE_DATA_API_KEY"], session)))
         chain.append(("no_token:frankfurter", lambda: _try_no_token_frankfurter_fx(s, session)))
         chain.append(("no_token:open_er_api", lambda: _try_no_token_open_er_fx(s, session)))
     return chain
@@ -1500,7 +1415,6 @@ def _verify_currency_via_internet(
 
 def fetch_all_prices(
     lots: List[Lot],
-    settings_keys: Dict[str, str],
     *,
     skip_yfinance: bool = False,
 ) -> Dict[str, PriceResult]:
@@ -1524,7 +1438,7 @@ def fetch_all_prices(
         session = requests.Session()
         session.headers.update({"User-Agent": "portfolio-report-agent/1.0"})
     except ImportError:
-        logging.warning("`requests` not installed; keyed-API fallbacks will be skipped.")
+        logging.warning("`requests` not installed; HTTP fallbacks will be skipped.")
 
     # Initialize results
     for (ticker, market) in distinct:
@@ -1562,7 +1476,7 @@ def fetch_all_prices(
 
         tried_any = False
         for label, callable_ in _build_fallback_chain(
-            market, settings_keys, session, pr.yfinance_symbol, ticker, pacer=pacer
+            market, session, pr.yfinance_symbol, ticker, pacer=pacer
         ):
             tried_any = True
             # §8.8 audit: stamp yfinance request started/latency for the yfinance branch
@@ -1640,7 +1554,6 @@ def required_fx_currencies(
 def fetch_auto_fx_rates(
     currencies: List[str],
     base_currency: str,
-    settings_keys: Dict[str, str],
     *,
     skip_yfinance: bool = False,
 ) -> Dict[str, Any]:
@@ -1679,7 +1592,7 @@ def fetch_auto_fx_rates(
             "details": {},
         }
 
-    fx_results = fetch_all_prices(fx_lots, settings_keys, skip_yfinance=skip_yfinance)
+    fx_results = fetch_all_prices(fx_lots, skip_yfinance=skip_yfinance)
     rates: Dict[str, float] = {}
     details: Dict[str, Any] = {}
     for symbol, result in fx_results.items():
@@ -1817,7 +1730,11 @@ def _cli_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
                    help="Path to transactions.db; default: resolved from --account / accounts/.active / 'default'")
     p.add_argument("--settings", default=None, type=Path,
                    help="Path to SETTINGS.md; default: resolved from --account / accounts/.active / 'default'")
-    add_account_args(p)
+    add_account_args(p, support_all_accounts=True)
+    p.add_argument("--base-currency", default=None, type=str,
+                   help="Override the price-fetch base currency. Required (or "
+                        "defaulted to USD) when --all-accounts; ignored otherwise "
+                        "(single-account mode reads SETTINGS.md).")
     p.add_argument("--output", default=None, type=Path,
                    help="Write JSON output to this path; default: stdout")
     p.add_argument("--skip-yfinance", action="store_true",
@@ -1857,13 +1774,6 @@ def main(argv: Optional[List[str]] = None) -> int:
         format="%(asctime)s [%(levelname)s] %(message)s",
     )
 
-    paths = resolve_account(args)
-    db_path = args.db if args.db is not None else paths.db
-    settings_path = args.settings if args.settings is not None else paths.settings
-    warn = check_pairing(db_path, settings_path)
-    if warn:
-        print(f"WARNING: {warn}", file=sys.stderr)
-
     # Decide once, upfront — so the install prompt fires before any pipeline
     # work, not deep inside the fetch loop. `--skip-yfinance` short-circuits
     # the prompt entirely for test / no-network runs.
@@ -1872,27 +1782,56 @@ def main(argv: Optional[List[str]] = None) -> int:
     else:
         _try_import_yfinance()
 
-    lots, source = _load_lots_from_db(db_path)
-    if not lots:
-        print(f"ERROR: no lots resolved from --db {db_path}. "
-              f"Run `python scripts/transactions.py db init` and import transactions first.",
-              file=sys.stderr)
-        return 3
-
-    settings_path = settings_path if settings_path.exists() else None
-    settings_keys = parse_settings_keys(settings_path)
-    base_currency = parse_base_currency(settings_path)
+    if getattr(args, "all_accounts", False):
+        if args.db is not None or args.settings is not None:
+            print("ERROR: --all-accounts is incompatible with --db / --settings",
+                  file=sys.stderr)
+            return 2
+        from account import resolve_all_accounts  # type: ignore[import-not-found]
+        all_paths = resolve_all_accounts()
+        lots: List[Lot] = []
+        per_account_sources: List[Tuple[str, str]] = []
+        for ap in all_paths:
+            account_lots, account_source = _load_lots_from_db(ap.db)
+            lots.extend(account_lots)
+            per_account_sources.append((ap.name, account_source))
+        if not lots:
+            print(
+                f"ERROR: no lots resolved across {len(all_paths)} account(s). "
+                "Run `python scripts/transactions.py db init` and import "
+                "transactions in at least one account first.",
+                file=sys.stderr,
+            )
+            return 3
+        source = "all_accounts:" + "+".join(name for name, _ in per_account_sources)
+        settings_path = None
+        base_currency = (args.base_currency or "USD").upper()
+    else:
+        paths = resolve_account(args)
+        db_path = args.db if args.db is not None else paths.db
+        settings_path = args.settings if args.settings is not None else paths.settings
+        warn = check_pairing(db_path, settings_path)
+        if warn:
+            print(f"WARNING: {warn}", file=sys.stderr)
+        lots, source = _load_lots_from_db(db_path)
+        if not lots:
+            print(f"ERROR: no lots resolved from --db {db_path}. "
+                  f"Run `python scripts/transactions.py db init` and import transactions first.",
+                  file=sys.stderr)
+            return 3
+        settings_path = settings_path if settings_path.exists() else None
+        base_currency = parse_base_currency(settings_path)
+        per_account_sources = []
     logging.info(
-        "Parsed %d lots, %d optional API keys, base currency %s",
-        len(lots), len(settings_keys), base_currency,
+        "Parsed %d lots, base currency %s",
+        len(lots), base_currency,
     )
 
-    results = fetch_all_prices(lots, settings_keys, skip_yfinance=args.skip_yfinance)
+    results = fetch_all_prices(lots, skip_yfinance=args.skip_yfinance)
     required_ccys = required_fx_currencies(lots, results, base_currency)
     fx_payload = fetch_auto_fx_rates(
         required_ccys,
         base_currency,
-        settings_keys,
         skip_yfinance=args.skip_yfinance,
     )
 
@@ -1908,7 +1847,6 @@ def main(argv: Optional[List[str]] = None) -> int:
         "lot_count": len(lots),
         "ticker_count": len(results),
         "required_fx_currencies": required_ccys,
-        "configured_api_keys": sorted(settings_keys.keys()),
         "yfinance_skipped": args.skip_yfinance,
         "spec_section_compliance": {
             "pacing_8_3": True,
@@ -1918,6 +1856,10 @@ def main(argv: Optional[List[str]] = None) -> int:
             "stored_fields_8_8": True,
         },
     }
+    if getattr(args, "all_accounts", False):
+        payload["_audit"]["all_accounts_sources"] = [
+            {"account": name, "source": src} for name, src in per_account_sources
+        ]
     hard_failures = find_todo_required_hard_failures(payload)
     payload["_audit"]["todo_required_hard_failures"] = hard_failures
     payload["_audit"]["todo_required_hard_fail"] = bool(hard_failures)

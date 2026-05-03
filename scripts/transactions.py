@@ -2870,12 +2870,21 @@ def load_transactions(
 # CLI
 # --------------------------------------------------------------------------- #
 
+def _add_source_args_no_account(sp: argparse.ArgumentParser) -> None:
+    """Add --db and --settings only.  Used by the snapshot subparser, which
+    needs to attach `add_account_args(..., support_all_accounts=True)`
+    explicitly so the mutex group does NOT bleed onto the four other
+    consumers of `_add_source_args` (pnl / profit-panel / analytics /
+    replay)."""
+    sp.add_argument("--db", default=None, type=Path,
+                    help="SQLite store (default: active account's transactions.db)")
+
+
 def _add_source_args(sp: argparse.ArgumentParser) -> None:
     """Common --db and --account flags. Default for --db is None (sentinel)
     so resolve_account() can detect "not explicitly set" and fall back to
     the active account's transactions.db."""
-    sp.add_argument("--db", default=None, type=Path,
-                    help="SQLite store (default: active account's transactions.db)")
+    _add_source_args_no_account(sp)
     add_account_args(sp)
 
 
@@ -2932,7 +2941,14 @@ def _build_parser() -> argparse.ArgumentParser:
     sn.add_argument("--output", default=Path("report_snapshot.json"), type=Path,
                     help="Snapshot path; default: ./report_snapshot.json")
     sn.add_argument("--today", default=None, help="Override today (YYYY-MM-DD); default: local date")
-    _add_source_args(sn)
+    sn.add_argument("--base-currency", default=None, type=str,
+                    help="Override the snapshot base currency.  Required (or "
+                         "defaulted to USD) when --all-accounts; ignored otherwise "
+                         "(single-account mode reads SETTINGS.md).")
+    # MUTEX-1 opt-in: only the snapshot subparser exposes --all-accounts;
+    # pnl / profit-panel / analytics / replay keep single-account behavior.
+    _add_source_args_no_account(sn)
+    add_account_args(sn, support_all_accounts=True)
 
     # ---- replay ------------------------------------------------------------ #
     rp = sub.add_parser("replay", help="Print replay state at cutoff")
@@ -3151,9 +3167,6 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 0
 
     if args.cmd == "snapshot":
-        db_path, settings_path = _resolve_paths(args)
-        args.db = db_path
-        args.settings = settings_path
         # Pipeline materialization: every numeric/structural field the renderer
         # needs lives in the snapshot. The agent then authors editorial
         # context.json (news, events, alerts, adjustments, action list,
@@ -3161,6 +3174,10 @@ def main(argv: Optional[List[str]] = None) -> int:
         try:
             from portfolio_snapshot import (              # noqa: WPS433
                 BUILTIN_UI_LOCALES,
+                DISPLAY_NAME_BY_LOCALE,
+                Lot,
+                SettingsProfile,
+                _compute_snapshot_core,
                 compute_snapshot,
                 parse_settings_profile,
                 write_snapshot,
@@ -3170,41 +3187,101 @@ def main(argv: Optional[List[str]] = None) -> int:
                   "Make sure scripts/portfolio_snapshot.py exists alongside transactions.py.",
                   file=sys.stderr)
             return 5
-        # Defense-in-depth: the snapshot bakes settings_locale / display_name /
-        # raw_language / base_currency into the JSON; the renderer reads them
-        # from the snapshot and ignores its own --settings flag for those
-        # fields. So a demo --db with the root --settings default silently
-        # renders the report in the root profile's language. Mirror the
-        # generate_report.py guard but trigger off --db instead of --output.
-        db_under_demo = (
-            args.db is not None
-            and "demo" in {p.lower() for p in Path(args.db).resolve().parts}
-        )
-        if (
-            db_under_demo
-            and Path(args.settings).resolve().name == "SETTINGS.md"
-            and Path(args.settings).resolve().parent.name != "demo"
-        ):
-            print(
-                f"WARNING: --db {args.db} appears to be the demo ledger but --settings "
-                f"is the root default ({args.settings}). Pass --settings demo/SETTINGS.md "
-                "so the snapshot bakes the demo locale / base currency — generate_report.py "
-                "reads those from the snapshot, not from its own --settings flag.",
-                file=sys.stderr,
-            )
+
         if not args.prices.exists():
             print(f"ERROR: --prices file {args.prices} not found "
                   "(run scripts/fetch_prices.py first).", file=sys.stderr)
             return 3
         prices = json.loads(args.prices.read_text(encoding="utf-8"))
-        settings = parse_settings_profile(args.settings)
         today = _dt.date.fromisoformat(args.today) if args.today else _dt.date.today()
-        snap = compute_snapshot(
-            db_path=args.db,
-            prices=prices,
-            settings=settings,
-            today=today,
-        )
+
+        if getattr(args, "all_accounts", False):
+            if args.db is not None or args.settings is not None:
+                print("ERROR: --all-accounts is incompatible with --db / --settings",
+                      file=sys.stderr)
+                return 2
+            from account import resolve_all_accounts        # noqa: WPS433
+            all_paths = resolve_all_accounts()
+            base_ccy = (args.base_currency or "USD").upper()
+            # DISPLAY-CONFLICT (iteration 4): SettingsProfile.display_name
+            # carries the LANGUAGE display label (e.g., "English"), which
+            # the renderer prints next to the eyebrow.  The "Total (All
+            # Accounts)" identification belongs in context["subtitle"]
+            # (Step 5d:6 in generate_report.py), not here.
+            locale = "en"
+            settings = SettingsProfile(
+                raw_language="english",
+                locale=locale,
+                display_name=DISPLAY_NAME_BY_LOCALE[locale],
+                config_overrides={},
+                base_currency=base_ccy,
+                missing=False,
+            )
+
+            # Concatenate lots; tag txns with originating account name for
+            # deterministic ordering.  Tuple-ordering avoids any Transaction
+            # attribute pollution beyond `seq`.
+            all_lots: List[Lot] = []
+            tagged: List[Tuple[str, Transaction]] = []
+            for ap in all_paths:
+                all_lots.extend(load_holdings_lots(ap.db))
+                for t in load_transactions_db(ap.db):
+                    tagged.append((ap.name, t))
+
+            # CB-2: deterministic global order = (date, account_name, original_seq).
+            tagged.sort(key=lambda pair: (pair[1].date, pair[0], pair[1].seq))
+
+            # Re-sequence: rewrite seq to be globally unique + ordered.  No
+            # monkeypatch.  Transaction is a regular @dataclass (not frozen),
+            # so direct attribute mutation is safe; if a future change adds
+            # frozen=True, swap to dataclasses.replace(t, seq=new_seq).
+            all_txns: List[Transaction] = []
+            for new_seq, (_acct, t) in enumerate(tagged):
+                t.seq = new_seq
+                all_txns.append(t)
+
+            snap = _compute_snapshot_core(
+                lots=all_lots,
+                txns=all_txns,
+                prices=prices,
+                settings=settings,
+                today=today,
+                total_mode=True,
+            )
+        else:
+            db_path, settings_path = _resolve_paths(args)
+            args.db = db_path
+            args.settings = settings_path
+            # Defense-in-depth: the snapshot bakes settings_locale /
+            # display_name / raw_language / base_currency into the JSON; the
+            # renderer reads them from the snapshot and ignores its own
+            # --settings flag for those fields. So a demo --db with the root
+            # --settings default silently renders the report in the root
+            # profile's language. Mirror the generate_report.py guard but
+            # trigger off --db instead of --output.
+            db_under_demo = (
+                args.db is not None
+                and "demo" in {p.lower() for p in Path(args.db).resolve().parts}
+            )
+            if (
+                db_under_demo
+                and Path(args.settings).resolve().name == "SETTINGS.md"
+                and Path(args.settings).resolve().parent.name != "demo"
+            ):
+                print(
+                    f"WARNING: --db {args.db} appears to be the demo ledger but --settings "
+                    f"is the root default ({args.settings}). Pass --settings demo/SETTINGS.md "
+                    "so the snapshot bakes the demo locale / base currency — generate_report.py "
+                    "reads those from the snapshot, not from its own --settings flag.",
+                    file=sys.stderr,
+                )
+            settings = parse_settings_profile(args.settings)
+            snap = compute_snapshot(
+                db_path=args.db,
+                prices=prices,
+                settings=settings,
+                today=today,
+            )
         if not snap.aggregates:
             print(f"ERROR: {args.db} has no open_lots / cash_balances. "
                   "Run `python scripts/transactions.py db init` and import transactions first.",

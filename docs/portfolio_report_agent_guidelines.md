@@ -82,6 +82,82 @@ or structural field is materialized once, in this order:
 The renderer's legacy `--prices --db` path remains for backwards compatibility
 but emits a deprecation warning; new agent runs must use `--snapshot`.
 
+### Total / All-Accounts mode (§N)
+
+**Trigger phrases.** "Total report", "all-accounts report", "portfolio across
+all my accounts", "consolidated report".
+
+**What it does.** Renders a math-only HTML report that unions every real
+account under `accounts/<name>/` (filtered by `NAME_REGEX`; underscore-
+prefixed sinks like `_total` are skipped). The report contains positions
+(merged, weighted-avg cost), per-currency cash, P&L panel (numeric only),
+allocation %, total market value, holding-period book pacing. Editorial
+sections are excluded by construction:
+
+- skipped: today_summary, alerts, news, events, adjustments, action items,
+  trading psychology, theme/sector, watchlist, transaction analytics
+  narrative, performance attribution, trade quality, discipline check,
+  report data quality scores, sources.
+- kept: masthead, dashboard (KPI tiles), profit panel (numeric), allocation
+  & weights, holdings table, P&L ranking, holding period.
+
+**Runtime prompts (agent → user).**
+1. Language — default `en`; restricted to `en` / `zh-Hant` / `zh-Hans`. ja /
+   vi / ko require a translated `--ui-dict` JSON (deferred D8).
+2. Base currency — default `USD`. Overrides any per-account SETTINGS.
+3. Strategy is **not** prompted — strategy lives in per-account SETTINGS and
+   is intentionally excluded from the total report (D3).
+
+**Pipeline (literal four-command sequence).**
+
+```bash
+RUN="$(date +%Y%m%d_%H%M)"
+RUN_DIR="/tmp/investments_portfolio_report_${RUN}"
+mkdir -p "$RUN_DIR"
+
+python scripts/fetch_prices.py --all-accounts \
+    --output "$RUN_DIR/prices.json" [--skip-yfinance]
+
+python scripts/fetch_history.py --all-accounts \
+    --merge-into "$RUN_DIR/prices.json" \
+    [--cache market_data_cache.db]
+
+python scripts/transactions.py snapshot --all-accounts --base-currency USD \
+    --prices "$RUN_DIR/prices.json" \
+    --output "$RUN_DIR/report_snapshot.json" \
+    --today $(date +%Y-%m-%d)
+
+python scripts/generate_report.py --snapshot "$RUN_DIR/report_snapshot.json" \
+    --all-accounts --language en
+# Output defaults to accounts/_total/reports/<YYYY-MM-DD_HHMM>_portfolio_report.html
+```
+
+After success, `rm -rf "$RUN_DIR"`.
+
+**Output path.** When `--output` is omitted, the renderer writes to
+`accounts/_total/reports/<YYYY-MM-DD_HHMM>_portfolio_report.html`. The
+`accounts/_total/` directory holds **only** reports — there is no SETTINGS.md
+or transactions.db; `account list` does not show it.
+
+**Mutually exclusive with `--account NAME`.** Passing both on any of the
+four pipeline scripts (`fetch_prices.py`, `fetch_history.py`,
+`transactions.py snapshot`, `generate_report.py`) emits an argparse error
+and exits non-zero.
+
+**Exit codes.** `2` = mutex / invalid combo (e.g., `--all-accounts --db`).
+`4` = no real accounts under `accounts/`. `7` is **not** raised in total
+mode (the `validate_report_context` gate is bypassed; editorial fields are
+intentionally absent). `8` cannot be raised because the language is
+constrained to built-in locales by argparse.
+
+**Single-account equivalence (AC#8).** When only one real account exists,
+`--all-accounts` produces a snapshot byte-equivalent to `--account <that
+one>` (modulo `generated_at`). This is a structural invariant — both paths
+share `_compute_snapshot_core` in `scripts/portfolio_snapshot.py`.
+
+Smoke test: `tests/smoke_total_account.sh` exercises every assertion above
+on a synthetic 3-account fixture under `/tmp/`.
+
 ### Demo ledger for report generation
 
 To exercise the **same pipeline** without reading or writing the user’s active-account

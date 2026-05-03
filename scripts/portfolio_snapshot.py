@@ -451,6 +451,19 @@ def aggregate(lots: List[Lot]) -> Dict[str, TickerAggregate]:
                 is_cash=is_cash,
             )
             buckets[lot.ticker] = agg
+        elif agg.market != lot.market:
+            # Ticker-market collision (CB-4): same ticker code reported with
+            # two different MarketType values would silently merge into the
+            # first-seen market bucket, double-counting qty/cost.  Surface it
+            # loudly instead.  Defense-in-depth in single-account mode (e.g.,
+            # a typo like `0700.HK` vs `700.HK` recorded as different markets);
+            # essential in --all-accounts mode where two accounts may record
+            # the same ticker with conflicting market tags.
+            raise ValueError(
+                f"ticker market collision: {lot.ticker!r} has market "
+                f"{agg.market.value!r} from one source and "
+                f"{lot.market.value!r} from another"
+            )
         if _bucket_priority(lot.bucket) < _bucket_priority(agg.bucket):
             agg.bucket = lot.bucket
 
@@ -1114,17 +1127,31 @@ class Snapshot:
     report_accuracy: Optional[Dict[str, Any]] = None
 
 
-def compute_snapshot(
+def _compute_snapshot_core(
     *,
-    db_path: Path,
+    lots: List[Lot],
+    txns: List[Any],
     prices: Dict[str, Any],
     settings: SettingsProfile,
     today: Optional[_dt.date] = None,
+    total_mode: bool = False,
+    txn_load_error: Optional[str] = None,
 ) -> Snapshot:
-    """Build the full report snapshot from canonical inputs.
+    """Math kernel.  Identical inputs -> identical outputs by construction.
 
-    Lazy imports `transactions` so this module can be used in environments
-    where `transactions.py` may not be on `sys.path` yet.
+    Shared between single-account ``compute_snapshot`` (the disk-loading
+    wrapper) and the ``--all-accounts`` total-mode entry point in
+    ``transactions.py snapshot``.
+
+    ``total_mode=True`` is presently informational only; the math is
+    identical.  ``txn_load_error`` (WRAPPER-OUTER-TRY iteration 5): when set
+    by the wrapper, the kernel skips the three analytics computations and
+    stamps the message into all three ``*_error`` fields, mirroring the
+    pre-refactor outer-try graceful-degradation behavior on a corrupted txn
+    log.
+
+    Lazy imports ``transactions`` / ``report_accuracy`` so this module can
+    be used in environments where they may not be on ``sys.path`` yet.
     """
     today = today or _dt.date.today()
 
@@ -1135,13 +1162,10 @@ def compute_snapshot(
         compute_profit_panel,
         compute_realized_unrealized,
         compute_transaction_analytics,
-        load_holdings_lots,
-        load_transactions_db,
     )
 
     base = settings.base_currency
     config: Dict[str, float] = {**DEFAULTS, **settings.config_overrides}
-    lots = load_holdings_lots(db_path)
     aggs = aggregate(lots)
     fx, fx_details = auto_fx_from_prices(prices, base)
     merge_prices(aggs, prices, fx=fx, base=base)
@@ -1158,8 +1182,12 @@ def compute_snapshot(
     realized_unrealized_error: Optional[str] = None
     analytics: Optional[Dict[str, Any]] = None
     analytics_error: Optional[str] = None
-    try:
-        txns = load_transactions_db(db_path)
+    if txn_load_error is not None:
+        # WRAPPER-OUTER-TRY: txn-log load failed at the wrapper; mirror the
+        # pre-refactor behavior — all three analytics fields stay None, all
+        # three *_error fields carry the same wrapper-supplied message.
+        profit_panel_error = realized_unrealized_error = analytics_error = txn_load_error
+    else:
         try:
             profit_panel = compute_profit_panel(txns, prices, base=base, today=today)
         except Exception as e:                                # noqa: BLE001
@@ -1172,12 +1200,6 @@ def compute_snapshot(
             analytics = compute_transaction_analytics(txns, prices, base=base, today=today)
         except Exception as e:                                # noqa: BLE001
             analytics_error = str(e)
-    except Exception as e:                                    # noqa: BLE001
-        # Loading the txn log failed entirely — surface a single error and
-        # leave the optional analytics fields empty.
-        profit_panel_error = realized_unrealized_error = analytics_error = (
-            f"could not load transactions from {db_path}: {e}"
-        )
 
     position_tickers = [a.ticker for a in aggs.values() if not a.is_cash]
     report_accuracy = compute_report_accuracy(
@@ -1223,6 +1245,53 @@ def compute_snapshot(
         realized_unrealized_error=realized_unrealized_error,
         transaction_analytics_error=analytics_error,
         report_accuracy=report_accuracy,
+    )
+
+
+def compute_snapshot(
+    *,
+    db_path: Path,
+    prices: Dict[str, Any],
+    settings: SettingsProfile,
+    today: Optional[_dt.date] = None,
+) -> Snapshot:
+    """Single-account entry point.  Loads lots + txns from disk, then
+    delegates to ``_compute_snapshot_core``.
+
+    WRAPPER-OUTER-TRY: preserves the exact graceful-degradation semantics of
+    the pre-refactor body.  If ``load_transactions_db`` raises, the wrapper
+    still calls the kernel with ``txns=[]`` and a ``txn_load_error`` so the
+    snapshot's positions/cash/totals math still renders, but the three
+    analytics fields carry the load error.  ``load_holdings_lots`` is NOT
+    wrapped (a Lot-load failure propagates exactly as in the pre-refactor
+    code).
+
+    Lazy imports ``transactions`` so this module can be used in environments
+    where ``transactions.py`` may not be on ``sys.path`` yet.
+    """
+    # Lazy imports to avoid import-time circularity.
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from transactions import (                               # noqa: WPS433
+        load_holdings_lots,
+        load_transactions_db,
+    )
+
+    lots = load_holdings_lots(db_path)
+    try:
+        txns = load_transactions_db(db_path)
+        txn_load_error: Optional[str] = None
+    except Exception as e:                                    # noqa: BLE001
+        txns = []
+        txn_load_error = f"could not load transactions from {db_path}: {e}"
+
+    return _compute_snapshot_core(
+        lots=lots,
+        txns=txns,
+        prices=prices,
+        settings=settings,
+        today=today,
+        total_mode=False,
+        txn_load_error=txn_load_error,
     )
 
 

@@ -739,7 +739,7 @@ def collect_history(
     cache_max_stale_days: int = 5,
 ) -> Dict[str, Any]:
     """Collect history for lots loaded from transactions.db."""
-    base = parse_base_currency(settings) if settings.exists() else "USD"
+    base = parse_base_currency(settings) if (settings is not None and settings.exists()) else "USD"
     use_cache = cache_path is not None
     if use_cache:
         cache_init(cache_path)
@@ -924,7 +924,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                    help="Path to transactions.db; default: resolved from --account / accounts/.active / 'default'")
     p.add_argument("--settings", default=None, type=Path,
                    help="Path to SETTINGS.md; default: resolved from --account / accounts/.active / 'default'")
-    add_account_args(p)
+    add_account_args(p, support_all_accounts=True)
     p.add_argument(
         "--output",
         default=None,
@@ -954,44 +954,70 @@ def main(argv: Optional[List[str]] = None) -> int:
     logging.basicConfig(level=logging.INFO if args.verbose else logging.WARNING,
                         format="%(asctime)s [%(levelname)s] %(message)s")
 
-    paths = resolve_account(args)
-    db_path = args.db if args.db is not None else paths.db
-    settings_path = args.settings if args.settings is not None else paths.settings
-
-    # Defense-in-depth: warn if a demo db is paired with the root cache or
-    # with a non-demo SETTINGS.md.
-    db_under_demo = Path(db_path).resolve().parent.name == "demo"
-    if (
-        db_under_demo
-        and not args.no_cache
-        and Path(args.cache).resolve() == DEFAULT_CACHE_PATH.resolve()
-    ):
-        print(
-            f"WARNING: --db {db_path} appears to be a demo ledger but --cache is the "
-            f"root default ({DEFAULT_CACHE_PATH}). Pass --cache demo/market_data_cache.db "
-            "to keep demo and production caches separate.",
-            file=sys.stderr,
-        )
-    warn = check_pairing(db_path, settings_path)
-    if warn:
-        print(f"WARNING: {warn}", file=sys.stderr)
-
     # Probe yfinance once upfront so the install prompt fires before any
     # fetch work. If the user declines (or stdin isn't a TTY), the chain
     # falls through to other sources without prompting again per ticker.
     _try_import_yfinance()
 
-    if db_path and db_path.exists():
-        # Use the fetch *universe* (current holdings + sold-off tickers) so
-        # historical-boundary valuations in compute_profit_panel can resolve
-        # closes for tickers that have since been fully sold.
+    if getattr(args, "all_accounts", False):
+        if args.db is not None or args.settings is not None:
+            print("ERROR: --all-accounts is incompatible with --db / --settings",
+                  file=sys.stderr)
+            return 2
+        from account import resolve_all_accounts  # type: ignore[import-not-found]
+        all_paths = resolve_all_accounts()
+        # Skip the demo-db / cache-pairing warning block (single-account-only).
         from transactions import load_fetch_universe_lots  # type: ignore[import-not-found]
-        lots = load_fetch_universe_lots(db_path)
+        lots: List[Lot] = []
+        for ap in all_paths:
+            if ap.db.exists():
+                lots.extend(load_fetch_universe_lots(ap.db))
+        if not lots:
+            print(
+                f"ERROR: no lots resolved across {len(all_paths)} account(s). "
+                "Run `python scripts/transactions.py db init` and import "
+                "transactions in at least one account first.",
+                file=sys.stderr,
+            )
+            return 2
+        # In total mode we don't consult per-account SETTINGS.md;
+        # collect_history reads settings only for the optional base
+        # currency. Pass None.
+        settings_path = None
     else:
-        print(f"ERROR: no source found at --db {db_path}. "
-              f"Run `python scripts/transactions.py db init` and import transactions first.",
-              file=sys.stderr)
-        return 2
+        paths = resolve_account(args)
+        db_path = args.db if args.db is not None else paths.db
+        settings_path = args.settings if args.settings is not None else paths.settings
+
+        # Defense-in-depth: warn if a demo db is paired with the root cache or
+        # with a non-demo SETTINGS.md.
+        db_under_demo = Path(db_path).resolve().parent.name == "demo"
+        if (
+            db_under_demo
+            and not args.no_cache
+            and Path(args.cache).resolve() == DEFAULT_CACHE_PATH.resolve()
+        ):
+            print(
+                f"WARNING: --db {db_path} appears to be a demo ledger but --cache is the "
+                f"root default ({DEFAULT_CACHE_PATH}). Pass --cache demo/market_data_cache.db "
+                "to keep demo and production caches separate.",
+                file=sys.stderr,
+            )
+        warn = check_pairing(db_path, settings_path)
+        if warn:
+            print(f"WARNING: {warn}", file=sys.stderr)
+
+        if db_path and db_path.exists():
+            # Use the fetch *universe* (current holdings + sold-off tickers) so
+            # historical-boundary valuations in compute_profit_panel can resolve
+            # closes for tickers that have since been fully sold.
+            from transactions import load_fetch_universe_lots  # type: ignore[import-not-found]
+            lots = load_fetch_universe_lots(db_path)
+        else:
+            print(f"ERROR: no source found at --db {db_path}. "
+                  f"Run `python scripts/transactions.py db init` and import transactions first.",
+                  file=sys.stderr)
+            return 2
     history = collect_history(
         lots,
         settings_path,
