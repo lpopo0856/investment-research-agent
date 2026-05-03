@@ -4,91 +4,196 @@
 
 The English README is the canonical version. Other languages are reader-friendly translations.
 
-A local workspace for an AI investment research assistant. Open this repo in **Claude Code, OpenAI Codex, Gemini CLI, or any agent that can read files and run commands** — then talk to it in plain language.
-
-**Model tier:** Use **Claude Sonnet 4.6** with **High** reasoning effort, or any newer model at least as capable. Lighter models may skip steps or shallow out the analysis.
+Investment Research Agent is a private, local assistant for tracking your portfolio, recording trades, importing brokerage statements, and turning your holdings into clear research and action plans. Open the workspace with your assistant and describe what you want in normal language.
 
 ## Report Demo
 
 **[Report Demo](https://lpopo0856.github.io/investment-research-agent/)**
 
-## Just ask the agent
+## Main features
 
-You don't need to learn any commands, schemas, or files. Pick whichever line below matches what you want and paste it.
+You do not need technical setup knowledge. Describe your intention in plain language, and the assistant will handle the workflow. If anything changes saved portfolio data, it will show you the proposed change and ask for confirmation before saving.
 
-**New here?**
+- **Get started** — create your first account, import your starting portfolio, and set up your investing style.
+- **Set your strategy** — define risk tolerance, sizing style, holding period, language, base currency, and off-limits areas.
+- **Manage accounts** — create, switch, review, and combine multiple brokerage, retirement, regional, or strategy accounts.
+- **Record activity** — add buys, sells, deposits, withdrawals, dividends, fees, and currency conversions using normal wording.
+- **Import broker files** — bring in statements, exports, spreadsheets, PDFs, screenshots, or pasted transaction history.
+- **Fix records** — correct mistaken trades, remove duplicates, reconcile cash, and check open lots against a broker statement.
+- **Research investments** — analyze stocks, ETFs, themes, sectors, markets, and portfolio exposure through your own strategy.
+- **Daily report** — produce a current decision dashboard with prices, news, events, alerts, opportunities, suggested adjustments, and today’s action list.
+- **Portfolio report** — review holdings, cash, allocation, profit and loss, concentration, pacing, and portfolio structure without daily trading noise.
+- **Total report** — combine all accounts into one high-level view while keeping each account’s records separate.
+- **Risk and exposure checks** — ask what is concentrated, overlapping, high risk, underfunded, or due for attention.
 
-> "Help me get started." *(or attach a brokerage statement in any format — PDF, CSV, JSON, XLSX, screenshot, pasted text — and say "onboard me")*
+## Detailed usage
 
-Scripts use your active account automatically (set via `--account <name>` or `accounts/.active`; defaults to `accounts/default/`).
+### Ask what is possible
 
-**Want to see what's possible?**
+If you are not sure where to start, say something like:
 
 > "What can I do here?"
+> "Show me what is possible."
+> "Help."
 
-**Tune how the agent acts as you (risk appetite, sizing, off-limits, language, base currency):**
+The assistant will give you a simple menu for onboarding, recording transactions, researching investments, and producing reports.
+
+### Get started or onboard a portfolio
+
+For a new setup, describe the goal:
+
+> "Help me get started."
+> "Onboard me."
+> "Please onboard me with this statement."
+> "Import this broker file and set up my portfolio."
+
+You can attach a brokerage statement, spreadsheet, PDF, screenshot, or pasted transaction history. The assistant will help create the account, understand your investing style, prepare your records, and verify that the setup is usable.
+
+### Set or review your investing style
+
+Tell the assistant how you invest so future research sounds and acts like you:
 
 > "Walk me through my settings."
-> "Review my SETTINGS." / "Change my base currency to TWD."
+> "Review my strategy."
+> "Update my risk tolerance."
+> "Change my base currency to TWD."
+> "Use Traditional Chinese for my reports."
+> "These sectors are off-limits for me."
 
-**Record a trade or cash flow:**
+This can include risk tolerance, position sizing, holding period, entry discipline, preferred language, base currency, and areas you want to avoid.
+
+### Add and manage accounts
+
+Use natural language to manage multiple accounts:
+
+> "Create a new account for my Japan portfolio."
+> "Add a retirement account."
+> "Show all my accounts."
+> "Which account am I using now?"
+> "Switch to my default account."
+> "Switch to my Taiwan account."
+> "Generate a report for my Japan account."
+> "Generate a total report across all accounts."
+
+Each account keeps its own settings, transactions, cash, holdings, and reports. A total report combines accounts for a high-level view while keeping the underlying accounts separate.
+
+### Record trades and cash flows
+
+Describe portfolio activity in everyday words:
 
 > "I bought 30 NVDA at $185 yesterday."
 > "Sold 10 TSLA at $400 today."
 > "Q1 GOOG dividend, $80."
 > "Deposited $5,000."
-> "Here's my Schwab CSV — please import it." *(other broker exports work too; see `docs/`)*
+> "Withdrew $1,000 for taxes."
+> "I paid a $12 trading fee."
+> "I converted USD 2,000 to TWD."
 
-**Tips for imports:** If you hold Taiwan-listed stocks, pass a Taiwan Stock Exchange (TWSE) export when you have one. Password-protected PDFs: open the file in your browser, use **Print** to save an unlocked PDF, then import that copy. Very large files (especially PDFs): split them into smaller files and import one batch at a time.
+The assistant will parse the activity, show you the proposed record, and wait for your confirmation before updating your portfolio.
 
-**Ask a research question:**
+### Fix or reconcile records
+
+If something is wrong, describe the correction:
+
+> "Fix the GOOG lot from last September."
+> "That NVDA trade should have been 20 shares, not 30."
+> "Remove the duplicate dividend entry."
+> "Reconcile my cash balance with this statement."
+> "Check whether my open lots match my broker export."
+
+The assistant will explain the proposed change before saving it.
+
+### Import broker files
+
+Attach the file and describe what you want:
+
+> "Here is my broker export — please import it."
+> "Import this transaction history."
+> "Import this PDF statement and show me what you found before saving."
+> "This file has dividends and trades; add them to my account."
+
+Import tips:
+
+- If you hold Taiwan-listed stocks, a Taiwan Stock Exchange export is usually the best source when available.
+- If a PDF is password-protected, open it yourself and save an unlocked copy before importing.
+- If a file is very large, especially a PDF, split it into smaller batches before importing.
+- If an import looks ambiguous, the assistant will ask you to confirm the interpretation before saving anything.
+
+### Research a stock, ETF, theme, or market
+
+Ask for direct, portfolio-aware research:
 
 > "Analyze NVDA against my current portfolio."
-> "What's my AI exposure now?"
+> "Should I buy TSM now for my strategy?"
+> "Compare TSM, NVDA, and AMD."
+> "What is my AI exposure now?"
 > "Should I trim short-term positions before earnings?"
+> "Review my Japan exposure."
+> "What should I watch in semiconductors this week?"
 
-**Generate today's portfolio report:**
+Research notes focus on the decision: whether to buy, hold, trim, avoid, or wait; how large the position should be; what would invalidate the view; and what to track next.
 
-> "Produce today's portfolio health check."
+### Generate a daily report
+
+Use the daily report when you want a current decision dashboard for today:
+
+> "Produce today’s daily report."
 > "Run my pre-market report."
+> "Give me today’s portfolio health check."
+> "What should I do in the portfolio today?"
 
-**Generate a total report across all your accounts (math-only):**
+The daily report is designed for active review. It can include updated prices, portfolio health, important news, upcoming events, risk alerts, high-opportunity setups, suggested adjustments, and a clear action list for the day.
 
-> "Produce today's total report."
-> "Generate a portfolio report across all my accounts."
+### Generate a portfolio report
 
-Total reports union every account's positions and cash, run the same math kernel, and skip every editorial section (news, events, alerts, action items, psychology, theme/sector, ...). Default language `en` (built-in: `en` / `zh-Hant` / `zh-Hans`); default base currency `USD`. Output lands under `accounts/_total/reports/`.
+Use the portfolio report when you want a cleaner position review without daily trading noise:
 
-Anything that changes your saved data needs your confirmation first. Say what you want in everyday language; the assistant follows the contract docs under `docs/` end-to-end and handles the mechanics.
+> "Generate my portfolio report."
+> "Show me my portfolio allocation and performance."
+> "Review my holdings, cash, and concentration."
+> "How has the portfolio performed?"
 
-## Multi-account
+The portfolio report focuses on holdings, cash, allocation, profit and loss, concentration, pacing, and portfolio structure. It is best for reviewing the shape of the book rather than making same-day decisions.
 
-Each account owns its own settings, transaction ledger, and reports under `accounts/<name>/` (e.g. `accounts/default/SETTINGS.md`, `accounts/default/transactions.db`, `accounts/default/reports/`).
+### Generate a total report across accounts
 
-**Selection precedence** (highest to lowest):
-1. `--account <name>` flag on the command line
-2. Pointer file `accounts/.active` (single line with the account name)
-3. `accounts/default/` if it exists
+When you have more than one account, ask for a combined view:
 
-**Root layout migration:** If `SETTINGS.md` or `transactions.db` exist at the repo root and no `accounts/` directory is present, any script will detect the legacy layout and prompt `Migrate? [y/N]`. Answering `y` moves your files into `accounts/default/`, writes a backup to `.pre-migrate-backup/`, and continues your command. Net-new users are never prompted — onboarding creates `accounts/default/` directly.
+> "Generate a total report across all accounts."
+> "Show my total portfolio."
+> "Combine all accounts and summarize my exposure."
 
-**Not account-scoped:** `market_data_cache.db` (shared price/FX cache) and `demo/` remain at the repo root and are never moved into `accounts/`.
+The total report gives a high-level combined view across accounts while avoiding account-specific trading guidance.
 
-**Account management commands:**
-```bash
-python scripts/transactions.py account list          # list all accounts, mark active
-python scripts/transactions.py account use <name>    # switch active account
-python scripts/transactions.py account create <name> # scaffold a new account
-python scripts/transactions.py account detect        # print layout state before migration
-```
+### Ask for portfolio risk and exposure checks
+
+You can ask focused portfolio questions without generating a full report:
+
+> "What are my top concentration risks?"
+> "How much cash do I have?"
+> "Which positions overlap the most?"
+> "Am I too exposed to AI semiconductors?"
+> "Which holdings are high risk right now?"
+> "What upcoming events matter for my portfolio?"
+
+### Ask for an action plan
+
+If you want a short decision list, say:
+
+> "Give me today’s action list."
+> "What should I buy, trim, or leave alone?"
+> "Which positions need attention first?"
+> "Tell me what to monitor this week."
+
+The assistant will prefer no action over forced activity when there is no clear edge.
 
 ## Privacy
 
-Your settings, your transactions database (SQLite), and every generated report stay local under `accounts/<name>/` — none of them are tracked in git. Only the agent specs, example templates, and the Python scripts are in version control.
+Your settings, transactions, and generated reports stay local in this workspace. They are not published by this project. You control what files you share with the assistant and what changes are saved.
 
-## Third-party data
+## Third-party market data
 
-The price workflow may use public market-data and FX endpoints (Stooq, Yahoo, Binance, CoinGecko, Frankfurter / ECB, Open ExchangeRate-API, TWSE / TPEx) and optional API keys you supply. This project does not operate or endorse any provider — you are responsible for terms, rate limits, and any paid access.
+Reports and research may use public market-data and currency sources, plus any data access you choose to provide. Availability, delays, rate limits, and accuracy depend on those providers.
 
 ## Disclaimer
 

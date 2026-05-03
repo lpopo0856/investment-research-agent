@@ -8,6 +8,10 @@
 
 This repo uses a multi-account layout: each account owns its files under `accounts/<name>/` (e.g. `accounts/default/SETTINGS.md`, `accounts/default/transactions.db`, `accounts/default/reports/`). Pass `--account <name>` to any script to target a specific account; omitting the flag resolves via `accounts/.active` → `accounts/default/` → error. The shared price/FX cache (`market_data_cache.db`) and `demo/` directory live at the repo root and are never account-scoped. Agents running non-interactively MUST run a layout preflight (`python scripts/transactions.py account detect`) before any script that reads SETTINGS.md or transactions.db; invoke `python scripts/transactions.py account migrate --yes` only when the detector prints `migrate`. If it prints `clean` or `demo_only_at_root`, do not run migration. If it prints `partial`, stop and follow the onboarding reconciliation path. See `docs/onboarding_agent_guidelines.md` for the full migration and onboarding flow.
 
+## Project skills
+
+Root-level `skills/<skill-name>/SKILL.md` files are project-local workflow contracts shared across Codex, Claude, Gemini, and other agents. At task start, scan `skills/*/SKILL.md` frontmatter and descriptions; when the user request matches a skill trigger, read that skill body and follow it. Prefer any reusable repo code named by the skill under `scripts/`.
+
 ## New users
 
 If `accounts/<active>/SETTINGS.md` or `accounts/<active>/transactions.db` is missing (or the legacy root layout is detected), or the user asks to get started / onboard / import a statement in any format (PDF, CSV, JSON, XLSX, screenshot, pasted text), follow `docs/onboarding_agent_guidelines.md`. It is the brand-agnostic on-ramp; once the DB has rows, route to `docs/transactions_agent_guidelines.md`.

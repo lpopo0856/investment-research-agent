@@ -14,6 +14,10 @@ If `accounts/<active>/SETTINGS.md` or `accounts/<active>/transactions.db` is mis
 
 **Agent migration recipe (C-8):** Agents running non-interactively MUST run a layout preflight (`python scripts/transactions.py account detect`) BEFORE any script that reads SETTINGS.md or transactions.db. Invoke `python scripts/transactions.py account migrate --yes` only when the detector prints `migrate`; if it prints `clean` or `demo_only_at_root`, do not run migration; if it prints `partial`, stop for manual reconciliation per `docs/onboarding_agent_guidelines.md`.
 
+## Project skills
+
+Root-level `skills/<skill-name>/SKILL.md` files are project-local workflow contracts shared across Codex, Claude, Gemini, and other agents. At task start, scan `skills/*/SKILL.md` frontmatter and descriptions; when the user request matches a skill trigger, read that skill body and follow it. Prefer any reusable repo code named by the skill under `scripts/`.
+
 ## Help — capability menu
 
 If the user asks "help" / "what can I do here" / "now what" / similar overview requests, follow `docs/help_agent_guidelines.md`. It renders a state-aware four-item menu and routes to the right contract doc.

@@ -1,0 +1,97 @@
+---
+name: split-asset-account
+description: Safely split an asset class, market, strategy sleeve, or ticker set out of one investment ledger into a separate account while preserving combined balances. Use when a user asks to isolate crypto, options, private assets, broker sleeves, strategy buckets, or any subset of holdings/transactions into another account; when ledger surgery must be auditable, dry-run first, backed up, and verified; or when an agent needs a brand-agnostic account-split workflow rather than broker-specific import logic.
+---
+
+# Split Asset Account
+
+## Core Rule
+
+Treat account splitting as ledger migration, not table editing. Preserve the combined economic state of source plus target, keep the original source DB backed up, and verify both reconstructed ledgers before writing live files.
+
+Use the reusable helper when this repo's account-aware SQLite ledger is available:
+
+```bash
+python scripts/split_asset_account.py \
+  --source-account default \
+  --target-account crypto \
+  --market crypto
+```
+
+Default mode is dry-run only. Add `--apply` only after reviewing the JSON summary and confirming the dry-run has no `verify_issues`.
+
+## Workflow
+
+1. Detect layout before touching account files:
+
+```bash
+python scripts/transactions.py account detect
+python scripts/transactions.py account list
+```
+
+Stop on `partial`; run project onboarding/migration guidance before continuing. Continue on `clean`.
+
+2. Define the split selector.
+
+Prefer exact selectors that are stable in the ledger: `--market crypto`, `--ticker BTC,ETH`, or repeated `--ticker`. Do not infer a broad selector from a report label if the transaction rows use different canonical fields.
+
+3. Dry-run the split.
+
+```bash
+python scripts/split_asset_account.py \
+  --source-account <source> \
+  --target-account <target> \
+  --market <market-or-asset-class> \
+  --run-dir /tmp/asset_account_split_<date>
+```
+
+Review:
+- `source_rebuilt.json`: source account after selected rows are removed and BUY funding transfers are inserted.
+- `target_import.json`: target account funding deposits plus selected transactions.
+- `summary.json`: selected count, tickers, bridge count, and verification issues.
+
+Proceed only when `verify_issues.source`, `verify_issues.target`, and `verify_issues.combined` are all empty.
+
+4. Explain the write plan before applying.
+
+Show the user the selector, selected tickers/assets, target account name, backup path, and the dry-run verification result. If the project has a confirm-before-write rule for transaction DBs, get explicit same-turn confirmation before `--apply`.
+
+5. Apply.
+
+```bash
+python scripts/split_asset_account.py \
+  --source-account <source> \
+  --target-account <target> \
+  --market <market-or-asset-class> \
+  --run-dir /tmp/asset_account_split_<date> \
+  --apply
+```
+
+Use `--replace-target` only after verifying the target account is intentionally disposable or already represents the same split.
+
+6. Verify live state.
+
+```bash
+python scripts/transactions.py verify --account <source>
+python scripts/transactions.py verify --account <target>
+python scripts/transactions.py db stats --account <source>
+python scripts/transactions.py db stats --account <target>
+```
+
+Check that the source no longer has the selected open lots, the target has them, and the active account pointer is unchanged unless the user asked to switch accounts.
+
+## Accounting Pattern
+
+For selected `BUY` rows, insert a source `WITHDRAW` and target `DEPOSIT` for `qty * price + fees` on the same date, then keep the original `BUY` in the target account. This makes the target account self-funding and prevents combined NAV from double-counting.
+
+For selected non-BUY rows such as `SELL`, `DIVIDEND`, or `FEE`, keep the selected transaction in the target account and do not mirror the cash effect in the source. The target should own later proceeds and costs from the migrated asset history.
+
+Never edit derived balance tables directly. Rebuild them through the canonical import/replay path.
+
+## Failure Handling
+
+If any dry-run verification fails, do not apply. Inspect `summary.json`, narrow the selector, or handle unsupported transaction shapes manually.
+
+If live verification fails after apply, restore the source DB from `transactions.db.bak` or the timestamped backup written by the script, then report the mismatch.
+
+If the target account already contains transactions, refuse to overwrite unless the user explicitly intends to replace it.
