@@ -1,0 +1,74 @@
+---
+name: onboarding
+description: Route new-user setup, legacy-layout migration, statement extraction, and first ledger import through the repo's canonical onboarding contracts. Use when SETTINGS.md or transactions.db/account files are missing, the user asks to get started/onboard/import a statement, or an agent needs the safe setup path without absorbing the full onboarding, settings, or transaction docs.
+---
+
+# Onboarding
+
+## Core Rule
+
+Onboarding is a router, not an absorber. Follow `docs/onboarding_agent_guidelines.md` end to end, and route specialist work to `docs/settings_agent_guidelines.md` for settings/strategy and `docs/transactions_agent_guidelines.md` for ledger imports. Do not duplicate or improvise those workflows inside this skill.
+
+## Natural-Language User Interface
+
+Treat natural language as the only default user interface. Command snippets, flags, paths, and machine formats below are internal agent contracts or audit evidence, not user instructions. Execute eligible steps yourself via tools, summarize results naturally, and collect missing parameters conversationally. Do not ask the user to run commands, choose flags, know canonical command names, assemble files, or write JSON unless they explicitly request CLI/API instructions or execution is blocked by missing authority. Confirmation gates ask for the required decision in natural language and must not delegate command execution or machine formatting to the user.
+
+## Layout Preflight Gate
+
+Before any script reads `SETTINGS.md` or `transactions.db`, run the C-8 layout preflight:
+
+```bash
+python scripts/transactions.py account detect
+```
+
+Act only on the detector state:
+
+- `migrate`: run migration through the canonical command, then continue only after it succeeds:
+
+```bash
+python scripts/transactions.py account migrate --yes
+```
+
+- `clean`: do not migrate; continue with the active/default account workflow when one exists, or scaffold the requested first account through the gated account/onboarding path.
+- `demo_only_at_root`: do not migrate; treat demo assets as isolated demo inputs.
+- `partial`: hard stop; follow the reconciliation path in `docs/onboarding_agent_guidelines.md` before doing anything else.
+
+Never run `python scripts/transactions.py account migrate --yes` unless `account detect` printed exactly `migrate` in the same workflow.
+
+## Routing Workflow
+
+1. Detect account state with `python scripts/transactions.py account detect`.
+2. If an account must be created, use the canonical scaffold command:
+
+```bash
+python scripts/transactions.py account create <name>
+```
+
+3. For language, base currency, time zone, API keys, or strategy text, switch to `docs/settings_agent_guidelines.md`. Bootstrap from `SETTINGS.example.md` only under that settings workflow, and keep its diff-confirm gate.
+4. For trades, cash, broker CSV/JSON, or converted statement imports, switch to `docs/transactions_agent_guidelines.md`. Keep the transaction confirmation, backup, and verify gates.
+5. After onboarding verification, stop at the user's completed setup state. Do not immediately offer report generation; wait for a separate report request.
+
+## Statement Extraction Discipline
+
+Keep all extraction intermediates under `/tmp`, never in the repo tree. For large statements, screenshots, PDFs, or broker files whose extraction would create large tool output, delegate extraction to a temp-researcher per `docs/context_drop_protocol.md` / `docs/temp_researcher_contract.md`; the temp-researcher returns only a result file path, short summary, and audit.
+
+Write normalized import JSON to `/tmp/onboarding_<broker>_<timestamp>.json` and show a sample plus resulting state preview before any insert/import.
+
+## Batch Import Confirmation Gate
+
+Before any onboarding import writes to the ledger, show:
+
+1. Parsed trades / cash flows.
+2. Write plan and target account.
+3. Exact canonical JSON blob for small batches, or `/tmp` JSON path plus sample for large batches.
+4. Resulting state preview.
+5. SELL realized P&L when relevant.
+6. Literal prompt: `Confirm and write? (yes / no / edit)`.
+
+Only after explicit same-turn `yes`, use the canonical transaction import path from `docs/transactions_agent_guidelines.md`, back up first when required, then verify with:
+
+```bash
+python scripts/transactions.py verify --account <name>
+```
+
+On verify failure, roll back from backup and report the mismatch.

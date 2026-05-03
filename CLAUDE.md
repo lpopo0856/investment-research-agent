@@ -1,35 +1,12 @@
-# Guide
+# Claude Guide
 
-**README languages** · [English](README.md) · [繁體中文](docs/l10n/README.zh-Hant.md) · [简体中文](docs/l10n/README.zh-Hans.md) · [日本語](docs/l10n/README.ja.md) · [Tiếng Việt](docs/l10n/README.vi.md) · [한국어](docs/l10n/README.ko.md)
+Read `AGENTS.md` first. It is the project authority for workflow routing, investment behavior, safety floors, and verification expectations.
 
-**CRITICAL** **MUST READ** READ AGENTS.md, README.md, /docs/* under root directory
+This file is only a Claude adapter. Do not duplicate workflow rules here:
 
-## New users
+- Use root-level `skills/*/SKILL.md` as the first-line workflow contracts.
+- Use referenced `docs/*.md` as the detailed source of truth.
+- For large extraction/research phases, use `skills/context-economy/SKILL.md`; use Claude subagents/fresh isolated work as available.
+- Put scratch/report intermediates under `/tmp` unless the active skill/doc explicitly allows a final deliverable path.
 
-If `accounts/<active>/SETTINGS.md` or `accounts/<active>/transactions.db` is missing (or the legacy root `SETTINGS.md` / `transactions.db` is present without an `accounts/` directory), or the user asks to get started / onboard / import a statement in any format (PDF, CSV, JSON, XLSX, screenshot, pasted text), follow `docs/onboarding_agent_guidelines.md`. It is the brand-agnostic on-ramp; once the DB has rows, route to `docs/transactions_agent_guidelines.md`.
-
-**Account detection checklist:**
-- If `accounts/` exists and contains at least one subdirectory → multi-account layout is active; use `--account` / `accounts/.active` / `accounts/default/` resolution order.
-- If root `SETTINGS.md` or `transactions.db` exists and `accounts/` is absent → legacy layout; any script will prompt migration to `accounts/default/`. Net-new users are never prompted — onboarding writes directly to `accounts/default/`.
-
-**Agent migration recipe (C-8):** Agents running non-interactively MUST run a layout preflight (`python scripts/transactions.py account detect`) BEFORE any script that reads SETTINGS.md or transactions.db. Invoke `python scripts/transactions.py account migrate --yes` only when the detector prints `migrate`; if it prints `clean` or `demo_only_at_root`, do not run migration; if it prints `partial`, stop for manual reconciliation per `docs/onboarding_agent_guidelines.md`.
-
-## Project skills
-
-Root-level `skills/<skill-name>/SKILL.md` files are project-local workflow contracts shared across Codex, Claude, Gemini, and other agents. At task start, scan `skills/*/SKILL.md` frontmatter and descriptions; when the user request matches a skill trigger, read that skill body and follow it. Prefer any reusable repo code named by the skill under `scripts/`.
-
-## Help — capability menu
-
-If the user asks "help" / "what can I do here" / "now what" / similar overview requests, follow `docs/help_agent_guidelines.md`. It renders a state-aware four-item menu and routes to the right contract doc.
-
-## Settings interview
-
-If the user asks to set up / edit / review `SETTINGS.md` ("walk me through my settings", "set up my strategy", "review my SETTINGS", "change my base currency"), or onboarding §4 delegates to it, follow `docs/settings_agent_guidelines.md`. The settings file for the active account lives at `accounts/<active>/SETTINGS.md` (not at the repo root).
-
-## Context drop (token economy)
-
-Multi-stage workflows must minimize cumulative input tokens by keeping research-class data **out of the parent agent's context by construction**. The full rules are in `docs/context_drop_protocol.md`; the brand-agnostic temp-researcher execution contract (input brief / return shape / hard rules / per-runtime adaptation) is `docs/temp_researcher_contract.md`; concrete pipeline applications are in `docs/context_drop_pipeline_audit.md`. Short version: any phase whose deliverable is a file or short summary AND whose internal work involves > 5K tokens of tool output (WebSearch dumps, PDF/image extraction, large-file reads) **must** be delegated to a temp-researcher (any runtime's isolation primitive — Claude Code subagent, Codex fresh session, Gemini CLI subagent, etc.) that writes findings to a result file and returns only `{result_file, summary, audit}`. Pasting findings back into the parent's response defeats the protocol. The result file is the only thing that crosses the phase boundary. (Claude Code agent definition that satisfies the contract: `.claude/agents/temp-researcher.md`.)
-
-## Temp files
-
-All temporary files (smoke-test inputs, scratch JSON, intermediate prices/context fixtures, regen output for verification, etc.) **MUST** be written under `/tmp/` — never inside the repository working tree. Portfolio-report pipeline intermediates — including `prices.json` (with merged `_history` / `_fx_history`), `report_snapshot.json`, `report_context.json`, `fill_history_gap.py --merge-into` targets, and optional `--ui-dict` overlay JSON — **must** live under a single per-run directory such as `/tmp/investments_portfolio_report_<RUN>/`; after the HTML is written and checks pass, remove that directory (`rm -rf`). Production HTML goes under `accounts/<name>/reports/`; **demo-ledger** runs additionally use `--cache demo/market_data_cache.db` on `fetch_history.py` / `fill_history_gap.py` (default cache is root `market_data_cache.db`) and should write the final HTML under **`demo/reports/`** so demo output stays under `demo/`. Canonical user-local artifacts live under `accounts/<name>/` (`SETTINGS.md`, `transactions.db` with append-only log plus materialized `open_lots` / `cash_balances`, `reports/<dated>_portfolio_report.html`); active account is selected by `--account` or `accounts/.active` (default: `default`). The shared price/FX cache (`market_data_cache.db`) and `demo/` directory remain at the repo root and are NOT account-scoped. Tracked source and contracts live under `scripts/` and `docs/` (see `README.md`). Anything ephemeral goes to `/tmp` and is cleaned up after use.
+If this file and `AGENTS.md` disagree, follow `AGENTS.md`.

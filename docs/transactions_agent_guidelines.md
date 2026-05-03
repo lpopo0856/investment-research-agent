@@ -1,5 +1,9 @@
 # Transactions Ledger — Agent Guidelines
 
+## Natural-language user interface
+
+Natural language is the default user interface for this workflow. Commands, flags, paths, schemas, and machine-readable examples in this document are agent-internal contracts or audit evidence. In normal user replies, translate them into natural-language actions, execute eligible steps yourself, collect missing parameters conversationally, and summarize results naturally. Do not show Python/shell commands, command code blocks, canonical command names, or JSON/file-format requirements as user instructions unless the user explicitly asks for CLI/API help or execution is blocked by missing authority.
+
 ## Active-account resolution
 
 Every `transactions.py` subcommand resolves the target account in this
@@ -29,6 +33,9 @@ passing `--account default`. For clarity in the examples below, `--account
 invocations continue to use explicit `--db demo/transactions.db
 --settings demo/SETTINGS.md` paths unchanged.
 
+When acting as an agent, resolve and name the target account before ledger inspection, write previews, imports, corrections, or confirmations. Use the user-named account when present; otherwise use the active account, falling back to `default` only when safely resolvable. Stop on `partial` or unresolved account state rather than guessing.
+
+
 **`snapshot --all-accounts`.** The `snapshot` subcommand additionally
 accepts `--all-accounts --base-currency <CCY>` to materialize a unified
 snapshot across every real account under `accounts/`. It is mutually
@@ -52,14 +59,8 @@ It lives at `accounts/<name>/transactions.db` (gitignored) and captures both:
    every write. This is what the report renderer, price fetcher, and
    profit panel read from.
 
-`HOLDINGS.md` has been **retired** as a live source. The previous markdown
-transaction ledger (`TRANSACTIONS.md`) was retired one iteration earlier. The
-DB is the single source of truth; consumers either read the balance tables directly via
-`scripts/transactions.py load_holdings_lots(db_path)` or query SQL.
-
-> **Iteration 3 (2026-04-30 late-night)** — `HOLDINGS.md` removed from
-> runtime inputs; balance tables added; `holdings_update_agent_guidelines.md` folded into this
-> document.
+The DB is the single source of truth; consumers either read the balance tables
+directly via `scripts/transactions.py load_holdings_lots(db_path)` or query SQL.
 
 ---
 
@@ -100,7 +101,7 @@ confirm, verify still apply unchanged.
    They are auto-rebuilt on every successful import. Run
    `python scripts/transactions.py db rebuild` if you suspect drift.
 3. **Always** back up to `transactions.db.bak` before any agent-driven write
-   (`db add`, `db import-csv`, `db import-json`, `db import-md`, `migrate`).
+   (`db add`, `db import-csv`, `db import-json`).
 4. **Never** show a write without first showing a parsed plan + the JSON
    blob(s) that will be inserted + getting explicit `yes` from the user in
    the same conversation turn.
@@ -378,42 +379,12 @@ python scripts/transactions.py db add --json '<canonical-json>'
 Used by the natural-language workflow once the agent has parsed the
 message. Same validation pipeline as `import-json`.
 
-### 4.4 Markdown migration (one-shot)
-
-```
-python scripts/transactions.py db import-md \
-    --input TRANSACTIONS.md --delete-after
-```
-
-Used **once** when carrying over data from iteration 1's `TRANSACTIONS.md`.
-After a successful import, the markdown file is deleted (`--delete-after`).
-Subsequent flows go through 3 / 4.1 / 4.2 / 4.3.
-
-### 4.5 Other formats (PDF / HTML / XLSX broker statements)
+### 4.4 Other formats (PDF / HTML / XLSX broker statements)
 
 Out of scope for direct script support. The agent preprocesses such files
 into canonical CSV or JSON, then uses 4.1 / 4.2.
 
-## 5. Bootstrapping from a pre-existing HOLDINGS.md
-
-If you are upgrading from iteration 2 (where `HOLDINGS.md` was the
-projected ledger) and need to seed the DB:
-
-```sh
-python scripts/transactions.py db init --account default        # create the schema
-python scripts/transactions.py migrate --account default \
-    --holdings HOLDINGS.md                                       # synthesize BUY/DEPOSIT records
-python scripts/transactions.py verify --account default         # confirm replay matches balance tables
-rm HOLDINGS.md HOLDINGS.md.bak HOLDINGS.example.md               # the file is no longer needed
-```
-
-`migrate` produces one synthetic `BUY` per existing lot and a single
-`DEPOSIT` per cash currency, sized so replay round-trips the seeded
-balances. The synthetic entries carry `tags=migrated,bootstrap` and
-`source=migrate`. `migrate` refuses to run when the DB already contains
-rows, so it is safe against double-bootstrapping.
-
-## 6. Profit-panel computation
+## 5. Profit-panel computation
 
 The periodic profit panel is computed from the DB. In the automated portfolio
 report pipeline this is produced by `python scripts/transactions.py snapshot`
@@ -527,7 +498,7 @@ to operate on the active account.
   type, distinct tickers, date range, schema version.
 - `python scripts/transactions.py self-check` — unit tests for parser,
   replay, P&L math, period boundaries, and the DB import paths
-  (md / csv / json / db_add / load_holdings_lots round-trip). Treat
+  (csv / json / db_add / load_holdings_lots round-trip). Treat
   failures as a regression gate.
 
 ## 9. What does **not** belong in transactions.db
@@ -538,16 +509,3 @@ to operate on the active account.
   context, not the event log.
 - Backfilled fictional history. Only record events that actually happened.
 
-## 10. Documented input shapes
-
-The `parse_holdings()` reader (used only by the one-shot `migrate`) accepts
-the iteration-2 `HOLDINGS.md` lot format:
-
-```
-<TICKER>: <quantity> shares @ <cost basis> on <YYYY-MM-DD> [<MARKET>]
-<SYMBOL> <quantity> @ <cost> on <YYYY-MM-DD> [crypto|FX]
-<CURRENCY>: <amount> [cash]
-```
-
-This shape is preserved purely for migration purposes. New ingestion
-should always use CSV / JSON / message paths described in §4.

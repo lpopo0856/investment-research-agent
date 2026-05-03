@@ -1,5 +1,9 @@
 # Temp-Researcher — Brand-Agnostic Contract
 
+## Natural-language user interface
+
+Natural language is the default user interface for this workflow. Commands, flags, paths, schemas, and machine-readable examples in this document are agent-internal contracts or audit evidence. In normal user replies, translate them into natural-language actions, execute eligible steps yourself, collect missing parameters conversationally, and summarize results naturally. Do not show Python/shell commands, command code blocks, canonical command names, or JSON/file-format requirements as user instructions unless the user explicitly asks for CLI/API help or execution is blocked by missing authority.
+
 The execution contract any agent runtime must satisfy when fulfilling a research-class phase under `docs/context_drop_protocol.md`.
 
 This document is **runtime-agnostic**. It describes the *role* and the *interface* — not which subagent primitive to use. Any runtime that can isolate a unit of work in its own context window and return only a final message can satisfy the contract: Claude Code (via Task tool), OpenAI Codex (via its own subagent or fresh-session primitive), Gemini CLI (similar), or a hand-rolled "spawn a fresh session, hand it the brief, take only the result file" pattern.

@@ -7,7 +7,11 @@ description: Safely split an asset class, market, strategy sleeve, or ticker set
 
 ## Core Rule
 
-Treat account splitting as ledger migration, not table editing. Preserve the combined economic state of source plus target, keep the original source DB backed up, and verify both reconstructed ledgers before writing live files.
+Treat account splitting as ledger migration, not table editing. Follow `docs/transactions_agent_guidelines.md` for ledger write safety: preserve the combined economic state of source plus target, keep the original source DB backed up, and verify both reconstructed ledgers before writing live files.
+
+## Natural-Language User Interface
+
+Treat natural language as the only default user interface. Command snippets, flags, paths, and machine formats below are internal agent contracts or audit evidence, not user instructions. Execute eligible steps yourself via tools, summarize results naturally, and collect missing parameters conversationally. Do not ask the user to run commands, choose flags, know canonical command names, assemble files, or write JSON unless they explicitly request CLI/API instructions or execution is blocked by missing authority. Confirmation gates ask for the required decision in natural language and must not delegate command execution or machine formatting to the user.
 
 Use the reusable helper when this repo's account-aware SQLite ledger is available:
 
@@ -22,14 +26,14 @@ Default mode is dry-run only. Add `--apply` only after reviewing the JSON summar
 
 ## Workflow
 
-1. Detect layout before touching account files:
+1. Resolve the source account before touching account files. Use the user-named source when provided; otherwise use the current active account, falling back to `default` only when safely resolvable. Detect layout before touching account files:
 
 ```bash
 python scripts/transactions.py account detect
 python scripts/transactions.py account list
 ```
 
-Stop on `partial`; run project onboarding/migration guidance before continuing. Continue on `clean`.
+`partial` is a hard stop; run project onboarding/migration guidance before continuing. Continue on `clean`.
 
 2. Define the split selector.
 

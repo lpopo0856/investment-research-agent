@@ -1,5 +1,9 @@
 # Portfolio Report Agent Guidelines
 
+## Natural-language user interface
+
+Natural language is the default user interface for this workflow. Commands, flags, paths, schemas, and machine-readable examples in this document are agent-internal contracts or audit evidence. In normal user replies, translate them into natural-language actions, execute eligible steps yourself, collect missing parameters conversationally, and summarize results naturally. Do not show Python/shell commands, command code blocks, canonical command names, or JSON/file-format requirements as user instructions unless the user explicitly asks for CLI/API help or execution is blocked by missing authority.
+
 Machine entrypoint for portfolio-report generation. The spec is optimized for agent execution, not narrative readability.
 
 ## Required Bundle Read
@@ -46,14 +50,14 @@ Aligns with `CLAUDE.md` **Temp files**: nothing ephemeral in the repo working tr
 Every report run must choose two orthogonal axes before Phase A gather:
 
 - `report_type`: `daily_report` or `portfolio_report`. This is the content taxonomy.
-- `account_scope`: `single_account` or `total_account` (`--all-accounts`). This is only input aggregation; **total is not a report type**.
+- `account_scope`: `single_account` or `total_account` (`--all-accounts`). This is only input aggregation; **total is not a report type**. If the user does not name an account or ask for total/consolidated/all-accounts scope, resolve the active/default account and proceed as single-account scope after the report type is selected.
 
 **Unspecified report type stop rule.** If the user asks to generate/run a report and the prompt does not clearly specify `daily_report` or `portfolio_report`, stop before Phase A. Do not run `account migrate`, fetch prices/history, read `SETTINGS.md` / `transactions.db`, create `$REPORT_RUN_DIR`, launch live research, or infer a default. Ask one concise question that briefly explains:
 
 - `daily_report`: daily decision/editorial report with alerts, today's summary, material news, 30-day events, high risk/opportunity, recommended adjustments, today's actions, trading psychology, and the holdings Action column for single-account scope.
 - `portfolio_report`: math/position review that omits immediate-attention/news/events/actions/trading-psychology sections and the holdings Action column.
 
-Resume the pipeline only after the user selects a type. Account scope can still be inferred from wording (for example, "all accounts") or resolved separately; `total_account` is not a substitute for report type.
+Resume the pipeline only after the user selects a type. Account scope can still be inferred from wording (for example, "all accounts") or resolved from the active/default account for ordinary single-account requests; `total_account` is not a substitute for report type.
 
 `daily_report` is the current report minus Profit Panel, Performance Attribution, Discipline Check, Holding Period and Pacing, and P&L Ranking. It still includes alerts, today's summary, material news, 30-day events, high risk/opportunity, recommended adjustments, today's actions, trading psychology, and the holdings Action column for single-account scope.
 

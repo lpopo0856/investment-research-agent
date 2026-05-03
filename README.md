@@ -55,12 +55,13 @@ Tell the assistant how you invest so future research sounds and acts like you:
 
 > "Walk me through my settings."
 > "Review my strategy."
+> "Describe this account as my Japan growth sleeve."
 > "Update my risk tolerance."
 > "Change my base currency to TWD."
 > "Use Traditional Chinese for my reports."
 > "These sectors are off-limits for me."
 
-This can include risk tolerance, position sizing, holding period, entry discipline, preferred language, base currency, and areas you want to avoid.
+This can include account purpose, risk tolerance, position sizing, holding period, entry discipline, preferred language, base currency, and areas you want to avoid.
 
 ### Add and manage accounts
 
@@ -75,7 +76,7 @@ Use natural language to manage multiple accounts:
 > "Generate a report for my Japan account."
 > "Generate a total report across all accounts."
 
-Each account keeps its own settings, transactions, cash, holdings, and reports. A total report combines accounts for a high-level view while keeping the underlying accounts separate.
+Each account keeps its own settings, transactions, cash, holdings, and reports. Its settings can include a short description/purpose label so account lists are easier to scan. A total report combines accounts for a high-level view while keeping the underlying accounts separate.
 
 ### Record trades and cash flows
 

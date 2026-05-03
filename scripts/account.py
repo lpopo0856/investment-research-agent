@@ -19,7 +19,6 @@ preamble::
 CLI::
 
     python scripts/account.py --self-test     # run inline self-tests
-    python scripts/account.py --detect        # print detect_legacy_layout()
 """
 
 from __future__ import annotations
@@ -62,6 +61,10 @@ SHARED_ROOT_FILES: Tuple[str, ...] = (
 )
 
 NAME_REGEX = re.compile(r"^[a-z0-9][a-z0-9_-]{0,31}$")
+DESCRIPTION_LINE_RE = re.compile(
+    r"^\s*-\s*(?:Account\s+description|Description)\s*:\s*(?P<value>.+?)\s*$",
+    re.IGNORECASE,
+)
 
 RESERVED_HARD = frozenset({"demo"})
 RESERVED_SOFT = frozenset({"default"})
@@ -238,6 +241,42 @@ def list_accounts() -> List[str]:
         out.append(entry.name)
     out.sort()
     return out
+
+
+def read_account_description(name: str) -> str:
+    """Return the optional human-authored purpose label from SETTINGS.md.
+
+    The field is intentionally lightweight and backward-compatible:
+    ``## Account description (optional)`` contains a bullet such as
+    ``- Description: Taxable brokerage for long-term global equities``.
+    Missing files, missing fields, and malformed account names all return an
+    empty string so read-only account listing never blocks account management.
+    """
+    try:
+        validate_account_name(name)
+    except AccountNameError:
+        return ""
+    settings = _paths_for(name).settings
+    try:
+        text = settings.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+    in_description_section = False
+    for raw in text.splitlines():
+        stripped = raw.strip()
+        if stripped.startswith("## "):
+            heading = stripped[3:].strip().lower()
+            in_description_section = heading.startswith("account description")
+            continue
+        if not in_description_section:
+            continue
+        if stripped.startswith("## "):
+            break
+        match = DESCRIPTION_LINE_RE.match(raw)
+        if not match:
+            continue
+        return match.group("value").strip()
+    return ""
 
 
 def _account_of(path: Optional[Path]) -> Optional[str]:
@@ -1475,17 +1514,9 @@ def _cli_main(argv: Optional[List[str]] = None) -> int:
         action="store_true",
         help="Run inline self-tests and exit",
     )
-    p.add_argument(
-        "--detect",
-        action="store_true",
-        help="Print detect_legacy_layout() result and exit",
-    )
     args = p.parse_args(argv)
     if args.self_test:
         return _self_test()
-    if args.detect:
-        print(detect_legacy_layout())
-        return 0
     p.print_help()
     return 0
 

@@ -1,5 +1,9 @@
 # Settings — Agent Guidelines
 
+## Natural-language user interface
+
+Natural language is the default user interface for this workflow. Commands, flags, paths, schemas, and machine-readable examples in this document are agent-internal contracts or audit evidence. In normal user replies, translate them into natural-language actions, execute eligible steps yourself, collect missing parameters conversationally, and summarize results naturally. Do not show Python/shell commands, command code blocks, canonical command names, or JSON/file-format requirements as user instructions unless the user explicitly asks for CLI/API help or execution is blocked by missing authority.
+
 Brand-agnostic contract for setting up or editing `SETTINGS.md`. Any
 agent (Claude Code, OpenAI Codex, Gemini CLI, or similar) should follow
 this when the user wants to create, fill in, review, or revise their
@@ -24,9 +28,7 @@ In the multi-account layout, each account owns its settings file:
 accounts/<active>/SETTINGS.md
 ```
 
-Resolve the active account via `accounts/.active`, or use
-`--account <name>` explicitly. Before editing, confirm which account is
-active:
+Resolve the target account before reading or editing settings. Use the account named by the user when present; otherwise use the active account via `accounts/.active`, falling back to `default` only when safely resolvable. Before editing, confirm the resolved account in natural language:
 
 ```sh
 python scripts/transactions.py account list   # shows active account (*)
@@ -47,8 +49,8 @@ Trigger on any of:
 - "Help me set up my settings." / "Walk me through my strategy."
 - "Edit my SETTINGS." / "Review my SETTINGS." / "Update my style."
 - "What strategy did you internalise?" — read-only review variant.
-- The user wants to change `Language`, `Base currency`, sizing rails,
-  or API keys.
+- The user wants to change account description, `Language`, `Base currency`,
+  sizing rails, or API keys.
 
 If the user is asking a *research* question or a *transaction* question,
 do **not** start the settings interview. Route to the matching doc.
@@ -122,6 +124,7 @@ not answer or says "use defaults". Confirm before writing.
 
 | Field | Default | Notes |
 |-------|---------|-------|
+| `Account description` | blank / user-provided | Optional one-sentence purpose label stored as `- Description: ...` under `## Account description (optional)`. Useful for distinguishing brokerage, retirement, regional, or strategy accounts. Do not ask for account numbers or secrets. |
 | `Language` | `english` | Built-in dictionaries: `english`, `traditional chinese`, `simplified chinese`. Other single-language values allowed. Detect from the user's prior messages — do not ask in English if they wrote in Chinese. |
 | `Base currency` | `USD` | ISO 4217 (`USD`, `TWD`, `JPY`, `HKD`, `GBP`, `EUR`, …). Pick once and keep stable. |
 | `Time zone` | `Asia / Taipei` | Optional. From the example template's "Reporting cadence". |
@@ -222,6 +225,7 @@ When `SETTINGS.md` already exists:
    directly.
 2. **Show a tight summary**, in the user's `Language`. Format:
    - Language: <value>
+   - Account description: <value, or "none">
    - Base currency: <value>
    - Strategy bullets: <count> — first 2–3 paraphrased
    - Sizing rails: <single-name / theme / high-vol / cash-floor>
@@ -230,7 +234,7 @@ When `SETTINGS.md` already exists:
 4. For each change request:
    - **Strategy edits** — re-run the relevant §4.3 dimension, show the
      before/after of just that bullet, confirm.
-   - **Light field edits** (language, base currency, rails, time zone)
+   - **Light field edits** (account description, language, base currency, rails, time zone)
      — show before/after, confirm.
    - **API key edits** — accept the user's pasted key as-is; never
      reformat or "validate" it. Show the masked key (`sk-…last4`) in

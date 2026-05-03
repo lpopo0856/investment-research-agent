@@ -1,5 +1,9 @@
 # Context Drop Protocol
 
+## Natural-language user interface
+
+Natural language is the default user interface for this workflow. Commands, flags, paths, schemas, and machine-readable examples in this document are agent-internal contracts or audit evidence. In normal user replies, translate them into natural-language actions, execute eligible steps yourself, collect missing parameters conversationally, and summarize results naturally. Do not show Python/shell commands, command code blocks, canonical command names, or JSON/file-format requirements as user instructions unless the user explicitly asks for CLI/API help or execution is blocked by missing authority.
+
 A meta-rule that any multi-stage agent workflow in this repo must obey, so that source data marked **Temporary** never accumulates in the live conversation context past the point it is useful. The objective is **minimum cumulative input tokens** across long pipelines, achieved by *keeping data out by construction* rather than dropping it afterward.
 
 This document is the contract. The mechanisms it relies on (subagent isolation, result-file handoff, phase-boundary compaction) are all native Claude Code primitives — no custom infrastructure required.

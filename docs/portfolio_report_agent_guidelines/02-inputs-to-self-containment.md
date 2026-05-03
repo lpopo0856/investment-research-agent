@@ -36,15 +36,11 @@ Drift between the materialized tables and a fresh log replay is caught by
 `transactions.py verify`; on mismatch run `db rebuild`. The renderer must
 not invent or hard-code holdings — always read fresh from the DB.
 
-For historical migrations only, `transactions.py migrate --holdings HOLDINGS.md`
-can bootstrap a DB from the pre-existing markdown lot file. Report generation
-never reads `HOLDINGS.md`.
-
 ### 4.2 `SETTINGS.md`
 
 **Path resolution:** `SETTINGS.md` lives under the active account directory (`accounts/<active>/SETTINGS.md`), resolved by the same `--account` / `accounts/.active` / `default` chain as §4.1. Explicit `--settings <path>` overrides `--account` for that flag.
 
-Read every run for language, tone, `## Investment Style And Strategy`, optional sizing rails, optional API keys (§8.6). Settings rails override spec defaults.
+Read every run for account description, language, tone, `## Investment Style And Strategy`, optional sizing rails, optional API keys (§8.6). Settings rails override spec defaults. The account description is a short purpose label from `## Account description (optional)` / `- Description: ...`; it is metadata for identifying account intent, not a strategy substitute and not a place for secrets.
 
 ### 4.3 Auto-classify
 

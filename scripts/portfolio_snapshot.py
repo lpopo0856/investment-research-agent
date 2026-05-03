@@ -62,6 +62,9 @@ DEFAULTS: Dict[str, float] = {
 # currency every aggregate is denominated in. Default is USD when missing.
 DEFAULT_BASE_CURRENCY = "USD"
 BASE_CURRENCY_PATTERN = r"Base currency:\s*([A-Za-z]{3})"
+ACCOUNT_DESCRIPTION_PATTERN = (
+    r"^\s*-\s*(?:Account\s+description|Description)\s*:\s*(.+?)\s*$"
+)
 
 LANGUAGE_QUOTE_CHARS = "\"'“”‘’「」『』〈〉《》"
 
@@ -232,6 +235,7 @@ class SettingsProfile:
     config_overrides: Dict[str, float]
     base_currency: str = DEFAULT_BASE_CURRENCY
     missing: bool = False
+    account_description: str = ""
 
 
 def _extract_settings_section_bullets(text: str, heading: str) -> List[str]:
@@ -256,6 +260,22 @@ def _extract_settings_section_bullets(text: str, heading: str) -> List[str]:
         if line.lstrip().startswith("-"):
             bullets.append(line.split("-", 1)[1].strip())
     return bullets
+
+
+def _extract_account_description(text: str) -> str:
+    in_description_section = False
+    for raw_line in text.splitlines():
+        stripped = raw_line.strip()
+        if stripped.startswith("## "):
+            current = stripped[3:].strip().lower()
+            in_description_section = current.startswith("account description")
+            continue
+        if not in_description_section:
+            continue
+        match = re.match(ACCOUNT_DESCRIPTION_PATTERN, raw_line, re.IGNORECASE)
+        if match:
+            return match.group(1).strip()
+    return ""
 
 
 _BCP47_RE = re.compile(
@@ -316,6 +336,7 @@ def parse_settings_profile(path: Path) -> SettingsProfile:
             config_overrides={},
             base_currency=DEFAULT_BASE_CURRENCY,
             missing=True,
+            account_description="",
         )
 
     text = path.read_text(encoding="utf-8")
@@ -336,6 +357,7 @@ def parse_settings_profile(path: Path) -> SettingsProfile:
 
     base_match = re.search(BASE_CURRENCY_PATTERN, text, re.IGNORECASE)
     base_currency = base_match.group(1).upper() if base_match else DEFAULT_BASE_CURRENCY
+    account_description = _extract_account_description(text)
 
     return SettingsProfile(
         raw_language=raw_language,
@@ -344,6 +366,7 @@ def parse_settings_profile(path: Path) -> SettingsProfile:
         config_overrides=config_overrides,
         base_currency=base_currency,
         missing=False,
+        account_description=account_description,
     )
 
 
@@ -1107,6 +1130,7 @@ class Snapshot:
     settings_display_name: str
     settings_raw_language: str
     settings_missing: bool
+    settings_account_description: str
     config: Dict[str, float]
     aggregates: Dict[str, TickerAggregate]
     totals: Dict[str, Optional[float]]
@@ -1227,6 +1251,7 @@ def _compute_snapshot_core(
         settings_display_name=settings.display_name,
         settings_raw_language=settings.raw_language,
         settings_missing=settings.missing,
+        settings_account_description=settings.account_description,
         config=config,
         aggregates=aggs,
         totals=totals,
@@ -1307,6 +1332,7 @@ def serialize_snapshot(snap: Snapshot) -> Dict[str, Any]:
             "display_name": snap.settings_display_name,
             "raw_language": snap.settings_raw_language,
             "missing": snap.settings_missing,
+            "account_description": snap.settings_account_description,
         },
         "config": dict(snap.config),
         "aggregates": [_agg_to_dict(a) for a in snap.aggregates.values()],
@@ -1355,6 +1381,7 @@ def deserialize_snapshot(payload: Dict[str, Any]) -> Snapshot:
         settings_display_name=str(settings.get("display_name") or "English"),
         settings_raw_language=str(settings.get("raw_language") or "english"),
         settings_missing=bool(settings.get("missing", False)),
+        settings_account_description=str(settings.get("account_description") or ""),
         config={k: float(v) for k, v in (payload.get("config") or {}).items()},
         aggregates=aggs_dict,
         totals=dict(payload.get("totals") or {}),
@@ -1399,6 +1426,7 @@ def settings_profile_for_snapshot(settings: Snapshot) -> SettingsProfile:
         config_overrides={},  # already merged into config; empty here
         base_currency=settings.base_currency,
         missing=settings.settings_missing,
+        account_description=settings.settings_account_description,
     )
 
 
@@ -1406,6 +1434,7 @@ __all__ = [
     "DEFAULTS",
     "DEFAULT_BASE_CURRENCY",
     "BASE_CURRENCY_PATTERN",
+    "ACCOUNT_DESCRIPTION_PATTERN",
     "LANGUAGE_QUOTE_CHARS",
     "LANGUAGE_ALIASES",
     "DISPLAY_NAME_BY_LOCALE",

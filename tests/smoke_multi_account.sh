@@ -46,7 +46,7 @@ test ! -d accounts
 echo "SMOKE: legacy state confirmed at $SMOKE"
 
 # --- 2. Detect, then migrate ---
-detect=$(python scripts/account.py --detect 2>&1 | tail -n 1)
+detect=$(python scripts/transactions.py account detect 2>&1 | tail -n 1)
 echo "SMOKE: detect_legacy_layout = $detect"
 test "$detect" = "migrate"
 
@@ -68,7 +68,7 @@ test ! -f accounts/default/market_data_cache.db  # AC-MIG-5: cache NOT moved
 echo "SMOKE: post-migration assertions OK"
 
 # --- 4. Idempotency: second migration is a no-op ---
-detect2=$(python scripts/account.py --detect 2>&1 | tail -n 1)
+detect2=$(python scripts/transactions.py account detect 2>&1 | tail -n 1)
 test "$detect2" = "clean"
 echo "SMOKE: second detect = clean (idempotent)"
 

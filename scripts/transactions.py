@@ -9,19 +9,15 @@ withdrawals, dividends, fees, and FX conversions.
 This script provides:
 
   - SQLite event log for every transaction and cash flow
-  - Legacy HOLDINGS.md parser for one-shot migration only
   - Replay engine: walk events in chronological order, build positions and
     cash balances at any cutoff date
   - Realized / unrealized P&L computation
   - Profit panel computation for periods 1D / 7D / MTD / 1M / YTD / 1Y / ALLTIME
-  - Migrate command: bootstrap transactions.db from existing HOLDINGS.md
   - Verify command: replay events and diff against materialized balance tables
   - Self-check unit tests
 
 Usage
 -----
-    python scripts/transactions.py migrate --holdings HOLDINGS.md [--dry-run]
-
     python scripts/transactions.py verify
 
     python scripts/transactions.py pnl --prices prices.json [--settings SETTINGS.md]
@@ -50,7 +46,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-# Allow import from sibling fetch_prices.py for legacy HOLDINGS.md parsing.
 _SCRIPTS_DIR = Path(__file__).resolve().parent
 if str(_SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS_DIR))
@@ -60,7 +55,6 @@ from fetch_prices import (  # type: ignore[import-not-found]
     KNOWN_FIAT_CODES,
     Lot,
     MarketType,
-    parse_holdings,
 )
 
 from account import (  # type: ignore[import-not-found]
@@ -71,6 +65,7 @@ from account import (  # type: ignore[import-not-found]
     prompt_and_migrate,
     validate_account_name,
     list_accounts,
+    read_account_description,
     create_account_scaffold,
     read_active_pointer,
     write_active_pointer,
@@ -2110,7 +2105,7 @@ def _selfcheck() -> int:
     if not case_txns or case_txns[0].amount != 500:
         failures.append("case_insensitive: capitalized field names not normalized")
 
-    # 12. SQLite roundtrip: import-md then load_transactions_db gives same replay state
+    # 12. SQLite roundtrip: db_import_md helper then load_transactions_db gives same replay state
     with tempfile.TemporaryDirectory() as td:
         td_path = Path(td)
         md_path = td_path / "T.md"
@@ -2211,7 +2206,7 @@ def _selfcheck() -> int:
             )
 
         # 17. iteration-3: load_holdings_lots returns Lot shape consumable by
-        #     parse_holdings callers. Open NVDA lot must surface with qty 25.
+        #     downstream callers. Open NVDA lot must surface with qty 25.
         from fetch_prices import MarketType  # type: ignore[import-not-found]  # noqa: F401
         loaded_lots = load_holdings_lots(db_path)
         nvda_lots = [l for l in loaded_lots if l.ticker == "NVDA"]
@@ -2815,10 +2810,10 @@ def db_stats(db_path: Path) -> Dict[str, Any]:
 
 def load_holdings_lots(db_path: Path) -> List[Lot]:
     """Return the projected open-position view (open_lots + cash_balances) as
-    `List[Lot]`, drop-in compatible with the legacy `parse_holdings()` shape.
+    `List[Lot]`, drop-in compatible with the canonical `Lot` shape.
 
     Consumers (`scripts/fetch_prices.py`, `scripts/fetch_history.py`,
-    `scripts/generate_report.py`) call this in place of `parse_holdings()`.
+    `scripts/generate_report.py`) call this to read open lots from the DB.
 
     If the DB predates the materialized balance tables, this upgrades the
     schema and rebuilds them before reading. If the balance tables are empty
@@ -3029,14 +3024,6 @@ def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
 
-    # ---- migrate (HOLDINGS.md -> DB) -------------------------------------- #
-    m = sub.add_parser("migrate", help="Bootstrap transactions.db from HOLDINGS.md (synthetic BUY+DEPOSIT entries)")
-    m.add_argument("--holdings", default="HOLDINGS.md", type=Path)
-    m.add_argument("--db", default=None, type=Path)
-    m.add_argument("--dry-run", action="store_true",
-                   help="Print proposed records as JSON, do not write")
-    add_account_args(m)
-
     # ---- verify (DB replay vs balance tables) ----------------------------- #
     v = sub.add_parser("verify", help="Replay transactions.db and reconcile against open_lots + cash_balances")
     v.add_argument("--db", default=None, type=Path)
@@ -3101,13 +3088,6 @@ def _build_parser() -> argparse.ArgumentParser:
     di = db_sub.add_parser("init", help="Create transactions.db with schema (idempotent)")
     di.add_argument("--db", default=None, type=Path)
     add_account_args(di)
-
-    dim = db_sub.add_parser("import-md", help="One-shot migration: import TRANSACTIONS.md into the DB")
-    dim.add_argument("--input", required=True, type=Path)
-    dim.add_argument("--db", default=None, type=Path)
-    dim.add_argument("--delete-after", action="store_true",
-                     help="Delete the source markdown file after a successful import")
-    add_account_args(dim)
 
     dic = db_sub.add_parser("import-csv", help="Import a CSV file (canonical or broker-mapped columns)")
     dic.add_argument("--input", required=True, type=Path)
@@ -3218,29 +3198,6 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.cmd == "self-check":
         return _selfcheck()
 
-    if args.cmd == "migrate":
-        # HOLDINGS.md → synthetic BUY/DEPOSIT entries → transactions.db (or print).
-        db_path, _ = _resolve_paths(args)
-        args.db = db_path
-        records = _holdings_to_records(args.holdings)
-        if args.dry_run:
-            print(json.dumps(records, indent=2, ensure_ascii=False))
-            return 0
-        db_init(args.db)
-        # If the DB already has rows, refuse to clobber unless dry-run.
-        existing = db_stats(args.db).get("total_transactions", 0)
-        if existing > 0:
-            print(f"ERROR: {args.db} already has {existing} transaction(s). "
-                  f"Migration would duplicate. Delete the DB or use --dry-run.",
-                  file=sys.stderr)
-            return 3
-        inserted, errs = db_import_records(args.db, records, source="migrate", source_ref=str(args.holdings))
-        if errs:
-            for e in errs:
-                print(f"  - {e}", file=sys.stderr)
-            return 4
-        print(f"Migrated {inserted} record(s) from {args.holdings} → {args.db}.")
-        return 0
 
     if args.cmd == "verify":
         db_path, _ = _resolve_paths(args)
@@ -3543,7 +3500,9 @@ def _handle_account_cmd(args: argparse.Namespace) -> int:
             return 0
         for name in accounts:
             marker = "*" if name == active else " "
-            print(f" {marker} {name}")
+            description = read_account_description(name)
+            suffix = f" — {description}" if description else ""
+            print(f" {marker} {name}{suffix}")
         return 0
     if sub == "detect":
         print(detect_legacy_layout())
@@ -3556,75 +3515,8 @@ def _handle_account_cmd(args: argparse.Namespace) -> int:
 
 
 # --------------------------------------------------------------------------- #
-# CLI helpers — DB dispatch + holdings→records reused by migrate
+# CLI helpers — DB dispatch
 # --------------------------------------------------------------------------- #
-
-def _holdings_to_records(holdings_path: Path) -> List[Dict[str, Any]]:
-    """Build canonical records from HOLDINGS.md. One DEPOSIT per cash currency
-    sized to fund all BUYs + leave the current cash residual; one BUY per
-    non-cash lot."""
-    lots = parse_holdings(holdings_path)
-    today_iso = _dt.date.today().isoformat()
-
-    buy_outflow: Dict[str, float] = {}
-    current_cash: Dict[str, float] = {}
-    for lot in lots:
-        if lot.bucket.lower().startswith("cash"):
-            ccy = lot.ticker.upper()
-            current_cash[ccy] = current_cash.get(ccy, 0.0) + lot.quantity
-            continue
-        if lot.cost is None or lot.date is None:
-            continue
-        ccy = _currency_for_lot(lot)
-        buy_outflow[ccy] = buy_outflow.get(ccy, 0.0) + (lot.quantity * lot.cost)
-
-    earliest = min((lot.date for lot in lots
-                    if lot.date and not lot.bucket.lower().startswith("cash")),
-                   default=today_iso)
-    bootstrap_date = (
-        (_dt.date.fromisoformat(earliest) - _dt.timedelta(days=1)).isoformat()
-        if earliest != today_iso else today_iso
-    )
-
-    records: List[Dict[str, Any]] = []
-    for ccy in sorted(set(current_cash) | set(buy_outflow)):
-        amt = current_cash.get(ccy, 0.0) + buy_outflow.get(ccy, 0.0)
-        if abs(amt) < 1e-6:
-            continue
-        records.append({
-            "date": bootstrap_date,
-            "type": "DEPOSIT",
-            "amount": amt,
-            "currency": ccy,
-            "cash_account": ccy,
-            "rationale": "bootstrap from HOLDINGS.md (synthetic; sized to fund pre-existing lots)",
-            "tags": "migrated,bootstrap",
-        })
-    for lot in lots:
-        if lot.bucket.lower().startswith("cash"):
-            continue
-        if lot.cost is None or lot.date is None:
-            continue
-        ccy = _currency_for_lot(lot)
-        gross = lot.quantity * lot.cost
-        records.append({
-            "date": lot.date,
-            "type": "BUY",
-            "ticker": lot.ticker,
-            "qty": lot.quantity,
-            "price": lot.cost,
-            "gross": gross,
-            "fees": 0,
-            "net": gross,
-            "bucket": lot.bucket,
-            "market": _market_for_lot(lot),
-            "currency": ccy,
-            "cash_account": ccy,
-            "rationale": "bootstrap from HOLDINGS.md (synthetic, original mindset not recorded)",
-            "tags": "migrated,bootstrap",
-        })
-    return records
-
 
 def _verify_balance_tables(args: argparse.Namespace) -> Tuple[bool, List[str]]:
     """Replay the transactions log and reconcile against the materialized
@@ -3684,27 +3576,6 @@ def _dispatch_db(args: argparse.Namespace) -> int:
     if args.db_cmd == "init":
         status = db_init(db)
         print(f"Schema {status} at {db} (version {SCHEMA_VERSION}).")
-        return 0
-
-    if args.db_cmd == "import-md":
-        if not args.input.exists():
-            print(f"ERROR: {args.input} not found", file=sys.stderr)
-            return 2
-        db_init(db)
-        existing = db_stats(db).get("total_transactions", 0)
-        if existing > 0:
-            print(f"ERROR: {db} already has {existing} transaction(s). Delete the DB before importing.",
-                  file=sys.stderr)
-            return 3
-        inserted, errs = db_import_md(args.input, db)
-        if errs:
-            for e in errs:
-                print(f"  - {e}", file=sys.stderr)
-            return 4
-        print(f"Imported {inserted} markdown entry(ies) → {db}.")
-        if args.delete_after:
-            args.input.unlink()
-            print(f"Deleted source file {args.input}.")
         return 0
 
     if args.db_cmd == "import-csv":

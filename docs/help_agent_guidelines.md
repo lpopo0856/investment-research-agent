@@ -1,5 +1,9 @@
 # Help — Agent Guidelines
 
+## Natural-language user interface
+
+Natural language is the default user interface for this workflow. Commands, flags, paths, schemas, and machine-readable examples in this document are agent-internal contracts or audit evidence. In normal user replies, translate them into natural-language actions, execute eligible steps yourself, collect missing parameters conversationally, and summarize results naturally. Do not show Python/shell commands, command code blocks, canonical command names, or JSON/file-format requirements as user instructions unless the user explicitly asks for CLI/API help or execution is blocked by missing authority.
+
 Brand-agnostic contract for "what can I do here?" requests. Any agent
 (Claude Code, OpenAI Codex, Gemini CLI, or similar) should follow this
 when the user asks for a capability overview rather than a specific
@@ -98,8 +102,9 @@ rows.
 - **Ask like:** "Analyze NVDA against my current portfolio." / "What
   is my AI exposure now?" / "Should I trim short-term positions before
   earnings?" / "Is XYZ a fit for my strategy?"
-- **Agent does:** reads `SETTINGS.md` (full `Investment Style And
-  Strategy` section), loads positions from `transactions.db`, and
+- **Agent does:** resolves the active/default account unless the user named one,
+  reads that account's `SETTINGS.md` (full `Investment Style And Strategy`
+  section), loads positions from that account's `transactions.db`, and
   responds first-person as the user — variant view, sized in pp of NAV,
   with kill criteria. No writes. Contract: `AGENTS.md` (Output structure
   + sourcing rules).
@@ -107,7 +112,7 @@ rows.
 ### D. Generate a report (choose type + scope)
 
 - **Ask like:** "Generate my daily report." / "Generate my portfolio report." / "Run a consolidated all-accounts daily report."
-- **Agent does:** first separates content type from account scope. If the user asks to generate a report without choosing `daily_report` or `portfolio_report`, the agent stops and asks which type they want before running the pipeline. `daily_report` keeps daily decision/editorial sections but removes Profit Panel, Performance Attribution, Discipline Check, Holding Period/Pacing, and P&L Ranking. `portfolio_report` keeps the longer math/position view but removes immediate-attention/news/events/actions/trading-psychology sections and the holdings Action column. Scope is either one account or `--all-accounts`; total is not a report type. The pipeline runs `fetch_prices` → `fetch_history` → `transactions.py snapshot` → only the required editorial gather → `validate_report_context.py --report-type ...` → `generate_report.py --report-type ...`. Intermediate JSON lives under `/tmp` in `$REPORT_RUN_DIR` and is deleted after success.
+- **Agent does:** first separates content type from account scope. If the user asks to generate a report without choosing `daily_report` or `portfolio_report`, the agent stops and asks which type they want before running the pipeline. `daily_report` keeps daily decision/editorial sections but removes Profit Panel, Performance Attribution, Discipline Check, Holding Period/Pacing, and P&L Ranking. `portfolio_report` keeps the longer math/position view but removes immediate-attention/news/events/actions/trading-psychology sections and the holdings Action column. Scope is the active/default account for ordinary single-account requests, a named account when the user specifies one, or total/all-accounts only when the user asks for consolidated scope; total is not a report type. The pipeline runs `fetch_prices` → `fetch_history` → `transactions.py snapshot` → only the required editorial gather → `validate_report_context.py --report-type ...` → `generate_report.py --report-type ...`. Intermediate JSON lives under `/tmp` in `$REPORT_RUN_DIR` and is deleted after success.
   In auto / unattended environments, the agent should obtain explicit
   consent before sending tickers to external market-data sources.
   Contract: `docs/portfolio_report_agent_guidelines.md` and every
@@ -139,7 +144,7 @@ Hide this item when only one account exists.
 Below the menu, add one line:
 
 > "To change how I act as you — risk appetite, sizing, off-limits zones,
-> language, base currency — say *'walk me through my settings'* and
+> account purpose, language, base currency — say *'walk me through my settings'* and
 > I'll interview you. Or edit `SETTINGS.md` directly."
 
 The interview path follows `docs/settings_agent_guidelines.md`. Do not

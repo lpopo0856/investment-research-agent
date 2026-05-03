@@ -6,6 +6,14 @@ This is an **example** settings file. Copy it to `SETTINGS.md` and edit the fiel
 
 The agent reads this file on every run to set tone, language, and risk handling.
 
+## Account description (optional)
+
+Describe what this account is for. Keep this short: one sentence or phrase that
+helps you and the agent distinguish accounts when listing, switching, importing,
+or generating reports. Do not put API keys or sensitive account numbers here.
+
+- Description: Example taxable brokerage account for long-term global equities.
+
 ## Language
 
 - english

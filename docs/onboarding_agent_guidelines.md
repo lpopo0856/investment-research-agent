@@ -1,5 +1,9 @@
 # Onboarding — Agent Guidelines
 
+## Natural-language user interface
+
+Natural language is the default user interface for this workflow. Commands, flags, paths, schemas, and machine-readable examples in this document are agent-internal contracts or audit evidence. In normal user replies, translate them into natural-language actions, execute eligible steps yourself, collect missing parameters conversationally, and summarize results naturally. Do not show Python/shell commands, command code blocks, canonical command names, or JSON/file-format requirements as user instructions unless the user explicitly asks for CLI/API help or execution is blocked by missing authority.
+
 Brand-agnostic contract for new-user setup. Any agent (Claude Code, OpenAI
 Codex, Gemini CLI, or similar) should follow this when the user says
 something like "help me get started", "onboard me", "I'm new — how do I
@@ -119,7 +123,8 @@ If `accounts/default/SETTINGS.md` does not exist (or the user wants to
 revisit it before continuing), delegate to
 `docs/settings_agent_guidelines.md`. That doc handles the interview
 end-to-end: file bootstrap from the template (`SETTINGS.example.md` at
-repo root), light-field defaults (`Language`, `Base currency`, time zone),
+repo root), light-field defaults (`Account description`, `Language`,
+`Base currency`, time zone),
 the `Investment Style And Strategy` interview across temperament / sizing /
 horizon / discipline / contrarian appetite / hype tolerance / off-limits
 / decision style, the draft-and-confirm step, and the API keys deferral.
@@ -222,8 +227,6 @@ The user may hand you any of:
 - **Plain text / email body** — pasted broker confirmation email or hand-
   typed list ("AAPL 50 shares @ 180 from 2024-03, NVDA 30 @ 185 from
   2024-08, $20k USD cash").
-- **Existing iteration-2 `HOLDINGS.md`** — if present, prefer the
-  `migrate` path in §6.5.
 
 For Taiwan stock positions, recommend the user supply a Taiwan Stock
 Exchange (TWSE) export when available. 
@@ -338,29 +341,7 @@ For very small inputs (≤ 5 rows) prefer one
 `db add --json '<...>' --account default` per row; the per-row confirmation
 trail is easier to read.
 
-### 6.5 Iteration-2 `HOLDINGS.md` migration
-
-> **Note:** This section covers the **old** one-time migration from the
-> iteration-2 `HOLDINGS.md` format into `transactions.db`. It is distinct
-> from the **account migration** (`account migrate`) described in §N, which
-> moves root-level files into the `accounts/` layout.
-
-If the repo contains a non-empty `HOLDINGS.md`, prefer the dedicated
-migration path:
-
-```sh
-python scripts/transactions.py db init --account default
-python scripts/transactions.py migrate \
-    --holdings HOLDINGS.md --account default
-python scripts/transactions.py verify --account default
-rm HOLDINGS.md HOLDINGS.md.bak HOLDINGS.example.md   # only after verify is clean
-```
-
-`migrate` synthesises one `BUY` per existing lot and one `DEPOSIT` per
-cash currency, sized so replay round-trips the seeded balances. It
-refuses to run when the DB already has rows, so it is safe.
-
-### 6.6 What if the user has nothing yet?
+### 6.5 What if the user has nothing yet?
 
 A first-time user with no positions can skip §6 entirely. Run §4 + §5 and
 tell them: "When you make your first trade, just describe it to me in
@@ -475,7 +456,7 @@ accounts and is never moved.**
 After migration (or for users setting up multiple accounts from scratch):
 
 ```sh
-# List all accounts; marks the active one with (*)
+# List all accounts; marks the active one with (*) and shows SETTINGS description when present
 python scripts/transactions.py account list
 
 # Switch the active account
