@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Synthetic Portfolio Report · 2026-05-02</title>
+<title>Demo portfolio health check · 2026-05-03</title>
 <style>
 /* =========================================================
    Portfolio Research Note — sample redesign
@@ -248,6 +248,7 @@ body{
    squeezes the price / weight / value columns. Action wraps onto multiple lines
    instead of monopolising the row. Numeric columns stay tabular and tight. */
 .tbl-wrap table.holdings-tbl{table-layout:fixed;min-width:880px}
+.holdings-cards{display:none}
 .tbl-wrap table.holdings-tbl td.col-action,
 .tbl-wrap table.holdings-tbl th.col-action{
   white-space:normal;
@@ -287,21 +288,35 @@ tbody tr:last-child td{border-bottom:0}
 tbody tr:hover{background:var(--surface-2)}
 td.num,th.num{text-align:right}
 
-/* Symbol cell — ticker only, hover-activated popover trigger */
+/* Ticker text. Only `.sym-trigger` is interactive; static ticker labels use
+   `.sym-label` so non-hover/non-tap table cells do not falsely advertise detail. */
+.sym-label,
 .sym-trigger{
   display:inline-block;
   color:var(--ink);
   font-weight:680;letter-spacing:-.005em;
   font-size: clamp(13px, 0.35vw + 12px, 14.5px);
-  cursor:help;
   text-decoration:none;
   outline:0;
 }
-.sym-trigger:hover,.sym-trigger:focus-visible{
-  text-decoration:underline dotted;text-underline-offset:3px;outline:0;
+.sym-label{cursor:default}
+.sym-trigger{
+  cursor:help;
+}
+.sym-trigger .sym-text{
+  text-decoration-line:underline;
+  text-decoration-style:dotted;
+  text-decoration-thickness:1px;
+  text-decoration-color:var(--muted);
+  text-underline-offset:3px;
+}
+.sym-trigger:hover,.sym-trigger:focus-visible{outline:0}
+.sym-trigger:hover .sym-text,.sym-trigger:focus-visible .sym-text{
+  text-decoration-color:currentColor;outline:0;
 }
 
-/* Price cell — static latest-price snapshot, hover-activated popover trigger */
+/* Price cell — static latest-price snapshot, hover-/tap-activated popover trigger.
+   The dotted underline is always visible only on the interactive price number. */
 .price-cell{position:relative}
 .price-trigger{
   display:inline-flex;flex-direction:column;align-items:flex-end;gap:2px;
@@ -310,7 +325,14 @@ td.num,th.num{text-align:right}
   color:inherit;outline:0;
 }
 .price-trigger:hover,.price-trigger:focus-visible{outline:0}
-.price-trigger:hover .price-num,.price-trigger:focus-visible .price-num{text-decoration:underline dotted;text-underline-offset:3px}
+.price-trigger .price-num{
+  text-decoration-line:underline;
+  text-decoration-style:dotted;
+  text-decoration-thickness:1px;
+  text-decoration-color:var(--muted);
+  text-underline-offset:3px;
+}
+.price-trigger:hover .price-num,.price-trigger:focus-visible .price-num{text-decoration-color:currentColor}
 .price-num{
   font-size: clamp(15px, 0.6vw + 13px, 17px);
   font-weight:600;color:var(--ink);
@@ -969,8 +991,8 @@ img, svg, table { max-width: 100%; }
      loss/gain lot lists, recent activity). These have 2–8 simple columns
      and DO NOT need the canonical 760-/880-px min-width.
      Forcing min-width:0 + tight typography lets them render without
-     horizontal-scroll bleed at ≤430px viewports. The holdings table is
-     the ONLY table that legitimately needs horizontal scroll on phone. */
+     horizontal-scroll bleed at ≤430px viewports. Holdings uses a phone-only
+     card list instead of requiring horizontal table scroll. */
   .tbl-wrap table.periods-tbl,
   .tbl-wrap table.dim-tbl,
   .tbl-wrap table.adj-tbl,
@@ -1038,19 +1060,79 @@ img, svg, table { max-width: 100%; }
   }
   .tbl-wrap.scroll-y td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
 
-  /* Holdings table is the ONLY one that genuinely needs horizontal scroll
-     on phone (7 fixed columns + free-form action narrative). Keep nowrap
-     on the first column so the holding row never wraps. */
+  /* Tablet keeps table ergonomics; phone hides the holdings table in favor of
+     `.holdings-cards`, so these nowrap rules only matter before the phone card
+     display switch applies. */
   .tbl-wrap table.holdings-tbl td:first-child,
   .tbl-wrap table.holdings-tbl th:first-child{white-space:nowrap}
 
-  /* Drop the right-edge fade mask for tables that fit. Only the
-     holdings-tbl and adj-tbl keep the mask as a swipe affordance. */
+  /* Drop the right-edge fade mask for tables that fit. Phone holdings cards do
+     not need a swipe affordance; adjustment tables may still overflow if very
+     long action labels are supplied. */
   .tbl-wrap:has(table.periods-tbl),
   .tbl-wrap.scroll-y{
     -webkit-mask-image:none!important;
             mask-image:none!important;
   }
+
+  /* Holdings cards — phone replaces the wide 7-column holdings table with
+     one holding per card. Cards reuse the exact Symbol/Price trigger HTML,
+     so the existing fixed bottom-sheet popover rules still apply on touch. */
+  .holdings-table-wrap{display:none}
+  .holdings-cards{
+    display:grid;
+    gap:12px;
+    margin-top:2px;
+    width:100%;
+  }
+  .holding-card{
+    min-width:0;
+    border-top:1px solid var(--ink);
+    border-bottom:1px solid var(--hairline-2);
+    padding:12px 0 13px;
+    background:transparent;
+  }
+  .holding-card-head{
+    display:grid;
+    grid-template-columns:minmax(0,1fr) auto;
+    gap:8px 12px;
+    align-items:start;
+    margin-bottom:10px;
+  }
+  .holding-card-symbol{min-width:0}
+  .holding-card-category{justify-self:end;text-align:right;min-width:0}
+  .holding-card-category .tag{margin-left:4px}
+  .holding-card-grid{
+    display:grid;
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:9px 14px;
+    margin:0;
+  }
+  .holding-card-grid>div{min-width:0}
+  .holding-card-grid dt{
+    margin:0 0 2px;
+    color:var(--muted);
+    font-size:10px;
+    line-height:1.2;
+    letter-spacing:.12em;
+    text-transform:uppercase;
+    font-weight:700;
+  }
+  .holding-card-grid dd{
+    margin:0;
+    color:var(--ink-soft);
+    font-size:13px;
+    line-height:1.42;
+    overflow-wrap:anywhere;
+  }
+  .holding-card-grid .num,
+  .holding-card-grid dd{font-variant-numeric:tabular-nums lining-nums}
+  .holding-card-price .price-trigger{align-items:flex-start;text-align:left}
+  .holding-card-price .price-sub{font-size:11px}
+  .holding-card-pnl.pos-txt dd{color:var(--pos);font-weight:600}
+  .holding-card-pnl.neg-txt dd{color:var(--neg);font-weight:600}
+  .holding-card-action{grid-column:1/-1}
+  .holding-card-action dd{line-height:1.5;word-break:break-word}
 
   /* Tag chip — tighter padding so wrapping is rare */
   .tag{margin-left:3px;padding:1px 5px}
@@ -1093,7 +1175,8 @@ img, svg, table { max-width: 100%; }
   /* Donut — slightly smaller so it doesn't dominate */
   .donut-wrap svg{width:148px;height:148px}
 
-  /* Holdings table — relax the min-width floor a touch so the swipe is shorter */
+  /* Phone holdings use cards, so the hidden table's min-width no longer drives
+     normal reading. Other non-card tables keep a compact floor. */
   .tbl-wrap table.holdings-tbl{min-width:760px}
   .tbl-wrap table{min-width:600px;font-size:12px}
   th,td{padding:7px 6px}
@@ -1112,21 +1195,20 @@ img, svg, table { max-width: 100%; }
 <div class="wrap">
   <header class="masthead">
     <div class="eyebrow">Investment Research Note · English</div>
-    <h1>Synthetic Portfolio Report · 2026-05-02</h1>
-    <p class="dek">Dual-currency synthetic ledger, live price snapshot, full research coverage and PM review pass.</p>
+    <h1>Demo portfolio health check · 2026-05-03</h1>
+    <p class="dek">Synthetic dual-currency book — USD base — live prices + web-sourced editorial layer</p>
     <div class="masthead-meta">
-      <span><b>Generated At</b>　2026-05-02 20:33</span>
-      <span><b>FX Baseline</b>　USD/TWD 31.6295 @ 2026-05-02T09:03:00Z</span>
-      <span><b>Next Event</b>　2026-05-05 AMD earnings; 2026-05-07 SMR earnings; 2026-05-12 CPI</span>
+      <span><b>Generated At</b>　2026-05-03 17:33</span>
+      <span><b>FX Baseline</b>　USD/TWD 31.629326 @ Sun, 03 May 2026 00:02:31 +0000</span>
+      <span><b>Next Event</b>　05-05 AMD earnings after the close</span>
     </div>
   </header>
   <section class="callout">
     <div class="ctitle"><span class="badge">High Priority</span>Immediate Attention</div>
     <ul>
-      <li>BTC is 11.0% of NAV, above the 10% single-name warning rail; trim only enough to restore the rail, not because the crypto setup broke.</li>
-      <li>AI compute, mega-cap tech and cloud/data-center themes exceed the 30% concentration rail on non-cash exposure; new adds should require a clear post-earnings edge.</li>
-      <li>SMR is labeled Short Term but has lots held 453 and 639 days; the classification has drifted and should be resolved after Q1 earnings.</li>
-      <li>Automated yfinance calls failed because the installed package rejected a requests.Session; prices were completed through web fallbacks with source URLs.</li>
+      <li>BTC: futures-led April rally vs weak spot prints — size the sleeve to what you can lose if ETF flows reverse.</li>
+      <li>SMR: pre-revenue burn + dilution risk — short-term bucket should not drift into core unless milestones harden.</li>
+      <li>Concentration: NVDA earnings (May 20) is a book-wide beta event through TSMC + semis correlation.</li>
     </ul>
     
   </section>
@@ -1135,7 +1217,7 @@ img, svg, table { max-width: 100%; }
       <h2>Today&#x27;s Summary</h2>
       <span class="sub">Portfolio · Holdings · Risk</span>
     </div>
-    <div class="prose cols-2"><div><p>The book is liquid and cash-heavy: cash is roughly 58.0% of NAV, so there is no forced de-risking. The main active issue is concentration, not liquidity: BTC is 11.0% of NAV versus the 10% single-name rail, while the AI/cloud/mega-cap cluster is above the 30% theme rail on a non-cash look-through basis.</p></div><div><p>I do not want to add risk into AMD before earnings after a record close and a price already above the average target. The cleaner move is housekeeping: trim BTC back to the rail, keep core QQQ/MSFT/2330.TW intact, and force SMR to prove contract/cash-burn progress on May 7 before treating it as anything other than a small tactical sleeve.</p></div></div>
+    <div class="prose cols-2"><div><p>Mega-cap tech prints (MSFT, GOOGL) and hyperscaler capex commentary set the tone while NVDA heads into its May 20 FY27 Q1 call as the clean macro read on AI accelerator demand.</p></div><div><p>I am leaving the long-term core (MSFT, QQQ, 2330.TW) largely unchanged, treating AMD/NVDA/GOOGL as mid-cycle growth, BTC as a flow-sensitive sleeve, and SMR as a short-dated catalyst stub into the May 7 call.</p></div></div>
   </section>
   <section class="section">
     <div class="section-head">
@@ -1143,10 +1225,10 @@ img, svg, table { max-width: 100%; }
       <span class="sub">Core KPIs · USD basis</span>
     </div>
     <div class="kpis">
-      <div class="kpi"><div class="k">Total Assets</div><div class="v">$1,568,943</div><div class="delta">Includes cash, crypto, and equities</div></div>
-      <div class="kpi"><div class="k">Invested Positions</div><div class="v">$659,791</div><div class="delta">42.1% risk assets</div></div>
-      <div class="kpi"><div class="k">Cash &amp; Cash-Like</div><div class="v">$909,152</div><div class="delta">57.9% dry powder</div></div>
-      <div class="kpi"><div class="k">Known P&amp;L</div><div class="v">$233,901</div><div class="delta">Known-cost positions only</div><div class="delta pos">+$233,901</div></div>
+      <div class="kpi"><div class="k">Total Assets</div><div class="v">$1,569,761</div><div class="delta">Includes cash, crypto, and equities</div></div>
+      <div class="kpi"><div class="k">Invested Positions</div><div class="v">$660,608</div><div class="delta">42.1% risk assets</div></div>
+      <div class="kpi"><div class="k">Cash &amp; Cash-Like</div><div class="v">$909,153</div><div class="delta">57.9% dry powder</div></div>
+      <div class="kpi"><div class="k">Known P&amp;L</div><div class="v">$234,719</div><div class="delta">Known-cost positions only</div><div class="delta pos">+$234,719</div></div>
     </div>
 
     <div style="margin-top:22px">
@@ -1155,8 +1237,8 @@ img, svg, table { max-width: 100%; }
         <span class="seg cash" style="width:57.9%"></span>
       </div>
       <div class="cash-legend">
-        <span><i style="background:var(--ink)"></i>Risk assets 42.1% · $659,791</span>
-        <span><i style="background:var(--accent-warm)"></i>Cash &amp; cash-like 57.9% · $909,152</span>
+        <span><i style="background:var(--ink)"></i>Risk assets 42.1% · $660,608</span>
+        <span><i style="background:var(--accent-warm)"></i>Cash &amp; cash-like 57.9% · $909,153</span>
       </div>
     </div>
   </section>
@@ -1169,7 +1251,7 @@ img, svg, table { max-width: 100%; }
       <div class="kpi"><div class="k">Lifetime realized P&amp;L</div>
         <div class="v pos-txt">+$13,954</div></div>
       <div class="kpi"><div class="k">Open unrealized P&amp;L</div>
-        <div class="v pos-txt">+$233,901</div></div>
+        <div class="v pos-txt">+$234,719</div></div>
     </div>
     <div class="tbl-wrap" style="margin-top:14px">
       <table class="periods-tbl">
@@ -1185,60 +1267,60 @@ img, svg, table { max-width: 100%; }
         </thead>
         <tbody>
       <tr>
-        <td>1D <span class="muted">(since 2026-05-01)</span></td>
-        <td class="num neg-txt">−$83</td>
-        <td class="num neg-txt">−0.01%</td>
+        <td>1D <span class="muted">(since 2026-05-02)</span></td>
+        <td class="num pos-txt">+$735</td>
+        <td class="num pos-txt">+0.05%</td>
         <td class="num pos-txt">+$0</td>
-        <td class="num neg-txt">−$12</td>
+        <td class="num pos-txt">+$805</td>
         <td class="num pos-txt">+$0</td>
       </tr>
       <tr>
-        <td>7D <span class="muted">(since 2026-04-25)</span></td>
-        <td class="num pos-txt">+$7,145</td>
-        <td class="num pos-txt">+0.46%</td>
+        <td>7D <span class="muted">(since 2026-04-26)</span></td>
+        <td class="num pos-txt">+$5,151</td>
+        <td class="num pos-txt">+0.33%</td>
         <td class="num pos-txt">+$0</td>
-        <td class="num pos-txt">+$7,575</td>
+        <td class="num pos-txt">+$5,971</td>
         <td class="num pos-txt">+$0</td>
       </tr>
       <tr>
         <td>MTD <span class="muted">(since 2026-04-30)</span></td>
-        <td class="num pos-txt">+$7,252</td>
-        <td class="num pos-txt">+0.46%</td>
+        <td class="num pos-txt">+$8,070</td>
+        <td class="num pos-txt">+0.52%</td>
         <td class="num pos-txt">+$0</td>
-        <td class="num pos-txt">+$7,513</td>
+        <td class="num pos-txt">+$8,330</td>
         <td class="num pos-txt">+$0</td>
       </tr>
       <tr>
-        <td>1M <span class="muted">(since 2026-04-02)</span></td>
-        <td class="num pos-txt">+$124,009</td>
-        <td class="num pos-txt">+8.58%</td>
+        <td>1M <span class="muted">(since 2026-04-03)</span></td>
+        <td class="num pos-txt">+$124,689</td>
+        <td class="num pos-txt">+8.63%</td>
         <td class="num pos-txt">+$0</td>
-        <td class="num pos-txt">+$122,692</td>
+        <td class="num pos-txt">+$123,372</td>
         <td class="num pos-txt">+$0</td>
       </tr>
       <tr>
         <td>YTD <span class="muted">(since 2025-12-31)</span></td>
-        <td class="num pos-txt">+$64,940</td>
-        <td class="num pos-txt">+4.32%</td>
+        <td class="num pos-txt">+$65,758</td>
+        <td class="num pos-txt">+4.37%</td>
         <td class="num pos-txt">+$4,161</td>
-        <td class="num pos-txt">+$62,412</td>
+        <td class="num pos-txt">+$63,229</td>
         <td class="num pos-txt">+$0</td>
       </tr>
       <tr>
-        <td>1Y <span class="muted">(since 2025-05-02)</span></td>
-        <td class="num pos-txt">+$166,875</td>
-        <td class="num pos-txt">+11.90%</td>
+        <td>1Y <span class="muted">(since 2025-05-03)</span></td>
+        <td class="num pos-txt">+$170,064</td>
+        <td class="num pos-txt">+12.15%</td>
         <td class="num pos-txt">+$8,177</td>
-        <td class="num pos-txt">+$156,837</td>
+        <td class="num pos-txt">+$160,025</td>
         <td class="num pos-txt">+$0</td>
       </tr>
       <tr>
         <td>ALLTIME <span class="muted">(since 2024-01-04)</span></td>
-        <td class="num pos-txt">+$247,555</td>
-        <td class="num pos-txt">+37.47%</td>
+        <td class="num pos-txt">+$248,372</td>
+        <td class="num pos-txt">+37.59%</td>
         <td class="num pos-txt">+$13,954</td>
-        <td class="num pos-txt">+$233,901</td>
-        <td class="num pos-txt">+$1,321,388</td>
+        <td class="num pos-txt">+$234,719</td>
+        <td class="num pos-txt">+$1,321,389</td>
       </tr>
         </tbody>
       </table>
@@ -1252,7 +1334,7 @@ img, svg, table { max-width: 100%; }
     <div class="kpis kpis-solo">
       <div class="kpi">
         <div class="k">Overall score</div>
-        <div class="v">92.8</div>
+        <div class="v">97.1</div>
         <div class="delta"><span class="tag pos">High confidence</span></div>
       </div>
     </div>
@@ -1267,7 +1349,7 @@ img, svg, table { max-width: 100%; }
 <tr><td>Quote coverage (open lots)</td><td class="num">100.0</td><td>8/8 tickers with latest price · fresh 8 · delayed 0 · stale/n/a 0</td></tr>
 <tr><td>Quote freshness</td><td class="num">100.0</td><td>8/8 tickers with latest price · fresh 8 · delayed 0 · stale/n/a 0</td></tr>
 <tr><td>Profit panel — boundary marks</td><td class="num">100.0</td><td>audit hits — no hist.: 0, no hist.+no px: 0, missing px: 0, unreal. excl.: 0, latest fallback: 0, no FX hist.: 0</td></tr>
-<tr><td>Profit panel — P&amp;L vs components</td><td class="num">57.6</td><td>max |P&amp;L−(realized+unreal.Δ)| ≈ 1,860.97 · max relative 0.8577</td></tr>
+<tr><td>Profit panel — P&amp;L vs components</td><td class="num">83.0</td><td>max |P&amp;L−(realized+unreal.Δ)| ≈ 1,861.70 · max relative 0.1593</td></tr>
 <tr><td>Analytics pipeline</td><td class="num">100.0</td><td>hard errors: 0</td></tr>
         </tbody>
       </table>
@@ -1281,8 +1363,8 @@ img, svg, table { max-width: 100%; }
       <span class="sub">Per-market profit tables (same columns as profit panel) · USD basis</span>
     </div>
     <div class="kpis">
-      <div class="kpi"><div class="k">Ending NAV</div><div class="v">$1,568,943</div><div class="delta">Current replay value</div></div>
-      <div class="kpi"><div class="k">MWR annualized</div><div class="v">+8.89%</div><div class="delta">Money-weighted, external flows</div></div>
+      <div class="kpi"><div class="k">Ending NAV</div><div class="v">$1,569,761</div><div class="delta">Current replay value</div></div>
+      <div class="kpi"><div class="k">MWR annualized</div><div class="v">+8.91%</div><div class="delta">Money-weighted, external flows</div></div>
       <div class="kpi"><div class="k">Best Contributor</div><div class="v">AMD $67,534</div><div class="delta">Realized + current unrealized</div></div>
       <div class="kpi"><div class="k">Worst Detractor</div><div class="v">SMR −$1,483</div><div class="delta">Realized + current unrealized</div></div>
     </div>
@@ -1302,7 +1384,7 @@ img, svg, table { max-width: 100%; }
         </thead>
           <tbody>
       <tr>
-        <td>1D <span class="muted">(since 2026-05-01)</span></td>
+        <td>1D <span class="muted">(since 2026-05-02)</span></td>
         <td class="num neg-txt">−$0</td>
         <td class="num pos-txt">+0.00%</td>
         <td class="num pos-txt">+$0</td>
@@ -1310,7 +1392,7 @@ img, svg, table { max-width: 100%; }
         <td class="num muted"><span class="muted">—</span></td>
       </tr>
       <tr>
-        <td>7D <span class="muted">(since 2026-04-25)</span></td>
+        <td>7D <span class="muted">(since 2026-04-26)</span></td>
         <td class="num pos-txt">+$8,609</td>
         <td class="num pos-txt">+2.17%</td>
         <td class="num pos-txt">+$0</td>
@@ -1326,7 +1408,7 @@ img, svg, table { max-width: 100%; }
         <td class="num muted"><span class="muted">—</span></td>
       </tr>
       <tr>
-        <td>1M <span class="muted">(since 2026-04-02)</span></td>
+        <td>1M <span class="muted">(since 2026-04-03)</span></td>
         <td class="num pos-txt">+$85,143</td>
         <td class="num pos-txt">+26.57%</td>
         <td class="num pos-txt">+$0</td>
@@ -1342,7 +1424,7 @@ img, svg, table { max-width: 100%; }
         <td class="num muted"><span class="muted">—</span></td>
       </tr>
       <tr>
-        <td>1Y <span class="muted">(since 2025-05-02)</span></td>
+        <td>1Y <span class="muted">(since 2025-05-03)</span></td>
         <td class="num pos-txt">+$153,028</td>
         <td class="num pos-txt">+70.34%</td>
         <td class="num neg-txt">−$796</td>
@@ -1377,7 +1459,7 @@ img, svg, table { max-width: 100%; }
         </thead>
           <tbody>
       <tr>
-        <td>1D <span class="muted">(since 2026-05-01)</span></td>
+        <td>1D <span class="muted">(since 2026-05-02)</span></td>
         <td class="num neg-txt">−$26</td>
         <td class="num neg-txt">−0.03%</td>
         <td class="num pos-txt">+$0</td>
@@ -1385,11 +1467,11 @@ img, svg, table { max-width: 100%; }
         <td class="num muted"><span class="muted">—</span></td>
       </tr>
       <tr>
-        <td>7D <span class="muted">(since 2026-04-25)</span></td>
-        <td class="num neg-txt">−$2,093</td>
-        <td class="num neg-txt">−2.48%</td>
+        <td>7D <span class="muted">(since 2026-04-26)</span></td>
+        <td class="num neg-txt">−$2,242</td>
+        <td class="num neg-txt">−2.64%</td>
         <td class="num pos-txt">+$0</td>
-        <td class="num neg-txt">−$2,093</td>
+        <td class="num neg-txt">−$2,242</td>
         <td class="num muted"><span class="muted">—</span></td>
       </tr>
       <tr>
@@ -1401,27 +1483,27 @@ img, svg, table { max-width: 100%; }
         <td class="num muted"><span class="muted">—</span></td>
       </tr>
       <tr>
-        <td>1M <span class="muted">(since 2026-04-02)</span></td>
-        <td class="num pos-txt">+$12,899</td>
+        <td>1M <span class="muted">(since 2026-04-03)</span></td>
+        <td class="num pos-txt">+$12,900</td>
         <td class="num pos-txt">+18.66%</td>
         <td class="num pos-txt">+$0</td>
-        <td class="num pos-txt">+$12,899</td>
+        <td class="num pos-txt">+$12,900</td>
         <td class="num muted"><span class="muted">—</span></td>
       </tr>
       <tr>
         <td>YTD <span class="muted">(since 2025-12-31)</span></td>
-        <td class="num pos-txt">+$24,926</td>
+        <td class="num pos-txt">+$24,927</td>
         <td class="num pos-txt">+46.96%</td>
         <td class="num pos-txt">+$0</td>
-        <td class="num pos-txt">+$24,926</td>
+        <td class="num pos-txt">+$24,927</td>
         <td class="num muted"><span class="muted">—</span></td>
       </tr>
       <tr>
-        <td>1Y <span class="muted">(since 2025-05-02)</span></td>
+        <td>1Y <span class="muted">(since 2025-05-03)</span></td>
         <td class="num pos-txt">+$48,662</td>
-        <td class="num pos-txt">+153.72%</td>
+        <td class="num pos-txt">+153.73%</td>
         <td class="num pos-txt">+$3,060</td>
-        <td class="num pos-txt">+$45,601</td>
+        <td class="num pos-txt">+$45,602</td>
         <td class="num muted"><span class="muted">—</span></td>
       </tr>
       <tr>
@@ -1429,7 +1511,7 @@ img, svg, table { max-width: 100%; }
         <td class="num pos-txt">+$58,994</td>
         <td class="num "><span class="na">n/a</span></td>
         <td class="num pos-txt">+$8,830</td>
-        <td class="num pos-txt">+$50,163</td>
+        <td class="num pos-txt">+$50,164</td>
         <td class="num muted"><span class="muted">—</span></td>
       </tr>
           </tbody>
@@ -1452,59 +1534,59 @@ img, svg, table { max-width: 100%; }
         </thead>
           <tbody>
       <tr>
-        <td>1D <span class="muted">(since 2026-05-01)</span></td>
-        <td class="num pos-txt">+$14</td>
-        <td class="num pos-txt">+0.01%</td>
+        <td>1D <span class="muted">(since 2026-05-02)</span></td>
+        <td class="num pos-txt">+$831</td>
+        <td class="num pos-txt">+0.48%</td>
         <td class="num pos-txt">+$0</td>
-        <td class="num pos-txt">+$14</td>
+        <td class="num pos-txt">+$831</td>
         <td class="num muted"><span class="muted">—</span></td>
       </tr>
       <tr>
-        <td>7D <span class="muted">(since 2026-04-25)</span></td>
-        <td class="num pos-txt">+$1,060</td>
-        <td class="num pos-txt">+0.62%</td>
+        <td>7D <span class="muted">(since 2026-04-26)</span></td>
+        <td class="num neg-txt">−$395</td>
+        <td class="num neg-txt">−0.23%</td>
         <td class="num pos-txt">+$0</td>
-        <td class="num pos-txt">+$1,060</td>
+        <td class="num neg-txt">−$395</td>
         <td class="num muted"><span class="muted">—</span></td>
       </tr>
       <tr>
         <td>MTD <span class="muted">(since 2026-04-30)</span></td>
-        <td class="num pos-txt">+$3,872</td>
-        <td class="num pos-txt">+2.31%</td>
+        <td class="num pos-txt">+$4,689</td>
+        <td class="num pos-txt">+2.79%</td>
         <td class="num pos-txt">+$0</td>
-        <td class="num pos-txt">+$3,872</td>
+        <td class="num pos-txt">+$4,689</td>
         <td class="num muted"><span class="muted">—</span></td>
       </tr>
       <tr>
-        <td>1M <span class="muted">(since 2026-04-02)</span></td>
-        <td class="num pos-txt">+$24,650</td>
-        <td class="num pos-txt">+16.75%</td>
+        <td>1M <span class="muted">(since 2026-04-03)</span></td>
+        <td class="num pos-txt">+$25,330</td>
+        <td class="num pos-txt">+17.19%</td>
         <td class="num pos-txt">+$0</td>
-        <td class="num pos-txt">+$24,650</td>
+        <td class="num pos-txt">+$25,330</td>
         <td class="num muted"><span class="muted">—</span></td>
       </tr>
       <tr>
         <td>YTD <span class="muted">(since 2025-12-31)</span></td>
-        <td class="num neg-txt">−$13,893</td>
-        <td class="num neg-txt">−5.87%</td>
+        <td class="num neg-txt">−$13,076</td>
+        <td class="num neg-txt">−5.53%</td>
         <td class="num pos-txt">+$5,913</td>
-        <td class="num neg-txt">−$19,806</td>
+        <td class="num neg-txt">−$18,989</td>
         <td class="num muted"><span class="muted">—</span></td>
       </tr>
       <tr>
-        <td>1Y <span class="muted">(since 2025-05-02)</span></td>
-        <td class="num neg-txt">−$36,675</td>
-        <td class="num neg-txt">−16.46%</td>
+        <td>1Y <span class="muted">(since 2025-05-03)</span></td>
+        <td class="num neg-txt">−$33,488</td>
+        <td class="num neg-txt">−15.19%</td>
         <td class="num pos-txt">+$5,913</td>
-        <td class="num neg-txt">−$42,588</td>
+        <td class="num neg-txt">−$39,400</td>
         <td class="num muted"><span class="muted">—</span></td>
       </tr>
       <tr>
         <td>ALLTIME <span class="muted">(since 2024-01-04)</span></td>
-        <td class="num pos-txt">+$21,315</td>
+        <td class="num pos-txt">+$22,132</td>
         <td class="num "><span class="na">n/a</span></td>
         <td class="num pos-txt">+$1,361</td>
-        <td class="num pos-txt">+$19,954</td>
+        <td class="num pos-txt">+$20,770</td>
         <td class="num muted"><span class="muted">—</span></td>
       </tr>
           </tbody>
@@ -1522,20 +1604,20 @@ img, svg, table { max-width: 100%; }
             </tr>
           </thead>
           <tbody>
-      <tr><td>1D <span class="muted">(since 2026-05-01)</span></td><td class="num neg-txt">−$71</td></tr>
-      <tr><td>7D <span class="muted">(since 2026-04-25)</span></td><td class="num neg-txt">−$430</td></tr>
-      <tr><td>MTD <span class="muted">(since 2026-04-30)</span></td><td class="num neg-txt">−$261</td></tr>
-      <tr><td>1M <span class="muted">(since 2026-04-02)</span></td><td class="num pos-txt">+$1,317</td></tr>
-      <tr><td>YTD <span class="muted">(since 2025-12-31)</span></td><td class="num neg-txt">−$1,632</td></tr>
-      <tr><td>1Y <span class="muted">(since 2025-05-02)</span></td><td class="num pos-txt">+$1,861</td></tr>
+      <tr><td>1D <span class="muted">(since 2026-05-02)</span></td><td class="num neg-txt">−$70</td></tr>
+      <tr><td>7D <span class="muted">(since 2026-04-26)</span></td><td class="num neg-txt">−$821</td></tr>
+      <tr><td>MTD <span class="muted">(since 2026-04-30)</span></td><td class="num neg-txt">−$260</td></tr>
+      <tr><td>1M <span class="muted">(since 2026-04-03)</span></td><td class="num pos-txt">+$1,317</td></tr>
+      <tr><td>YTD <span class="muted">(since 2025-12-31)</span></td><td class="num neg-txt">−$1,631</td></tr>
+      <tr><td>1Y <span class="muted">(since 2025-05-03)</span></td><td class="num pos-txt">+$1,862</td></tr>
       <tr><td>ALLTIME <span class="muted">(since 2024-01-04)</span></td><td class="num neg-txt">−$301</td></tr>
           </tbody>
         </table>
       </div>
     </div><div class="prose" style="margin-top:16px"><p>Per-market net flows are not attributed (—). Return % uses starting gross position value in this market (positions only, no shared cash); the aggregate profit panel uses starting NAV + half net flows. Authoritative flows and full-portfolio return remain on the profit panel above.</p></div>
     <div class="cols-2" style="margin-top:22px">
-      <div><div class="eyebrow" style="margin-bottom:10px">Top Contributors</div><div class="bars"><div class="bar-row"><div class="bar-label">AMD</div><div class="bar-track"><div class="bar pos" style="width:100.0%"></div></div><div class="bar-value pos-txt">+$67,534</div></div><div class="bar-row"><div class="bar-label">2330.TW</div><div class="bar-track"><div class="bar pos" style="width:87.4%"></div></div><div class="bar-value pos-txt">+$58,994</div></div><div class="bar-row"><div class="bar-label">QQQ</div><div class="bar-track"><div class="bar pos" style="width:64.8%"></div></div><div class="bar-value pos-txt">+$43,776</div></div><div class="bar-row"><div class="bar-label">GOOGL</div><div class="bar-track"><div class="bar pos" style="width:49.0%"></div></div><div class="bar-value pos-txt">+$33,063</div></div><div class="bar-row"><div class="bar-label">BTC</div><div class="bar-track"><div class="bar pos" style="width:31.6%"></div></div><div class="bar-value pos-txt">+$21,315</div></div><div class="bar-row"><div class="bar-label">NVDA</div><div class="bar-track"><div class="bar pos" style="width:31.4%"></div></div><div class="bar-value pos-txt">+$21,200</div></div><div class="bar-row"><div class="bar-label">MSFT</div><div class="bar-track"><div class="bar pos" style="width:5.1%"></div></div><div class="bar-value pos-txt">+$3,455</div></div><div class="bar-row"><div class="bar-label">SMR</div><div class="bar-track"><div class="bar neg" style="width:2.2%"></div></div><div class="bar-value neg-txt">−$1,483</div></div></div></div>
-      <div><div class="eyebrow" style="margin-bottom:10px">Top Detractors</div><div class="bars"><div class="bar-row"><div class="bar-label">SMR</div><div class="bar-track"><div class="bar neg" style="width:2.2%"></div></div><div class="bar-value neg-txt">−$1,483</div></div><div class="bar-row"><div class="bar-label">MSFT</div><div class="bar-track"><div class="bar pos" style="width:5.1%"></div></div><div class="bar-value pos-txt">+$3,455</div></div><div class="bar-row"><div class="bar-label">NVDA</div><div class="bar-track"><div class="bar pos" style="width:31.4%"></div></div><div class="bar-value pos-txt">+$21,200</div></div><div class="bar-row"><div class="bar-label">BTC</div><div class="bar-track"><div class="bar pos" style="width:31.6%"></div></div><div class="bar-value pos-txt">+$21,315</div></div><div class="bar-row"><div class="bar-label">GOOGL</div><div class="bar-track"><div class="bar pos" style="width:49.0%"></div></div><div class="bar-value pos-txt">+$33,063</div></div><div class="bar-row"><div class="bar-label">QQQ</div><div class="bar-track"><div class="bar pos" style="width:64.8%"></div></div><div class="bar-value pos-txt">+$43,776</div></div><div class="bar-row"><div class="bar-label">2330.TW</div><div class="bar-track"><div class="bar pos" style="width:87.4%"></div></div><div class="bar-value pos-txt">+$58,994</div></div><div class="bar-row"><div class="bar-label">AMD</div><div class="bar-track"><div class="bar pos" style="width:100.0%"></div></div><div class="bar-value pos-txt">+$67,534</div></div></div></div>
+      <div><div class="eyebrow" style="margin-bottom:10px">Top Contributors</div><div class="bars"><div class="bar-row"><div class="bar-label">AMD</div><div class="bar-track"><div class="bar pos" style="width:100.0%"></div></div><div class="bar-value pos-txt">+$67,534</div></div><div class="bar-row"><div class="bar-label">2330.TW</div><div class="bar-track"><div class="bar pos" style="width:87.4%"></div></div><div class="bar-value pos-txt">+$58,994</div></div><div class="bar-row"><div class="bar-label">QQQ</div><div class="bar-track"><div class="bar pos" style="width:64.8%"></div></div><div class="bar-value pos-txt">+$43,776</div></div><div class="bar-row"><div class="bar-label">GOOGL</div><div class="bar-track"><div class="bar pos" style="width:49.0%"></div></div><div class="bar-value pos-txt">+$33,063</div></div><div class="bar-row"><div class="bar-label">BTC</div><div class="bar-track"><div class="bar pos" style="width:32.8%"></div></div><div class="bar-value pos-txt">+$22,132</div></div><div class="bar-row"><div class="bar-label">NVDA</div><div class="bar-track"><div class="bar pos" style="width:31.4%"></div></div><div class="bar-value pos-txt">+$21,200</div></div><div class="bar-row"><div class="bar-label">MSFT</div><div class="bar-track"><div class="bar pos" style="width:5.1%"></div></div><div class="bar-value pos-txt">+$3,455</div></div><div class="bar-row"><div class="bar-label">SMR</div><div class="bar-track"><div class="bar neg" style="width:2.2%"></div></div><div class="bar-value neg-txt">−$1,483</div></div></div></div>
+      <div><div class="eyebrow" style="margin-bottom:10px">Top Detractors</div><div class="bars"><div class="bar-row"><div class="bar-label">SMR</div><div class="bar-track"><div class="bar neg" style="width:2.2%"></div></div><div class="bar-value neg-txt">−$1,483</div></div><div class="bar-row"><div class="bar-label">MSFT</div><div class="bar-track"><div class="bar pos" style="width:5.1%"></div></div><div class="bar-value pos-txt">+$3,455</div></div><div class="bar-row"><div class="bar-label">NVDA</div><div class="bar-track"><div class="bar pos" style="width:31.4%"></div></div><div class="bar-value pos-txt">+$21,200</div></div><div class="bar-row"><div class="bar-label">BTC</div><div class="bar-track"><div class="bar pos" style="width:32.8%"></div></div><div class="bar-value pos-txt">+$22,132</div></div><div class="bar-row"><div class="bar-label">GOOGL</div><div class="bar-track"><div class="bar pos" style="width:49.0%"></div></div><div class="bar-value pos-txt">+$33,063</div></div><div class="bar-row"><div class="bar-label">QQQ</div><div class="bar-track"><div class="bar pos" style="width:64.8%"></div></div><div class="bar-value pos-txt">+$43,776</div></div><div class="bar-row"><div class="bar-label">2330.TW</div><div class="bar-track"><div class="bar pos" style="width:87.4%"></div></div><div class="bar-value pos-txt">+$58,994</div></div><div class="bar-row"><div class="bar-label">AMD</div><div class="bar-track"><div class="bar pos" style="width:100.0%"></div></div><div class="bar-value pos-txt">+$67,534</div></div></div></div>
     </div>
   </section>
   <section class="section">
@@ -1564,7 +1646,7 @@ img, svg, table { max-width: 100%; }
         <tbody>      <tr>
         <td>2026-04-01</td>
         <td><span class="adj-action buy">BUY</span></td>
-        <td><span class="sym-trigger" tabindex="0" role="button">GOOGL</span></td>
+        <td><span class="sym-label">GOOGL</span></td>
         <td class="num">25</td>
         <td class="num">153.85</td>
         <td class="num"><span class="muted">—</span></td>
@@ -1574,7 +1656,7 @@ img, svg, table { max-width: 100%; }
       <tr>
         <td>2026-03-18</td>
         <td><span class="adj-action sell">SELL</span></td>
-        <td><span class="sym-trigger" tabindex="0" role="button">NVDA</span></td>
+        <td><span class="sym-label">NVDA</span></td>
         <td class="num">30</td>
         <td class="num">117.60</td>
         <td class="num">−$1,838</td>
@@ -1584,7 +1666,7 @@ img, svg, table { max-width: 100%; }
       <tr>
         <td>2026-03-03</td>
         <td><span class="adj-action buy">BUY</span></td>
-        <td><span class="sym-trigger" tabindex="0" role="button">2330.TW</span></td>
+        <td><span class="sym-label">2330.TW</span></td>
         <td class="num">150</td>
         <td class="num">987.00</td>
         <td class="num"><span class="muted">—</span></td>
@@ -1594,7 +1676,7 @@ img, svg, table { max-width: 100%; }
       <tr>
         <td>2026-02-03</td>
         <td><span class="adj-action buy">BUY</span></td>
-        <td><span class="sym-trigger" tabindex="0" role="button">SMR</span></td>
+        <td><span class="sym-label">SMR</span></td>
         <td class="num">280</td>
         <td class="num">21.35</td>
         <td class="num"><span class="muted">—</span></td>
@@ -1604,7 +1686,7 @@ img, svg, table { max-width: 100%; }
       <tr>
         <td>2026-01-24</td>
         <td><span class="adj-action sell">SELL</span></td>
-        <td><span class="sym-trigger" tabindex="0" role="button">BTC</span></td>
+        <td><span class="sym-label">BTC</span></td>
         <td class="num">0.5</td>
         <td class="num">101,850.00</td>
         <td class="num">$5,915</td>
@@ -1614,7 +1696,7 @@ img, svg, table { max-width: 100%; }
       <tr>
         <td>2026-01-06</td>
         <td><span class="adj-action buy">BUY</span></td>
-        <td><span class="sym-trigger" tabindex="0" role="button">MSFT</span></td>
+        <td><span class="sym-label">MSFT</span></td>
         <td class="num">18</td>
         <td class="num">427.90</td>
         <td class="num"><span class="muted">—</span></td>
@@ -1624,7 +1706,7 @@ img, svg, table { max-width: 100%; }
       <tr>
         <td>2025-12-08</td>
         <td><span class="adj-action buy">BUY</span></td>
-        <td><span class="sym-trigger" tabindex="0" role="button">AMD</span></td>
+        <td><span class="sym-label">AMD</span></td>
         <td class="num">80</td>
         <td class="num">121.65</td>
         <td class="num"><span class="muted">—</span></td>
@@ -1634,7 +1716,7 @@ img, svg, table { max-width: 100%; }
       <tr>
         <td>2025-11-22</td>
         <td><span class="adj-action sell">SELL</span></td>
-        <td><span class="sym-trigger" tabindex="0" role="button">GOOGL</span></td>
+        <td><span class="sym-label">GOOGL</span></td>
         <td class="num">40</td>
         <td class="num">177.95</td>
         <td class="num">−$388</td>
@@ -1644,7 +1726,7 @@ img, svg, table { max-width: 100%; }
       <tr>
         <td>2025-11-04</td>
         <td><span class="adj-action buy">BUY</span></td>
-        <td><span class="sym-trigger" tabindex="0" role="button">NVDA</span></td>
+        <td><span class="sym-label">NVDA</span></td>
         <td class="num">25</td>
         <td class="num">191.85</td>
         <td class="num"><span class="muted">—</span></td>
@@ -1654,7 +1736,7 @@ img, svg, table { max-width: 100%; }
       <tr>
         <td>2025-10-01</td>
         <td><span class="adj-action buy">BUY</span></td>
-        <td><span class="sym-trigger" tabindex="0" role="button">QQQ</span></td>
+        <td><span class="sym-label">QQQ</span></td>
         <td class="num">40</td>
         <td class="num">511.60</td>
         <td class="num"><span class="muted">—</span></td>
@@ -1672,22 +1754,22 @@ img, svg, table { max-width: 100%; }
     <div class="kpis">
       <div class="kpi"><div class="k">Deposit → Buy</div><div class="v">8.5</div><div class="delta">days</div></div>
       <div class="kpi"><div class="k">Sell → Buy</div><div class="v">14.6</div><div class="delta">days</div></div>
-      <div class="kpi"><div class="k">Top Weight</div><div class="v">BTC 10.9%</div><div class="delta">Current open book</div></div>
+      <div class="kpi"><div class="k">Top Weight</div><div class="v">BTC 11.0%</div><div class="delta">Current open book</div></div>
       <div class="kpi"><div class="k">Data Gaps</div><div class="v">0</div><div class="delta">Data gaps</div></div>
     </div>
     <div class="cols-2" style="margin-top:18px">
       <div>
         <div class="eyebrow" style="margin-bottom:10px">Top Position Weights</div>
-        <div class="tbl-wrap scroll-y"><table><tbody><tr><td>BTC</td><td class="num">10.95%</td></tr><tr><td>QQQ</td><td class="num">8.16%</td></tr><tr><td>AMD</td><td class="num">6.89%</td></tr><tr><td>2330.TW</td><td class="num">5.25%</td></tr><tr><td>MSFT</td><td class="num">4.31%</td></tr><tr><td>GOOGL</td><td class="num">3.56%</td></tr><tr><td>NVDA</td><td class="num">2.15%</td></tr><tr><td>SMR</td><td class="num">0.77%</td></tr></tbody></table></div>
+        <div class="tbl-wrap scroll-y"><table><tbody><tr><td>BTC</td><td class="num">11.00%</td></tr><tr><td>QQQ</td><td class="num">8.16%</td></tr><tr><td>AMD</td><td class="num">6.89%</td></tr><tr><td>2330.TW</td><td class="num">5.25%</td></tr><tr><td>MSFT</td><td class="num">4.30%</td></tr><tr><td>GOOGL</td><td class="num">3.56%</td></tr><tr><td>NVDA</td><td class="num">2.15%</td></tr><tr><td>SMR</td><td class="num">0.77%</td></tr></tbody></table></div>
       </div>
       <div>
         <div class="bucket-note"><b>Recent buy churn:</b><ul><li>n/a</li></ul></div>
-        <div class="bucket-note"><b>Short bucket &gt;1Y:</b><ul><li>SMR 2024-08-01 (639d)</li><li>SMR 2025-02-03 (453d)</li></ul></div>
+        <div class="bucket-note"><b>Short bucket &gt;1Y:</b><ul><li>SMR 2024-08-01 (640d)</li><li>SMR 2025-02-03 (454d)</li></ul></div>
         <div class="bucket-note"><b>High-cost adds:</b><ul><li>QQQ 2025-10-01: +18.22% vs older avg</li><li>NVDA 2025-05-12: +65.95% vs older avg</li><li>2330.TW 2026-03-03: +21.39% vs older avg</li><li>BTC 2025-03-01: +23.22% vs older avg</li><li>SMR 2026-02-03: +92.54% vs older avg</li></ul></div>
       </div>
     </div>
     <div class="cols-2" style="margin-top:18px">
-      <div class="tbl-wrap scroll-y"><table><thead><tr><th>Largest Loss Lots</th><th>Acquired</th><th class="num">P&amp;L</th><th class="num">%</th></tr></thead><tbody><tr><td>SMR</td><td>2026-02-03</td><td class="num">−$2,579</td><td class="num">−43.14%</td></tr><tr><td>SMR</td><td>2025-02-03</td><td class="num">−$755</td><td class="num">−14.39%</td></tr><tr><td>MSFT</td><td>2025-06-20</td><td class="num">−$744</td><td class="num">−5.65%</td></tr><tr><td>BTC</td><td>2025-03-01</td><td class="num">−$607</td><td class="num">−7.21%</td></tr><tr><td>MSFT</td><td>2026-01-06</td><td class="num">−$242</td><td class="num">−3.15%</td></tr><tr><td>MSFT</td><td>2024-05-03</td><td class="num">$238</td><td class="num">+1.67%</td></tr></tbody></table></div>
+      <div class="tbl-wrap scroll-y"><table><thead><tr><th>Largest Loss Lots</th><th>Acquired</th><th class="num">P&amp;L</th><th class="num">%</th></tr></thead><tbody><tr><td>SMR</td><td>2026-02-03</td><td class="num">−$2,579</td><td class="num">−43.14%</td></tr><tr><td>SMR</td><td>2025-02-03</td><td class="num">−$755</td><td class="num">−14.39%</td></tr><tr><td>MSFT</td><td>2025-06-20</td><td class="num">−$744</td><td class="num">−5.65%</td></tr><tr><td>BTC</td><td>2025-03-01</td><td class="num">−$570</td><td class="num">−6.77%</td></tr><tr><td>MSFT</td><td>2026-01-06</td><td class="num">−$242</td><td class="num">−3.15%</td></tr><tr><td>MSFT</td><td>2024-05-03</td><td class="num">$238</td><td class="num">+1.67%</td></tr></tbody></table></div>
       <div class="tbl-wrap scroll-y"><table><thead><tr><th>Largest Gain Lots</th><th>Acquired</th><th class="num">P&amp;L</th><th class="num">%</th></tr></thead><tbody><tr><td>QQQ</td><td>2024-01-16</td><td class="num">$29,582</td><td class="num">+57.65%</td></tr><tr><td>AMD</td><td>2025-04-08</td><td class="num">$26,039</td><td class="num">+151.16%</td></tr><tr><td>2330.TW</td><td>2024-02-14</td><td class="num">$22,392</td><td class="num">+197.15%</td></tr><tr><td>AMD</td><td>2024-02-02</td><td class="num">$19,139</td><td class="num">+143.81%</td></tr><tr><td>AMD</td><td>2025-12-08</td><td class="num">$19,111</td><td class="num">+196.37%</td></tr><tr><td>GOOGL</td><td>2024-02-21</td><td class="num">$17,139</td><td class="num">+173.83%</td></tr></tbody></table></div>
     </div>
   </section>
@@ -1696,24 +1778,24 @@ img, svg, table { max-width: 100%; }
       <h2>Recent Trading Mindset and Improvements</h2>
       <span class="sub">Evaluation grounded in transaction history and discipline-check evidence</span>
     </div>
-    <div class="prose psych-headline"><p>I have strong winners and enough cash; the main discipline issue is stale tactical risk.</p></div>
+    <div class="prose psych-headline"><p>Discipline: sized catalyst trades, no accidental core drift</p></div>
     <div class="cols-2" style="align-items:start">
       <div>
         <div class="eyebrow" style="margin-bottom:10px">Recent behavior observations</div>
-        <ul class="psych-list"><li><div class="psych-li-main"><span class="tag warn">Caution</span><span style="margin-left:6px">SMR has Short Term lots held 453 and 639 days, so a tactical sleeve has become stale.</span></div><div class="psych-evidence"><span class="psych-ev-prefix">Evidence</span>snapshot.transaction_analytics.discipline_check.short_bucket_over_1y</div></li><li><div class="psych-li-main"><span class="tag warn">Caution</span><span style="margin-left:6px">Latest adds in QQQ, NVDA, 2330.TW, BTC and SMR were all more than 10% above older cost.</span></div><div class="psych-evidence"><span class="psych-ev-prefix">Evidence</span>snapshot.transaction_analytics.discipline_check.latest_lot_cost_flags</div></li><li><div class="psych-li-main"><span class="tag pos">Positive</span><span style="margin-left:6px">Closed-lot win rate is 73.68% with 1.59 profit factor, so realized discipline is broadly positive.</span></div><div class="psych-evidence"><span class="psych-ev-prefix">Evidence</span>snapshot.transaction_analytics.trade_quality.win_rate_pct and profit_factor</div></li></ul>
+        <ul class="psych-list"><li><div class="psych-li-main"><span class="tag warn">Caution</span><span style="margin-left:6px">Repeated adds in SMR while labeling lots Short Term</span></div><div class="psych-evidence"><span class="psych-ev-prefix">Evidence</span>snapshot.aggregates[SMR].bucket=Short Term vs snapshot.totals showing SMR still a small NAV slice — verify adds match rail intent.</div></li><li><div class="psych-li-main"><span class="tag info">Neutral</span><span style="margin-left:6px">BTC sleeve tracks macro headlines closely</span></div><div class="psych-evidence"><span class="psych-ev-prefix">Evidence</span>snapshot.aggregates[BTC].move_pct alongside prices.json BTC latest_price path — treat flow metrics as first-class.</div></li></ul>
       </div>
       <div>
         <div class="eyebrow" style="margin-bottom:10px">Areas to improve</div>
-        <ul class="psych-list"><li><div class="psych-li-main"><span class="tag warn">High</span><span style="margin-left:6px">Averaging up without a fresh thesis checkpoint can turn momentum into overpaying.</span></div><div class="psych-suggestion"><span class="psych-suggestion-label">Suggestion</span>Before the next add, write the variant view, anchor and kill trigger required by §15.4-§15.5.</div></li><li><div class="psych-li-main"><span class="tag warn">High</span><span style="margin-left:6px">Short-term sleeves need a date-based review before they age past the intended horizon.</span></div><div class="psych-suggestion"><span class="psych-suggestion-label">Suggestion</span>After SMR May 7, either reclassify with a multi-year thesis or cut the stale tactical exposure.</div></li><li><div class="psych-li-main"><span class="tag info">Medium</span><span style="margin-left:6px">Cash is high, but that does not justify chasing crowded AI names into earnings.</span></div><div class="psych-suggestion"><span class="psych-suggestion-label">Suggestion</span>Use the synthetic profile rails: add only after guide confirmation or a pullback that improves 1-3 year valuation.</div></li></ul>
+        <ul class="psych-list"><li><div class="psych-li-main"><span class="tag info">Medium</span><span style="margin-left:6px">Consensus numbers not centralized for NVDA/AMD in demo pass</span></div><div class="psych-suggestion"><span class="psych-suggestion-label">Suggestion</span>Next run import IBES/Visible Alpha snapshots so variant tags can graduate from unknown-consensus where appropriate.</div></li></ul>
       </div>
     </div>
-    <div class="psych-strengths-wrap"><div class="eyebrow" style="margin-bottom:8px">Discipline worth keeping</div><ul class="psych-list"><li>BTC profit-taking in January avoided the later drawdown, matching rail-aware risk reduction.</li></ul></div>
+    <div class="psych-strengths-wrap"><div class="eyebrow" style="margin-bottom:8px">Discipline worth keeping</div><ul class="psych-list"><li>Clear separation of core (MSFT/QQQ/2330.TW) vs tactical (SMR)</li></ul></div>
     
   </section>
   <section class="section">
     <div class="section-head">
       <h2>Allocation &amp; Weights</h2>
-      <span class="sub">USD basis, 2026-05-02</span>
+      <span class="sub">USD basis, 2026-05-03</span>
     </div>
     <div class="cols-2">
       <div>
@@ -1722,13 +1804,13 @@ img, svg, table { max-width: 100%; }
             <circle cx="60" cy="60" r="52" fill="#f0ece0"/>
             <g transform="rotate(-90 60 60)" fill="none" stroke-width="20">
               <circle cx="60" cy="60" r="42" stroke="#1f2937"
-                      stroke-dasharray="152.92 263.89" stroke-dashoffset="-0.00"/>
+                      stroke-dasharray="152.84 263.89" stroke-dashoffset="-0.00"/>
               <circle cx="60" cy="60" r="42" stroke="#15703d"
-                      stroke-dasharray="68.22 263.89" stroke-dashoffset="-152.92"/>
+                      stroke-dasharray="68.19 263.89" stroke-dashoffset="-152.84"/>
               <circle cx="60" cy="60" r="42" stroke="#8a5a1c"
-                      stroke-dasharray="28.90 263.89" stroke-dashoffset="-221.14"/>
+                      stroke-dasharray="29.02 263.89" stroke-dashoffset="-221.03"/>
               <circle cx="60" cy="60" r="42" stroke="#1d4690"
-                      stroke-dasharray="13.85 263.89" stroke-dashoffset="-250.04"/>
+                      stroke-dasharray="13.84 263.89" stroke-dashoffset="-250.05"/>
             </g>
             <text x="60" y="56" text-anchor="middle"
                   font-size="8" fill="#6b7280" letter-spacing=".15em">TOTAL</text>
@@ -1737,7 +1819,7 @@ img, svg, table { max-width: 100%; }
           </svg>
           <div class="legend">
             <div class="row"><span class="sw" style="background:#1f2937"></span><span>Cash</span><span class="pct">57.9%</span></div>
-            <div class="row"><span class="sw" style="background:#15703d"></span><span>US Equity</span><span class="pct">25.9%</span></div>
+            <div class="row"><span class="sw" style="background:#15703d"></span><span>US Equity</span><span class="pct">25.8%</span></div>
             <div class="row"><span class="sw" style="background:#8a5a1c"></span><span>Crypto</span><span class="pct">11.0%</span></div>
             <div class="row"><span class="sw" style="background:#1d4690"></span><span>Taiwan</span><span class="pct">5.2%</span></div>
           </div>
@@ -1746,14 +1828,14 @@ img, svg, table { max-width: 100%; }
       <div>
         <div class="bars">
           <div class="bar-row"><div class="bar-label">USD</div><div class="bar-track"><div class="bar" style="width:100.0%"></div></div><div class="bar-value">51.3%</div></div>
-          <div class="bar-row"><div class="bar-label">BTC</div><div class="bar-track"><div class="bar" style="width:21.3%"></div></div><div class="bar-value">11.0%</div></div>
+          <div class="bar-row"><div class="bar-label">BTC</div><div class="bar-track"><div class="bar" style="width:21.4%"></div></div><div class="bar-value">11.0%</div></div>
           <div class="bar-row"><div class="bar-label">QQQ</div><div class="bar-track"><div class="bar" style="width:15.9%"></div></div><div class="bar-value">8.2%</div></div>
           <div class="bar-row"><div class="bar-label">AMD</div><div class="bar-track"><div class="bar" style="width:13.4%"></div></div><div class="bar-value">6.9%</div></div>
           <div class="bar-row"><div class="bar-label">TWD</div><div class="bar-track"><div class="bar" style="width:12.9%"></div></div><div class="bar-value">6.6%</div></div>
           <div class="bar-row"><div class="bar-label">2330.TW</div><div class="bar-track"><div class="bar" style="width:10.2%"></div></div><div class="bar-value">5.2%</div></div>
           <div class="bar-row"><div class="bar-label">MSFT</div><div class="bar-track"><div class="bar" style="width:8.4%"></div></div><div class="bar-value">4.3%</div></div>
           <div class="bar-row"><div class="bar-label">GOOGL</div><div class="bar-track"><div class="bar" style="width:6.9%"></div></div><div class="bar-value">3.6%</div></div>
-          <div class="bar-row"><div class="bar-label">NVDA</div><div class="bar-track"><div class="bar" style="width:4.2%"></div></div><div class="bar-value">2.2%</div></div>
+          <div class="bar-row"><div class="bar-label">NVDA</div><div class="bar-track"><div class="bar" style="width:4.2%"></div></div><div class="bar-value">2.1%</div></div>
           <div class="bar-row"><div class="bar-label">SMR</div><div class="bar-track"><div class="bar" style="width:1.5%"></div></div><div class="bar-value">0.8%</div></div>
         </div>
       </div>
@@ -1764,7 +1846,7 @@ img, svg, table { max-width: 100%; }
       <h2>Holdings P&amp;L and Weights</h2>
       <span class="sub">Top 10 positions · static snapshot at generation time · hover or tap Symbol / Price for detail</span>
     </div>
-    <div class="tbl-wrap">
+    <div class="tbl-wrap holdings-table-wrap">
       <table class="holdings-tbl">
         <colgroup>
           <col style="width:7%">
@@ -1788,7 +1870,7 @@ img, svg, table { max-width: 100%; }
         </thead>
         <tbody>
           <tr>
-            <td><div class="sym-trigger" tabindex="0" role="button">USD<div class="pop pop-sym" role="tooltip">
+            <td><div class="sym-trigger" tabindex="0" role="button"><span class="sym-text">USD</span><div class="pop pop-sym" role="tooltip">
                 <h4>USD · Cash Holdings</h4>
                 <div class="pop-sub">Cash</div>
                 <div class="pop-row"><span class="k">Opened</span><span class="v">n/a · n/a</span></div>
@@ -1799,41 +1881,41 @@ img, svg, table { max-width: 100%; }
             <td class="num">51.3%</td>
             <td class="num">$805,082</td>
             <td class="num">—</td>
-            <td class="col-action">Keep dry powder until earnings and macro events clear.</td>
+            <td class="col-action">—</td>
           </tr>
           <tr>
-            <td><div class="sym-trigger" tabindex="0" role="button">BTC<div class="pop pop-sym" role="tooltip">
+            <td><div class="sym-trigger" tabindex="0" role="button"><span class="sym-text">BTC</span><div class="pop pop-sym" role="tooltip">
                 <h4>BTC · Mid Term</h4>
                 <div class="pop-sub">Crypto</div>
                 <div class="pop-row"><span class="k">Opened</span><span class="v">2024-03 · 2y 1m</span></div>
                 <div class="pop-row"><span class="k">Lots</span><span class="v">3 lots</span></div>
               </div></div></td>
             <td>Crypto<span class="tag">Mid</span></td>
-            <td class="num price-cell"><div class="price-trigger" tabindex="0" role="button"><span class="price-num">$78,106.61</span><span class="price-sub pos">24h +0.86%</span><div class="pop pop-px" role="tooltip">
+            <td class="num price-cell"><div class="price-trigger" tabindex="0" role="button"><span class="price-num">$78,477.89</span><span class="price-sub pos">24h +0.20%</span><div class="pop pop-px" role="tooltip">
                 <h4>BTC · Per-Lot P&amp;L</h4>
-                <div class="pop-sub">Latest $78,106.61 · Source：web:coinmarketcap · Freshness：Fresh · Market Basis：crypto_24_7_live · Currency：USD · Exchange：Crypto · 2026-05-02T09:00:00Z</div>
+                <div class="pop-sub">Latest $78,477.89 · Source：no_token:binance · Freshness：Fresh · Market Basis：24/7 market · Currency：USD · Exchange：Binance · 2026-05-03T09:24:10+00:00</div>
                 <table>
                   <thead><tr><th>Acquired</th><th class="num">Cost</th><th class="num">Quantity</th><th class="num">P&amp;L</th></tr></thead>
-                  <tbody><tr><td>2024-03-18</td><td class="num">$67,240.00</td><td class="num">1.2</td><td class="num"><span class="pop-pos">+$13,040</span></td></tr><tr><td>2024-08-20</td><td class="num">$69,750.00</td><td class="num">0.9</td><td class="num"><span class="pop-pos">+$7,521</span></td></tr><tr><td>2025-03-01</td><td class="num">$84,180.00</td><td class="num">0.1</td><td class="num"><span class="pop-neg">−$607</span></td></tr></tbody>
-                  <tfoot class="summary"><tr><td>Avg Cost $69,036.82 (USD)</td><td class="num">$151,881</td><td class="num">2.2</td><td class="num"><span class="pop-pos">+$19,954</span></td></tr></tfoot>
+                  <tbody><tr><td>2024-03-18</td><td class="num">$67,240.00</td><td class="num">1.2</td><td class="num"><span class="pop-pos">+$13,485</span></td></tr><tr><td>2024-08-20</td><td class="num">$69,750.00</td><td class="num">0.9</td><td class="num"><span class="pop-pos">+$7,855</span></td></tr><tr><td>2025-03-01</td><td class="num">$84,180.00</td><td class="num">0.1</td><td class="num"><span class="pop-neg">−$570</span></td></tr></tbody>
+                  <tfoot class="summary"><tr><td>Avg Cost $69,036.82 (USD)</td><td class="num">$151,881</td><td class="num">2.2</td><td class="num"><span class="pop-pos">+$20,770</span></td></tr></tfoot>
                 </table>
               </div></div></td>
             <td class="num">11.0%</td>
-            <td class="num">$171,835</td>
-            <td class="num pos-txt">+$19,954 / +13.1%</td>
-            <td class="col-action">Trim only enough to restore 10% NAV rail if still above 10.5%.</td>
+            <td class="num">$172,651</td>
+            <td class="num pos-txt">+$20,770 / +13.7%</td>
+            <td class="col-action">—</td>
           </tr>
           <tr>
-            <td><div class="sym-trigger" tabindex="0" role="button">QQQ<div class="pop pop-sym" role="tooltip">
+            <td><div class="sym-trigger" tabindex="0" role="button"><span class="sym-text">QQQ</span><div class="pop pop-sym" role="tooltip">
                 <h4>QQQ · Long Term</h4>
                 <div class="pop-sub">US</div>
                 <div class="pop-row"><span class="k">Opened</span><span class="v">2024-01 · 2y 3m</span></div>
                 <div class="pop-row"><span class="k">Lots</span><span class="v">4 lots</span></div>
               </div></div></td>
             <td>US Equity<span class="tag pos">Long</span></td>
-            <td class="num price-cell"><div class="price-trigger" tabindex="0" role="button"><span class="price-num">$674.15</span><span class="price-sub pos">vs prior close +0.96%</span><div class="pop pop-px" role="tooltip">
+            <td class="num price-cell"><div class="price-trigger" tabindex="0" role="button"><span class="price-num">$674.15</span><span class="price-sub pos">vs prior close +0.75%</span><div class="pop pop-px" role="tooltip">
                 <h4>QQQ · Per-Lot P&amp;L</h4>
-                <div class="pop-sub">Latest $674.15 · Source：web:barchart · Freshness：Fresh · Market Basis：weekend_latest_close · Currency：USD · Exchange：NASDAQ · 2026-05-01T16:00:00-04:00</div>
+                <div class="pop-sub">Latest $674.15 · Source：no_token:stooq · Freshness：Fresh · Market Basis：Unknown · Currency：USD · Exchange：Stooq · 2026-05-01T22:00:19</div>
                 <table>
                   <thead><tr><th>Acquired</th><th class="num">Cost</th><th class="num">Quantity</th><th class="num">P&amp;L</th></tr></thead>
                   <tbody><tr><td>2024-01-16</td><td class="num">$427.63</td><td class="num">120</td><td class="num"><span class="pop-pos">+$29,582</span></td></tr><tr><td>2024-04-02</td><td class="num">$435.90</td><td class="num">20</td><td class="num"><span class="pop-pos">+$4,765</span></td></tr><tr><td>2024-11-05</td><td class="num">$487.90</td><td class="num">10</td><td class="num"><span class="pop-pos">+$1,862</span></td></tr><tr><td>2025-10-01</td><td class="num">$511.60</td><td class="num">40</td><td class="num"><span class="pop-pos">+$6,502</span></td></tr></tbody>
@@ -1843,19 +1925,19 @@ img, svg, table { max-width: 100%; }
             <td class="num">8.2%</td>
             <td class="num">$128,088</td>
             <td class="num pos-txt">+$42,712 / +50.0%</td>
-            <td class="col-action">Core index exposure; hold, no tactical trim while cash is already high.</td>
+            <td class="col-action">Hold broad growth beta；Rebalance if Nasdaq-100 concentration jumps materially post a mega-IPO inclusion.</td>
           </tr>
           <tr>
-            <td><div class="sym-trigger" tabindex="0" role="button">AMD<div class="pop pop-sym" role="tooltip">
+            <td><div class="sym-trigger" tabindex="0" role="button"><span class="sym-text">AMD</span><div class="pop pop-sym" role="tooltip">
                 <h4>AMD · Mid Term</h4>
                 <div class="pop-sub">US</div>
                 <div class="pop-row"><span class="k">Opened</span><span class="v">2024-02 · 2y 3m</span></div>
                 <div class="pop-row"><span class="k">Lots</span><span class="v">4 lots</span></div>
               </div></div></td>
             <td>US Equity<span class="tag">Mid</span></td>
-            <td class="num price-cell"><div class="price-trigger" tabindex="0" role="button"><span class="price-num">$360.54</span><span class="price-sub pos">vs prior close +1.71%</span><div class="pop pop-px" role="tooltip">
+            <td class="num price-cell"><div class="price-trigger" tabindex="0" role="button"><span class="price-num">$360.54</span><span class="price-sub pos">vs prior close +2.46%</span><div class="pop pop-px" role="tooltip">
                 <h4>AMD · Per-Lot P&amp;L</h4>
-                <div class="pop-sub">Latest $360.54 · Source：web:stockanalysis · Freshness：Fresh · Market Basis：weekend_latest_close · Currency：USD · Exchange：NASDAQ · 2026-05-01T16:00:00-04:00</div>
+                <div class="pop-sub">Latest $360.54 · Source：no_token:stooq · Freshness：Fresh · Market Basis：Unknown · Currency：USD · Exchange：Stooq · 2026-05-01T22:00:18</div>
                 <table>
                   <thead><tr><th>Acquired</th><th class="num">Cost</th><th class="num">Quantity</th><th class="num">P&amp;L</th></tr></thead>
                   <tbody><tr><td>2024-02-02</td><td class="num">$147.88</td><td class="num">90</td><td class="num"><span class="pop-pos">+$19,139</span></td></tr><tr><td>2024-09-16</td><td class="num">$157.40</td><td class="num">10</td><td class="num"><span class="pop-pos">+$2,031</span></td></tr><tr><td>2025-04-08</td><td class="num">$143.55</td><td class="num">120</td><td class="num"><span class="pop-pos">+$26,039</span></td></tr><tr><td>2025-12-08</td><td class="num">$121.65</td><td class="num">80</td><td class="num"><span class="pop-pos">+$19,111</span></td></tr></tbody>
@@ -1865,10 +1947,10 @@ img, svg, table { max-width: 100%; }
             <td class="num">6.9%</td>
             <td class="num">$108,162</td>
             <td class="num pos-txt">+$66,321 / +158.5%</td>
-            <td class="col-action">Hold through May 5; no pre-earnings add after record close.</td>
+            <td class="col-action">—</td>
           </tr>
           <tr>
-            <td><div class="sym-trigger" tabindex="0" role="button">TWD<div class="pop pop-sym" role="tooltip">
+            <td><div class="sym-trigger" tabindex="0" role="button"><span class="sym-text">TWD</span><div class="pop pop-sym" role="tooltip">
                 <h4>TWD · Cash Holdings</h4>
                 <div class="pop-sub">Cash</div>
                 <div class="pop-row"><span class="k">Opened</span><span class="v">n/a · n/a</span></div>
@@ -1877,12 +1959,12 @@ img, svg, table { max-width: 100%; }
             <td>Cash<span class="tag">Cash</span></td>
             <td class="num price-cell"><div class="price-trigger" tabindex="0" role="button"><span class="na">—</span></div></td>
             <td class="num">6.6%</td>
-            <td class="num">$104,070</td>
+            <td class="num">$104,071</td>
             <td class="num">—</td>
-            <td class="col-action">Keep as local-market liquidity for Taiwan opportunities.</td>
+            <td class="col-action">—</td>
           </tr>
           <tr>
-            <td><div class="sym-trigger" tabindex="0" role="button">2330.TW<div class="pop pop-sym" role="tooltip">
+            <td><div class="sym-trigger" tabindex="0" role="button"><span class="sym-text">2330.TW</span><div class="pop pop-sym" role="tooltip">
                 <h4>2330.TW · Long Term</h4>
                 <div class="pop-sub">Taiwan</div>
                 <div class="pop-row"><span class="k">Opened</span><span class="v">2024-02 · 2y 2m</span></div>
@@ -1891,29 +1973,29 @@ img, svg, table { max-width: 100%; }
             <td>Taiwan Equity<span class="tag pos">Long</span></td>
             <td class="num price-cell"><div class="price-trigger" tabindex="0" role="button"><span class="price-num">NT$2,135.00</span><span class="price-sub neg">vs prior close −2.06%</span><div class="pop pop-px" role="tooltip">
                 <h4>2330.TW · Per-Lot P&amp;L</h4>
-                <div class="pop-sub">Latest NT$2,135.00 · Source：web:stockanalysis · Freshness：Fresh · Market Basis：taiwan_holiday_latest_close · Currency：TWD · Exchange：TWSE · 2026-04-30T13:30:00+08:00</div>
+                <div class="pop-sub">Latest NT$2,135.00 · Source：no_token:twse_mis · Freshness：Fresh · Market Basis：Unknown · Currency：TWD · Exchange：TWSE · 2026-05-03T09:24:05+00:00</div>
                 <table>
                   <thead><tr><th>Acquired</th><th class="num">Cost</th><th class="num">Quantity</th><th class="num">P&amp;L</th></tr></thead>
                   <tbody><tr><td>2024-02-14</td><td class="num">NT$718.50</td><td class="num">500</td><td class="num"><span class="pop-pos">+NT$708,250</span></td></tr><tr><td>2024-06-18</td><td class="num">NT$867.50</td><td class="num">350</td><td class="num"><span class="pop-pos">+NT$443,625</span></td></tr><tr><td>2025-03-14</td><td class="num">NT$941.50</td><td class="num">220</td><td class="num"><span class="pop-pos">+NT$262,570</span></td></tr><tr><td>2026-03-03</td><td class="num">NT$987.00</td><td class="num">150</td><td class="num"><span class="pop-pos">+NT$172,200</span></td></tr></tbody>
-                  <tfoot class="summary"><tr><td>Avg Cost $26.38 (USD)</td><td class="num">$32,187</td><td class="num">1220</td><td class="num"><span class="pop-pos">+$50,163</span></td></tr></tfoot>
+                  <tfoot class="summary"><tr><td>Avg Cost $26.38 (USD)</td><td class="num">$32,187</td><td class="num">1220</td><td class="num"><span class="pop-pos">+$50,164</span></td></tr></tfoot>
                 </table>
               </div></div></td>
             <td class="num">5.2%</td>
-            <td class="num">$82,350</td>
-            <td class="num pos-txt">+$50,163 / +155.9%</td>
-            <td class="col-action">Core long-term foundry exposure; hold, refresh quote after Taiwan holiday, no chase above TWD 2,200.</td>
+            <td class="num">$82,351</td>
+            <td class="num pos-txt">+$50,164 / +155.9%</td>
+            <td class="col-action">Hold foundry core；Trim only if weight breaches my single-name rail after the next monthly mark-to-market.</td>
           </tr>
           <tr>
-            <td><div class="sym-trigger" tabindex="0" role="button">MSFT<div class="pop pop-sym" role="tooltip">
+            <td><div class="sym-trigger" tabindex="0" role="button"><span class="sym-text">MSFT</span><div class="pop pop-sym" role="tooltip">
                 <h4>MSFT · Long Term</h4>
                 <div class="pop-sub">US</div>
                 <div class="pop-row"><span class="k">Opened</span><span class="v">2024-01 · 2y 3m</span></div>
                 <div class="pop-row"><span class="k">Lots</span><span class="v">4 lots</span></div>
               </div></div></td>
             <td>US Equity<span class="tag pos">Long</span></td>
-            <td class="num price-cell"><div class="price-trigger" tabindex="0" role="button"><span class="price-num">$414.44</span><span class="price-sub pos">vs prior close +1.63%</span><div class="pop pop-px" role="tooltip">
+            <td class="num price-cell"><div class="price-trigger" tabindex="0" role="button"><span class="price-num">$414.44</span><span class="price-sub pos">vs prior close +0.40%</span><div class="pop pop-px" role="tooltip">
                 <h4>MSFT · Per-Lot P&amp;L</h4>
-                <div class="pop-sub">Latest $414.44 · Source：web:stockanalysis · Freshness：Fresh · Market Basis：weekend_latest_close · Currency：USD · Exchange：NASDAQ · 2026-05-01T16:00:00-04:00</div>
+                <div class="pop-sub">Latest $414.44 · Source：no_token:stooq · Freshness：Fresh · Market Basis：Unknown · Currency：USD · Exchange：Stooq · 2026-05-01T22:00:22</div>
                 <table>
                   <thead><tr><th>Acquired</th><th class="num">Cost</th><th class="num">Quantity</th><th class="num">P&amp;L</th></tr></thead>
                   <tbody><tr><td>2024-01-19</td><td class="num">$377.42</td><td class="num">80</td><td class="num"><span class="pop-pos">+$2,962</span></td></tr><tr><td>2024-05-03</td><td class="num">$407.65</td><td class="num">35</td><td class="num"><span class="pop-pos">+$238</span></td></tr><tr><td>2025-06-20</td><td class="num">$439.25</td><td class="num">30</td><td class="num"><span class="pop-neg">−$744</span></td></tr><tr><td>2026-01-06</td><td class="num">$427.90</td><td class="num">18</td><td class="num"><span class="pop-neg">−$242</span></td></tr></tbody>
@@ -1923,19 +2005,19 @@ img, svg, table { max-width: 100%; }
             <td class="num">4.3%</td>
             <td class="num">$67,554</td>
             <td class="num pos-txt">+$2,213 / +3.4%</td>
-            <td class="col-action">Long-term quality hold; let post-earnings capex concerns settle before adding.</td>
+            <td class="col-action">Hold core；Revisit if Azure growth falls through 37% Street bar or AI capex returns look misallocated for two consecutive guides.</td>
           </tr>
           <tr>
-            <td><div class="sym-trigger" tabindex="0" role="button">GOOGL<div class="pop pop-sym" role="tooltip">
+            <td><div class="sym-trigger" tabindex="0" role="button"><span class="sym-text">GOOGL</span><div class="pop pop-sym" role="tooltip">
                 <h4>GOOGL · Mid Term</h4>
                 <div class="pop-sub">US</div>
                 <div class="pop-row"><span class="k">Opened</span><span class="v">2024-02 · 2y 2m</span></div>
                 <div class="pop-row"><span class="k">Lots</span><span class="v">5 lots</span></div>
               </div></div></td>
             <td>US Equity<span class="tag">Mid</span></td>
-            <td class="num price-cell"><div class="price-trigger" tabindex="0" role="button"><span class="price-num">$385.69</span><span class="price-sub pos">vs prior close +0.23%</span><div class="pop pop-px" role="tooltip">
+            <td class="num price-cell"><div class="price-trigger" tabindex="0" role="button"><span class="price-num">$385.69</span><span class="price-sub pos">vs prior close +1.06%</span><div class="pop pop-px" role="tooltip">
                 <h4>GOOGL · Per-Lot P&amp;L</h4>
-                <div class="pop-sub">Latest $385.69 · Source：web:stockanalysis · Freshness：Fresh · Market Basis：weekend_latest_close · Currency：USD · Exchange：NASDAQ · 2026-05-01T16:00:00-04:00</div>
+                <div class="pop-sub">Latest $385.69 · Source：no_token:stooq · Freshness：Fresh · Market Basis：Unknown · Currency：USD · Exchange：Stooq · 2026-05-01T22:00:19</div>
                 <table>
                   <thead><tr><th>Acquired</th><th class="num">Cost</th><th class="num">Quantity</th><th class="num">P&amp;L</th></tr></thead>
                   <tbody><tr><td>2024-02-21</td><td class="num">$140.85</td><td class="num">70</td><td class="num"><span class="pop-pos">+$17,139</span></td></tr><tr><td>2024-07-01</td><td class="num">$167.55</td><td class="num">5</td><td class="num"><span class="pop-pos">+$1,091</span></td></tr><tr><td>2025-01-08</td><td class="num">$187.65</td><td class="num">15</td><td class="num"><span class="pop-pos">+$2,971</span></td></tr><tr><td>2025-08-18</td><td class="num">$163.90</td><td class="num">30</td><td class="num"><span class="pop-pos">+$6,654</span></td></tr><tr><td>2026-04-01</td><td class="num">$153.85</td><td class="num">25</td><td class="num"><span class="pop-pos">+$5,796</span></td></tr></tbody>
@@ -1945,41 +2027,41 @@ img, svg, table { max-width: 100%; }
             <td class="num">3.6%</td>
             <td class="num">$55,925</td>
             <td class="num pos-txt">+$33,650 / +151.1%</td>
-            <td class="col-action">Hold; AI/cloud execution justifies staying with the winner.</td>
+            <td class="col-action">—</td>
           </tr>
           <tr>
-            <td><div class="sym-trigger" tabindex="0" role="button">NVDA<div class="pop pop-sym" role="tooltip">
+            <td><div class="sym-trigger" tabindex="0" role="button"><span class="sym-text">NVDA</span><div class="pop pop-sym" role="tooltip">
                 <h4>NVDA · Mid Term</h4>
                 <div class="pop-sub">US</div>
                 <div class="pop-row"><span class="k">Opened</span><span class="v">2024-01 · 2y 3m</span></div>
                 <div class="pop-row"><span class="k">Lots</span><span class="v">3 lots</span></div>
               </div></div></td>
             <td>US Equity<span class="tag">Mid</span></td>
-            <td class="num price-cell"><div class="price-trigger" tabindex="0" role="button"><span class="price-num">$198.45</span><span class="price-sub neg">vs prior close −0.56%</span><div class="pop pop-px" role="tooltip">
+            <td class="num price-cell"><div class="price-trigger" tabindex="0" role="button"><span class="price-num">$198.45</span><span class="price-sub neg">vs prior close −1.41%</span><div class="pop pop-px" role="tooltip">
                 <h4>NVDA · Per-Lot P&amp;L</h4>
-                <div class="pop-sub">Latest $198.45 · Source：web:stockanalysis · Freshness：Fresh · Market Basis：weekend_latest_close · Currency：USD · Exchange：NASDAQ · 2026-05-01T16:00:00-04:00</div>
+                <div class="pop-sub">Latest $198.45 · Source：no_token:stooq · Freshness：Fresh · Market Basis：Unknown · Currency：USD · Exchange：Stooq · 2026-05-01T22:00:19</div>
                 <table>
                   <thead><tr><th>Acquired</th><th class="num">Cost</th><th class="num">Quantity</th><th class="num">P&amp;L</th></tr></thead>
                   <tbody><tr><td>2024-01-26</td><td class="num">$56.12</td><td class="num">95</td><td class="num"><span class="pop-pos">+$13,521</span></td></tr><tr><td>2024-05-20</td><td class="num">$95.05</td><td class="num">45</td><td class="num"><span class="pop-pos">+$4,653</span></td></tr><tr><td>2025-05-12</td><td class="num">$113.90</td><td class="num">30</td><td class="num"><span class="pop-pos">+$2,536</span></td></tr></tbody>
                   <tfoot class="summary"><tr><td>Avg Cost $76.62 (USD)</td><td class="num">$13,026</td><td class="num">170</td><td class="num"><span class="pop-pos">+$20,711</span></td></tr></tfoot>
                 </table>
               </div></div></td>
-            <td class="num">2.2%</td>
+            <td class="num">2.1%</td>
             <td class="num">$33,736</td>
             <td class="num pos-txt">+$20,711 / +159.0%</td>
-            <td class="col-action">Hold; May 20 earnings is the next full thesis test.</td>
+            <td class="col-action">—</td>
           </tr>
           <tr>
-            <td><div class="sym-trigger" tabindex="0" role="button">SMR<div class="pop pop-sym" role="tooltip">
+            <td><div class="sym-trigger" tabindex="0" role="button"><span class="sym-text">SMR</span><div class="pop pop-sym" role="tooltip">
                 <h4>SMR · Short Term</h4>
                 <div class="pop-sub">US</div>
                 <div class="pop-row"><span class="k">Opened</span><span class="v">2024-08 · 1y 9m</span></div>
                 <div class="pop-row"><span class="k">Lots</span><span class="v">3 lots</span></div>
               </div></div></td>
             <td>US Equity<span class="tag warn">Short</span></td>
-            <td class="num price-cell"><div class="price-trigger" tabindex="0" role="button"><span class="price-num">$12.14</span><span class="price-sub neg">vs prior close −2.57%</span><div class="pop pop-px" role="tooltip">
+            <td class="num price-cell"><div class="price-trigger" tabindex="0" role="button"><span class="price-num">$12.14</span><span class="price-sub neg">vs prior close −0.74%</span><div class="pop pop-px" role="tooltip">
                 <h4>SMR · Per-Lot P&amp;L</h4>
-                <div class="pop-sub">Latest $12.14 · Source：web:stockanalysis · Freshness：Fresh · Market Basis：weekend_latest_close · Currency：USD · Exchange：NYSE · 2026-05-01T16:00:00-04:00</div>
+                <div class="pop-sub">Latest $12.14 · Source：no_token:stooq · Freshness：Fresh · Market Basis：Unknown · Currency：USD · Exchange：Stooq · 2026-05-01T22:00:46</div>
                 <table>
                   <thead><tr><th>Acquired</th><th class="num">Cost</th><th class="num">Quantity</th><th class="num">P&amp;L</th></tr></thead>
                   <tbody><tr><td>2024-08-01</td><td class="num">$7.82</td><td class="num">350</td><td class="num"><span class="pop-pos">+$1,512</span></td></tr><tr><td>2025-02-03</td><td class="num">$14.18</td><td class="num">370</td><td class="num"><span class="pop-neg">−$755</span></td></tr><tr><td>2026-02-03</td><td class="num">$21.35</td><td class="num">280</td><td class="num"><span class="pop-neg">−$2,579</span></td></tr></tbody>
@@ -1989,10 +2071,196 @@ img, svg, table { max-width: 100%; }
             <td class="num">0.8%</td>
             <td class="num">$12,140</td>
             <td class="num neg-txt">−$1,822 / −13.0%</td>
-            <td class="col-action">Watch; no add before May 7 call and backlog/cash-burn update.</td>
+            <td class="col-action">Trim tactical stub；Before May 7 close unless management materially improves funding visibility on the call.</td>
           </tr>
         </tbody>
       </table>
+    </div>
+    <div class="holdings-cards" aria-label="Holdings P&amp;L and Weights">
+      <article class="holding-card" aria-label="USD">
+        <div class="holding-card-head">
+          <div class="holding-card-symbol"><div class="sym-trigger" tabindex="0" role="button"><span class="sym-text">USD</span><div class="pop pop-sym" role="tooltip">
+                <h4>USD · Cash Holdings</h4>
+                <div class="pop-sub">Cash</div>
+                <div class="pop-row"><span class="k">Opened</span><span class="v">n/a · n/a</span></div>
+                <div class="pop-row"><span class="k">Lots</span><span class="v">1 lots</span></div>
+              </div></div></div>
+          <div class="holding-card-category">Cash<span class="tag">Cash</span></div>
+        </div>
+        <dl class="holding-card-grid"><div class="holding-card-price"><dt>Price</dt><dd><div class="price-trigger" tabindex="0" role="button"><span class="na">—</span></div></dd></div><div class="holding-card-weight"><dt>Weight</dt><dd>51.3%</dd></div><div class="holding-card-value"><dt>Value</dt><dd>$805,082</dd></div><div class="holding-card-pnl"><dt>P&amp;L</dt><dd>—</dd></div><div class="holding-card-action"><dt>Action</dt><dd>—</dd></div></dl>
+      </article>
+      <article class="holding-card" aria-label="BTC">
+        <div class="holding-card-head">
+          <div class="holding-card-symbol"><div class="sym-trigger" tabindex="0" role="button"><span class="sym-text">BTC</span><div class="pop pop-sym" role="tooltip">
+                <h4>BTC · Mid Term</h4>
+                <div class="pop-sub">Crypto</div>
+                <div class="pop-row"><span class="k">Opened</span><span class="v">2024-03 · 2y 1m</span></div>
+                <div class="pop-row"><span class="k">Lots</span><span class="v">3 lots</span></div>
+              </div></div></div>
+          <div class="holding-card-category">Crypto<span class="tag">Mid</span></div>
+        </div>
+        <dl class="holding-card-grid"><div class="holding-card-price"><dt>Price</dt><dd><div class="price-trigger" tabindex="0" role="button"><span class="price-num">$78,477.89</span><span class="price-sub pos">24h +0.20%</span><div class="pop pop-px" role="tooltip">
+                <h4>BTC · Per-Lot P&amp;L</h4>
+                <div class="pop-sub">Latest $78,477.89 · Source：no_token:binance · Freshness：Fresh · Market Basis：24/7 market · Currency：USD · Exchange：Binance · 2026-05-03T09:24:10+00:00</div>
+                <table>
+                  <thead><tr><th>Acquired</th><th class="num">Cost</th><th class="num">Quantity</th><th class="num">P&amp;L</th></tr></thead>
+                  <tbody><tr><td>2024-03-18</td><td class="num">$67,240.00</td><td class="num">1.2</td><td class="num"><span class="pop-pos">+$13,485</span></td></tr><tr><td>2024-08-20</td><td class="num">$69,750.00</td><td class="num">0.9</td><td class="num"><span class="pop-pos">+$7,855</span></td></tr><tr><td>2025-03-01</td><td class="num">$84,180.00</td><td class="num">0.1</td><td class="num"><span class="pop-neg">−$570</span></td></tr></tbody>
+                  <tfoot class="summary"><tr><td>Avg Cost $69,036.82 (USD)</td><td class="num">$151,881</td><td class="num">2.2</td><td class="num"><span class="pop-pos">+$20,770</span></td></tr></tfoot>
+                </table>
+              </div></div></dd></div><div class="holding-card-weight"><dt>Weight</dt><dd>11.0%</dd></div><div class="holding-card-value"><dt>Value</dt><dd>$172,651</dd></div><div class="holding-card-pnl pos-txt"><dt>P&amp;L</dt><dd>+$20,770 / +13.7%</dd></div><div class="holding-card-action"><dt>Action</dt><dd>—</dd></div></dl>
+      </article>
+      <article class="holding-card" aria-label="QQQ">
+        <div class="holding-card-head">
+          <div class="holding-card-symbol"><div class="sym-trigger" tabindex="0" role="button"><span class="sym-text">QQQ</span><div class="pop pop-sym" role="tooltip">
+                <h4>QQQ · Long Term</h4>
+                <div class="pop-sub">US</div>
+                <div class="pop-row"><span class="k">Opened</span><span class="v">2024-01 · 2y 3m</span></div>
+                <div class="pop-row"><span class="k">Lots</span><span class="v">4 lots</span></div>
+              </div></div></div>
+          <div class="holding-card-category">US Equity<span class="tag pos">Long</span></div>
+        </div>
+        <dl class="holding-card-grid"><div class="holding-card-price"><dt>Price</dt><dd><div class="price-trigger" tabindex="0" role="button"><span class="price-num">$674.15</span><span class="price-sub pos">vs prior close +0.75%</span><div class="pop pop-px" role="tooltip">
+                <h4>QQQ · Per-Lot P&amp;L</h4>
+                <div class="pop-sub">Latest $674.15 · Source：no_token:stooq · Freshness：Fresh · Market Basis：Unknown · Currency：USD · Exchange：Stooq · 2026-05-01T22:00:19</div>
+                <table>
+                  <thead><tr><th>Acquired</th><th class="num">Cost</th><th class="num">Quantity</th><th class="num">P&amp;L</th></tr></thead>
+                  <tbody><tr><td>2024-01-16</td><td class="num">$427.63</td><td class="num">120</td><td class="num"><span class="pop-pos">+$29,582</span></td></tr><tr><td>2024-04-02</td><td class="num">$435.90</td><td class="num">20</td><td class="num"><span class="pop-pos">+$4,765</span></td></tr><tr><td>2024-11-05</td><td class="num">$487.90</td><td class="num">10</td><td class="num"><span class="pop-pos">+$1,862</span></td></tr><tr><td>2025-10-01</td><td class="num">$511.60</td><td class="num">40</td><td class="num"><span class="pop-pos">+$6,502</span></td></tr></tbody>
+                  <tfoot class="summary"><tr><td>Avg Cost $449.35 (USD)</td><td class="num">$85,377</td><td class="num">190</td><td class="num"><span class="pop-pos">+$42,712</span></td></tr></tfoot>
+                </table>
+              </div></div></dd></div><div class="holding-card-weight"><dt>Weight</dt><dd>8.2%</dd></div><div class="holding-card-value"><dt>Value</dt><dd>$128,088</dd></div><div class="holding-card-pnl pos-txt"><dt>P&amp;L</dt><dd>+$42,712 / +50.0%</dd></div><div class="holding-card-action"><dt>Action</dt><dd>Hold broad growth beta；Rebalance if Nasdaq-100 concentration jumps materially post a mega-IPO inclusion.</dd></div></dl>
+      </article>
+      <article class="holding-card" aria-label="AMD">
+        <div class="holding-card-head">
+          <div class="holding-card-symbol"><div class="sym-trigger" tabindex="0" role="button"><span class="sym-text">AMD</span><div class="pop pop-sym" role="tooltip">
+                <h4>AMD · Mid Term</h4>
+                <div class="pop-sub">US</div>
+                <div class="pop-row"><span class="k">Opened</span><span class="v">2024-02 · 2y 3m</span></div>
+                <div class="pop-row"><span class="k">Lots</span><span class="v">4 lots</span></div>
+              </div></div></div>
+          <div class="holding-card-category">US Equity<span class="tag">Mid</span></div>
+        </div>
+        <dl class="holding-card-grid"><div class="holding-card-price"><dt>Price</dt><dd><div class="price-trigger" tabindex="0" role="button"><span class="price-num">$360.54</span><span class="price-sub pos">vs prior close +2.46%</span><div class="pop pop-px" role="tooltip">
+                <h4>AMD · Per-Lot P&amp;L</h4>
+                <div class="pop-sub">Latest $360.54 · Source：no_token:stooq · Freshness：Fresh · Market Basis：Unknown · Currency：USD · Exchange：Stooq · 2026-05-01T22:00:18</div>
+                <table>
+                  <thead><tr><th>Acquired</th><th class="num">Cost</th><th class="num">Quantity</th><th class="num">P&amp;L</th></tr></thead>
+                  <tbody><tr><td>2024-02-02</td><td class="num">$147.88</td><td class="num">90</td><td class="num"><span class="pop-pos">+$19,139</span></td></tr><tr><td>2024-09-16</td><td class="num">$157.40</td><td class="num">10</td><td class="num"><span class="pop-pos">+$2,031</span></td></tr><tr><td>2025-04-08</td><td class="num">$143.55</td><td class="num">120</td><td class="num"><span class="pop-pos">+$26,039</span></td></tr><tr><td>2025-12-08</td><td class="num">$121.65</td><td class="num">80</td><td class="num"><span class="pop-pos">+$19,111</span></td></tr></tbody>
+                  <tfoot class="summary"><tr><td>Avg Cost $139.47 (USD)</td><td class="num">$41,841</td><td class="num">300</td><td class="num"><span class="pop-pos">+$66,321</span></td></tr></tfoot>
+                </table>
+              </div></div></dd></div><div class="holding-card-weight"><dt>Weight</dt><dd>6.9%</dd></div><div class="holding-card-value"><dt>Value</dt><dd>$108,162</dd></div><div class="holding-card-pnl pos-txt"><dt>P&amp;L</dt><dd>+$66,321 / +158.5%</dd></div><div class="holding-card-action"><dt>Action</dt><dd>—</dd></div></dl>
+      </article>
+      <article class="holding-card" aria-label="TWD">
+        <div class="holding-card-head">
+          <div class="holding-card-symbol"><div class="sym-trigger" tabindex="0" role="button"><span class="sym-text">TWD</span><div class="pop pop-sym" role="tooltip">
+                <h4>TWD · Cash Holdings</h4>
+                <div class="pop-sub">Cash</div>
+                <div class="pop-row"><span class="k">Opened</span><span class="v">n/a · n/a</span></div>
+                <div class="pop-row"><span class="k">Lots</span><span class="v">1 lots</span></div>
+              </div></div></div>
+          <div class="holding-card-category">Cash<span class="tag">Cash</span></div>
+        </div>
+        <dl class="holding-card-grid"><div class="holding-card-price"><dt>Price</dt><dd><div class="price-trigger" tabindex="0" role="button"><span class="na">—</span></div></dd></div><div class="holding-card-weight"><dt>Weight</dt><dd>6.6%</dd></div><div class="holding-card-value"><dt>Value</dt><dd>$104,071</dd></div><div class="holding-card-pnl"><dt>P&amp;L</dt><dd>—</dd></div><div class="holding-card-action"><dt>Action</dt><dd>—</dd></div></dl>
+      </article>
+      <article class="holding-card" aria-label="2330.TW">
+        <div class="holding-card-head">
+          <div class="holding-card-symbol"><div class="sym-trigger" tabindex="0" role="button"><span class="sym-text">2330.TW</span><div class="pop pop-sym" role="tooltip">
+                <h4>2330.TW · Long Term</h4>
+                <div class="pop-sub">Taiwan</div>
+                <div class="pop-row"><span class="k">Opened</span><span class="v">2024-02 · 2y 2m</span></div>
+                <div class="pop-row"><span class="k">Lots</span><span class="v">4 lots</span></div>
+              </div></div></div>
+          <div class="holding-card-category">Taiwan Equity<span class="tag pos">Long</span></div>
+        </div>
+        <dl class="holding-card-grid"><div class="holding-card-price"><dt>Price</dt><dd><div class="price-trigger" tabindex="0" role="button"><span class="price-num">NT$2,135.00</span><span class="price-sub neg">vs prior close −2.06%</span><div class="pop pop-px" role="tooltip">
+                <h4>2330.TW · Per-Lot P&amp;L</h4>
+                <div class="pop-sub">Latest NT$2,135.00 · Source：no_token:twse_mis · Freshness：Fresh · Market Basis：Unknown · Currency：TWD · Exchange：TWSE · 2026-05-03T09:24:05+00:00</div>
+                <table>
+                  <thead><tr><th>Acquired</th><th class="num">Cost</th><th class="num">Quantity</th><th class="num">P&amp;L</th></tr></thead>
+                  <tbody><tr><td>2024-02-14</td><td class="num">NT$718.50</td><td class="num">500</td><td class="num"><span class="pop-pos">+NT$708,250</span></td></tr><tr><td>2024-06-18</td><td class="num">NT$867.50</td><td class="num">350</td><td class="num"><span class="pop-pos">+NT$443,625</span></td></tr><tr><td>2025-03-14</td><td class="num">NT$941.50</td><td class="num">220</td><td class="num"><span class="pop-pos">+NT$262,570</span></td></tr><tr><td>2026-03-03</td><td class="num">NT$987.00</td><td class="num">150</td><td class="num"><span class="pop-pos">+NT$172,200</span></td></tr></tbody>
+                  <tfoot class="summary"><tr><td>Avg Cost $26.38 (USD)</td><td class="num">$32,187</td><td class="num">1220</td><td class="num"><span class="pop-pos">+$50,164</span></td></tr></tfoot>
+                </table>
+              </div></div></dd></div><div class="holding-card-weight"><dt>Weight</dt><dd>5.2%</dd></div><div class="holding-card-value"><dt>Value</dt><dd>$82,351</dd></div><div class="holding-card-pnl pos-txt"><dt>P&amp;L</dt><dd>+$50,164 / +155.9%</dd></div><div class="holding-card-action"><dt>Action</dt><dd>Hold foundry core；Trim only if weight breaches my single-name rail after the next monthly mark-to-market.</dd></div></dl>
+      </article>
+      <article class="holding-card" aria-label="MSFT">
+        <div class="holding-card-head">
+          <div class="holding-card-symbol"><div class="sym-trigger" tabindex="0" role="button"><span class="sym-text">MSFT</span><div class="pop pop-sym" role="tooltip">
+                <h4>MSFT · Long Term</h4>
+                <div class="pop-sub">US</div>
+                <div class="pop-row"><span class="k">Opened</span><span class="v">2024-01 · 2y 3m</span></div>
+                <div class="pop-row"><span class="k">Lots</span><span class="v">4 lots</span></div>
+              </div></div></div>
+          <div class="holding-card-category">US Equity<span class="tag pos">Long</span></div>
+        </div>
+        <dl class="holding-card-grid"><div class="holding-card-price"><dt>Price</dt><dd><div class="price-trigger" tabindex="0" role="button"><span class="price-num">$414.44</span><span class="price-sub pos">vs prior close +0.40%</span><div class="pop pop-px" role="tooltip">
+                <h4>MSFT · Per-Lot P&amp;L</h4>
+                <div class="pop-sub">Latest $414.44 · Source：no_token:stooq · Freshness：Fresh · Market Basis：Unknown · Currency：USD · Exchange：Stooq · 2026-05-01T22:00:22</div>
+                <table>
+                  <thead><tr><th>Acquired</th><th class="num">Cost</th><th class="num">Quantity</th><th class="num">P&amp;L</th></tr></thead>
+                  <tbody><tr><td>2024-01-19</td><td class="num">$377.42</td><td class="num">80</td><td class="num"><span class="pop-pos">+$2,962</span></td></tr><tr><td>2024-05-03</td><td class="num">$407.65</td><td class="num">35</td><td class="num"><span class="pop-pos">+$238</span></td></tr><tr><td>2025-06-20</td><td class="num">$439.25</td><td class="num">30</td><td class="num"><span class="pop-neg">−$744</span></td></tr><tr><td>2026-01-06</td><td class="num">$427.90</td><td class="num">18</td><td class="num"><span class="pop-neg">−$242</span></td></tr></tbody>
+                  <tfoot class="summary"><tr><td>Avg Cost $400.87 (USD)</td><td class="num">$65,341</td><td class="num">163</td><td class="num"><span class="pop-pos">+$2,213</span></td></tr></tfoot>
+                </table>
+              </div></div></dd></div><div class="holding-card-weight"><dt>Weight</dt><dd>4.3%</dd></div><div class="holding-card-value"><dt>Value</dt><dd>$67,554</dd></div><div class="holding-card-pnl pos-txt"><dt>P&amp;L</dt><dd>+$2,213 / +3.4%</dd></div><div class="holding-card-action"><dt>Action</dt><dd>Hold core；Revisit if Azure growth falls through 37% Street bar or AI capex returns look misallocated for two consecutive guides.</dd></div></dl>
+      </article>
+      <article class="holding-card" aria-label="GOOGL">
+        <div class="holding-card-head">
+          <div class="holding-card-symbol"><div class="sym-trigger" tabindex="0" role="button"><span class="sym-text">GOOGL</span><div class="pop pop-sym" role="tooltip">
+                <h4>GOOGL · Mid Term</h4>
+                <div class="pop-sub">US</div>
+                <div class="pop-row"><span class="k">Opened</span><span class="v">2024-02 · 2y 2m</span></div>
+                <div class="pop-row"><span class="k">Lots</span><span class="v">5 lots</span></div>
+              </div></div></div>
+          <div class="holding-card-category">US Equity<span class="tag">Mid</span></div>
+        </div>
+        <dl class="holding-card-grid"><div class="holding-card-price"><dt>Price</dt><dd><div class="price-trigger" tabindex="0" role="button"><span class="price-num">$385.69</span><span class="price-sub pos">vs prior close +1.06%</span><div class="pop pop-px" role="tooltip">
+                <h4>GOOGL · Per-Lot P&amp;L</h4>
+                <div class="pop-sub">Latest $385.69 · Source：no_token:stooq · Freshness：Fresh · Market Basis：Unknown · Currency：USD · Exchange：Stooq · 2026-05-01T22:00:19</div>
+                <table>
+                  <thead><tr><th>Acquired</th><th class="num">Cost</th><th class="num">Quantity</th><th class="num">P&amp;L</th></tr></thead>
+                  <tbody><tr><td>2024-02-21</td><td class="num">$140.85</td><td class="num">70</td><td class="num"><span class="pop-pos">+$17,139</span></td></tr><tr><td>2024-07-01</td><td class="num">$167.55</td><td class="num">5</td><td class="num"><span class="pop-pos">+$1,091</span></td></tr><tr><td>2025-01-08</td><td class="num">$187.65</td><td class="num">15</td><td class="num"><span class="pop-pos">+$2,971</span></td></tr><tr><td>2025-08-18</td><td class="num">$163.90</td><td class="num">30</td><td class="num"><span class="pop-pos">+$6,654</span></td></tr><tr><td>2026-04-01</td><td class="num">$153.85</td><td class="num">25</td><td class="num"><span class="pop-pos">+$5,796</span></td></tr></tbody>
+                  <tfoot class="summary"><tr><td>Avg Cost $153.62 (USD)</td><td class="num">$22,275</td><td class="num">145</td><td class="num"><span class="pop-pos">+$33,650</span></td></tr></tfoot>
+                </table>
+              </div></div></dd></div><div class="holding-card-weight"><dt>Weight</dt><dd>3.6%</dd></div><div class="holding-card-value"><dt>Value</dt><dd>$55,925</dd></div><div class="holding-card-pnl pos-txt"><dt>P&amp;L</dt><dd>+$33,650 / +151.1%</dd></div><div class="holding-card-action"><dt>Action</dt><dd>—</dd></div></dl>
+      </article>
+      <article class="holding-card" aria-label="NVDA">
+        <div class="holding-card-head">
+          <div class="holding-card-symbol"><div class="sym-trigger" tabindex="0" role="button"><span class="sym-text">NVDA</span><div class="pop pop-sym" role="tooltip">
+                <h4>NVDA · Mid Term</h4>
+                <div class="pop-sub">US</div>
+                <div class="pop-row"><span class="k">Opened</span><span class="v">2024-01 · 2y 3m</span></div>
+                <div class="pop-row"><span class="k">Lots</span><span class="v">3 lots</span></div>
+              </div></div></div>
+          <div class="holding-card-category">US Equity<span class="tag">Mid</span></div>
+        </div>
+        <dl class="holding-card-grid"><div class="holding-card-price"><dt>Price</dt><dd><div class="price-trigger" tabindex="0" role="button"><span class="price-num">$198.45</span><span class="price-sub neg">vs prior close −1.41%</span><div class="pop pop-px" role="tooltip">
+                <h4>NVDA · Per-Lot P&amp;L</h4>
+                <div class="pop-sub">Latest $198.45 · Source：no_token:stooq · Freshness：Fresh · Market Basis：Unknown · Currency：USD · Exchange：Stooq · 2026-05-01T22:00:19</div>
+                <table>
+                  <thead><tr><th>Acquired</th><th class="num">Cost</th><th class="num">Quantity</th><th class="num">P&amp;L</th></tr></thead>
+                  <tbody><tr><td>2024-01-26</td><td class="num">$56.12</td><td class="num">95</td><td class="num"><span class="pop-pos">+$13,521</span></td></tr><tr><td>2024-05-20</td><td class="num">$95.05</td><td class="num">45</td><td class="num"><span class="pop-pos">+$4,653</span></td></tr><tr><td>2025-05-12</td><td class="num">$113.90</td><td class="num">30</td><td class="num"><span class="pop-pos">+$2,536</span></td></tr></tbody>
+                  <tfoot class="summary"><tr><td>Avg Cost $76.62 (USD)</td><td class="num">$13,026</td><td class="num">170</td><td class="num"><span class="pop-pos">+$20,711</span></td></tr></tfoot>
+                </table>
+              </div></div></dd></div><div class="holding-card-weight"><dt>Weight</dt><dd>2.1%</dd></div><div class="holding-card-value"><dt>Value</dt><dd>$33,736</dd></div><div class="holding-card-pnl pos-txt"><dt>P&amp;L</dt><dd>+$20,711 / +159.0%</dd></div><div class="holding-card-action"><dt>Action</dt><dd>—</dd></div></dl>
+      </article>
+      <article class="holding-card" aria-label="SMR">
+        <div class="holding-card-head">
+          <div class="holding-card-symbol"><div class="sym-trigger" tabindex="0" role="button"><span class="sym-text">SMR</span><div class="pop pop-sym" role="tooltip">
+                <h4>SMR · Short Term</h4>
+                <div class="pop-sub">US</div>
+                <div class="pop-row"><span class="k">Opened</span><span class="v">2024-08 · 1y 9m</span></div>
+                <div class="pop-row"><span class="k">Lots</span><span class="v">3 lots</span></div>
+              </div></div></div>
+          <div class="holding-card-category">US Equity<span class="tag warn">Short</span></div>
+        </div>
+        <dl class="holding-card-grid"><div class="holding-card-price"><dt>Price</dt><dd><div class="price-trigger" tabindex="0" role="button"><span class="price-num">$12.14</span><span class="price-sub neg">vs prior close −0.74%</span><div class="pop pop-px" role="tooltip">
+                <h4>SMR · Per-Lot P&amp;L</h4>
+                <div class="pop-sub">Latest $12.14 · Source：no_token:stooq · Freshness：Fresh · Market Basis：Unknown · Currency：USD · Exchange：Stooq · 2026-05-01T22:00:46</div>
+                <table>
+                  <thead><tr><th>Acquired</th><th class="num">Cost</th><th class="num">Quantity</th><th class="num">P&amp;L</th></tr></thead>
+                  <tbody><tr><td>2024-08-01</td><td class="num">$7.82</td><td class="num">350</td><td class="num"><span class="pop-pos">+$1,512</span></td></tr><tr><td>2025-02-03</td><td class="num">$14.18</td><td class="num">370</td><td class="num"><span class="pop-neg">−$755</span></td></tr><tr><td>2026-02-03</td><td class="num">$21.35</td><td class="num">280</td><td class="num"><span class="pop-neg">−$2,579</span></td></tr></tbody>
+                  <tfoot class="summary"><tr><td>Avg Cost $13.96 (USD)</td><td class="num">$13,962</td><td class="num">1000</td><td class="num"><span class="pop-neg">−$1,822</span></td></tr></tfoot>
+                </table>
+              </div></div></dd></div><div class="holding-card-weight"><dt>Weight</dt><dd>0.8%</dd></div><div class="holding-card-value"><dt>Value</dt><dd>$12,140</dd></div><div class="holding-card-pnl neg-txt"><dt>P&amp;L</dt><dd>−$1,822 / −13.0%</dd></div><div class="holding-card-action"><dt>Action</dt><dd>Trim tactical stub；Before May 7 close unless management materially improves funding visibility on the call.</dd></div></dl>
+      </article>
     </div>
   </section>
   <section class="section">
@@ -2000,7 +2268,7 @@ img, svg, table { max-width: 100%; }
       <h2>P&amp;L Ranking</h2>
       <span class="sub">Realized + unrealized P&amp;L (USD)</span>
     </div>
-    <div class="bars"><div class="bar-row"><div class="bar-label">AMD</div><div class="bar-track"><div class="bar pos" style="width:100.0%"></div></div><div class="bar-value pos-txt">+$66,321</div></div><div class="bar-row"><div class="bar-label">2330.TW</div><div class="bar-track"><div class="bar pos" style="width:75.6%"></div></div><div class="bar-value pos-txt">+$50,163</div></div><div class="bar-row"><div class="bar-label">QQQ</div><div class="bar-track"><div class="bar pos" style="width:64.4%"></div></div><div class="bar-value pos-txt">+$42,712</div></div><div class="bar-row"><div class="bar-label">GOOGL</div><div class="bar-track"><div class="bar pos" style="width:50.7%"></div></div><div class="bar-value pos-txt">+$33,650</div></div><div class="bar-row"><div class="bar-label">NVDA</div><div class="bar-track"><div class="bar pos" style="width:31.2%"></div></div><div class="bar-value pos-txt">+$20,711</div></div><div class="bar-row"><div class="bar-label">BTC</div><div class="bar-track"><div class="bar pos" style="width:30.1%"></div></div><div class="bar-value pos-txt">+$19,954</div></div><div class="bar-row"><div class="bar-label">MSFT</div><div class="bar-track"><div class="bar pos" style="width:3.3%"></div></div><div class="bar-value pos-txt">+$2,213</div></div><div class="bar-row"><div class="bar-label">SMR</div><div class="bar-track"><div class="bar neg" style="width:2.7%"></div></div><div class="bar-value neg-txt">−$1,822</div></div></div>
+    <div class="bars"><div class="bar-row"><div class="bar-label">AMD</div><div class="bar-track"><div class="bar pos" style="width:100.0%"></div></div><div class="bar-value pos-txt">+$66,321</div></div><div class="bar-row"><div class="bar-label">2330.TW</div><div class="bar-track"><div class="bar pos" style="width:75.6%"></div></div><div class="bar-value pos-txt">+$50,164</div></div><div class="bar-row"><div class="bar-label">QQQ</div><div class="bar-track"><div class="bar pos" style="width:64.4%"></div></div><div class="bar-value pos-txt">+$42,712</div></div><div class="bar-row"><div class="bar-label">GOOGL</div><div class="bar-track"><div class="bar pos" style="width:50.7%"></div></div><div class="bar-value pos-txt">+$33,650</div></div><div class="bar-row"><div class="bar-label">BTC</div><div class="bar-track"><div class="bar pos" style="width:31.3%"></div></div><div class="bar-value pos-txt">+$20,770</div></div><div class="bar-row"><div class="bar-label">NVDA</div><div class="bar-track"><div class="bar pos" style="width:31.2%"></div></div><div class="bar-value pos-txt">+$20,711</div></div><div class="bar-row"><div class="bar-label">MSFT</div><div class="bar-track"><div class="bar pos" style="width:3.3%"></div></div><div class="bar-value pos-txt">+$2,213</div></div><div class="bar-row"><div class="bar-label">SMR</div><div class="bar-track"><div class="bar neg" style="width:2.7%"></div></div><div class="bar-value neg-txt">−$1,822</div></div></div>
   </section>
   <section class="section">
     <div class="section-head">
@@ -2036,7 +2304,16 @@ img, svg, table { max-width: 100%; }
       <h2>Theme and Sector Exposure</h2>
       <span class="sub">USD basis · ETF look-through where applicable</span>
     </div>
-    <div class="cols-2"><div><div class="eyebrow" style="margin-bottom:10px">Themes</div><div class="bars"><div class="bar-row"><div class="bar-label">AI compute</div><div class="bar-track"><div class="bar warn" style="width:100.0%"></div></div><div class="bar-value">45.1%</div></div><div class="bar-row"><div class="bar-label">Mega-cap Tech</div><div class="bar-track"><div class="bar warn" style="width:85.1%"></div></div><div class="bar-value">38.4%</div></div><div class="bar-row"><div class="bar-label">Cloud / data center</div><div class="bar-track"><div class="bar warn" style="width:81.6%"></div></div><div class="bar-value">36.8%</div></div><div class="bar-row"><div class="bar-label">Crypto assets</div><div class="bar-track"><div class="bar warn" style="width:57.6%"></div></div><div class="bar-value">26.0%</div></div><div class="bar-row"><div class="bar-label">Advanced packaging</div><div class="bar-track"><div class="bar" style="width:13.7%"></div></div><div class="bar-value">6.2%</div></div><div class="bar-row"><div class="bar-label">Nuclear / power</div><div class="bar-track"><div class="bar" style="width:4.0%"></div></div><div class="bar-value">1.8%</div></div></div></div><div><div class="eyebrow" style="margin-bottom:10px">Sectors</div><div class="bars"><div class="bar-row"><div class="bar-label">Semiconductors</div><div class="bar-track"><div class="bar warn" style="width:100.0%"></div></div><div class="bar-value">34.0%</div></div><div class="bar-row"><div class="bar-label">Crypto assets</div><div class="bar-track"><div class="bar warn" style="width:76.6%"></div></div><div class="bar-value">26.0%</div></div><div class="bar-row"><div class="bar-label">Diversified ETF / index</div><div class="bar-track"><div class="bar warn" style="width:57.1%"></div></div><div class="bar-value">19.4%</div></div><div class="bar-row"><div class="bar-label">Software / cloud</div><div class="bar-track"><div class="bar" style="width:30.1%"></div></div><div class="bar-value">10.2%</div></div><div class="bar-row"><div class="bar-label">Communication / internet</div><div class="bar-track"><div class="bar" style="width:24.9%"></div></div><div class="bar-value">8.5%</div></div><div class="bar-row"><div class="bar-label">Industrials</div><div class="bar-track"><div class="bar" style="width:5.4%"></div></div><div class="bar-value">1.8%</div></div></div></div></div><div class="bucket-note" style="margin-top:18px"><b>Concentration warning:</b> AI compute 45.1% + Mega-cap Tech 38.4% + Cloud / data center 36.8% all exceed the 30% theme rail on a non-cash look-through basis.</div><div class="bucket-note" style="margin-top:10px"><b>Sector concentration:</b> Semiconductors account for 34.0%, above the 30% single-sector warning line.</div>
+    <div class="cols-2">
+  <div class="bars">
+    <div class="bar-head">Themes</div>
+    <div class="bar-row"><div class="bar-label">AI 算力</div><div class="bar-track"><div class="bar" style="width:100.0%"></div></div><div class="bar-value">14.2%</div></div><div class="bar-row"><div class="bar-label">Mega-cap Tech</div><div class="bar-track"><div class="bar" style="width:96.8%"></div></div><div class="bar-value">13.7%</div></div><div class="bar-row"><div class="bar-label">加密資產</div><div class="bar-track"><div class="bar" style="width:77.5%"></div></div><div class="bar-value">11.0%</div></div><div class="bar-row"><div class="bar-label">雲端 / 資料中心</div><div class="bar-track"><div class="bar" style="width:35.1%"></div></div><div class="bar-value">5.0%</div></div><div class="bar-row"><div class="bar-label">新能源 / 核能</div><div class="bar-track"><div class="bar" style="width:5.4%"></div></div><div class="bar-value">0.8%</div></div>
+  </div>
+  <div class="bars">
+    <div class="bar-head">Sectors</div>
+    <div class="bar-row"><div class="bar-label">半導體</div><div class="bar-track"><div class="bar" style="width:100.0%"></div></div><div class="bar-value">14.3%</div></div><div class="bar-row"><div class="bar-label">加密資產</div><div class="bar-track"><div class="bar" style="width:77.0%"></div></div><div class="bar-value">11.0%</div></div><div class="bar-row"><div class="bar-label">多元 ETF / 指數</div><div class="bar-track"><div class="bar" style="width:57.1%"></div></div><div class="bar-value">8.2%</div></div><div class="bar-row"><div class="bar-label">軟體 / 雲端</div><div class="bar-track"><div class="bar" style="width:55.1%"></div></div><div class="bar-value">7.9%</div></div><div class="bar-row"><div class="bar-label">能源 / 資源</div><div class="bar-track"><div class="bar" style="width:5.4%"></div></div><div class="bar-value">0.8%</div></div>
+  </div>
+</div>
   </section>
   <section class="section">
     <div class="section-head">
@@ -2044,61 +2321,61 @@ img, svg, table { max-width: 100%; }
       <span class="sub">1–3 items per core position</span>
     </div>
     <div class="news">      <div class="item">
-        <div class="meta"><span class="tk">MSFT</span>2026-05-01</div>
+        <div class="meta"><span class="tk">NVDA</span>2026-05-02</div>
         <div class="body">
-          <div class="head">Pentagon reached AI agreements with Microsoft, Nvidia, Google and other vendors for classified-network deployment.</div>
-          <div class="src">Source:<a href="https://stockanalysis.com/stocks/msft/" target="_blank" rel="noopener noreferrer">StockAnalysis / Reuters feed</a></div>
+          <div class="head">Hyperscaler capex commentary reinforces AI accelerator demand into NVDA Q1 FY27 print (May 20 call).</div>
+          <div class="src">Source:<a href="https://www.fool.com/investing/2026/05/02/major-hyperscalers-just-reported-earnings-nvidia-w/" target="_blank" rel="noopener noreferrer">Motley Fool</a></div>
+        </div>
+        <span class="impact pos">Positive</span>
+      </div>      <div class="item">
+        <div class="meta"><span class="tk">MSFT</span>2026-04-29</div>
+        <div class="body">
+          <div class="head">Microsoft FY26 Q3: revenue $82.9B (+18% YoY), Azure +40%, AI revenue run-rate $37B (+123% YoY).</div>
+          <div class="src">Source:<a href="https://news.microsoft.com/source/2026/04/29/microsoft-cloud-and-ai-strength-fuels-third-quarter-results/" target="_blank" rel="noopener noreferrer">Microsoft News</a></div>
+        </div>
+        <span class="impact pos">Positive</span>
+      </div>      <div class="item">
+        <div class="meta"><span class="tk">AMD</span>2026-04-24</div>
+        <div class="body">
+          <div class="head">AMD surges on CPU-cycle read-through from Intel server strength; D.A. Davidson lifts PT to $375 ahead of May 5 Q1 results.</div>
+          <div class="src">Source:<a href="https://www.cnbc.com/2026/04/24/amd-shares-soar-on-no-company-news-heres-what-has-investors-so-excited.html" target="_blank" rel="noopener noreferrer">CNBC</a></div>
+        </div>
+        <span class="impact pos">Positive</span>
+      </div>      <div class="item">
+        <div class="meta"><span class="tk">GOOGL</span>2026-04-29</div>
+        <div class="body">
+          <div class="head">Alphabet Q1 2026 beats: revenue $109.9B, Google Cloud +63% YoY to ~$20B; capex guide lifted toward ~$190B.</div>
+          <div class="src">Source:<a href="https://www.cnbc.com/2026/04/29/alphabet-googl-q1-2026-earnings.html" target="_blank" rel="noopener noreferrer">CNBC</a></div>
         </div>
         <span class="impact pos">Positive</span>
       </div>      <div class="item">
         <div class="meta"><span class="tk">QQQ</span>2026-05-01</div>
         <div class="body">
-          <div class="head">Nasdaq 100 closed up 0.94% as solid mega-cap earnings supported QQQ exposure.</div>
-          <div class="src">Source:<a href="https://www.barchart.com/stocks/quotes/QQQ" target="_blank" rel="noopener noreferrer">Barchart</a></div>
-        </div>
-        <span class="impact pos">Positive</span>
-      </div>      <div class="item">
-        <div class="meta"><span class="tk">AMD</span>2026-05-02</div>
-        <div class="body">
-          <div class="head">Options pricing implies an 8% post-earnings move for AMD after the stock reached a record close.</div>
-          <div class="src">Source:<a href="https://www.investopedia.com/how-much-is-amd-stock-expected-to-move-after-earnings-q1-fy2026-11962852" target="_blank" rel="noopener noreferrer">Investopedia</a></div>
+          <div class="head">QQQ notched a record close near $668 as Nasdaq-100 forward P/E compresses toward ~23 on strong 2026 tech earnings growth forecasts.</div>
+          <div class="src">Source:<a href="https://www.fool.com/investing/2026/05/01/1-top-etf-to-load-up-on-in-may-qqq/" target="_blank" rel="noopener noreferrer">Motley Fool</a></div>
         </div>
         <span class="impact neu">Neutral</span>
       </div>      <div class="item">
-        <div class="meta"><span class="tk">BTC</span>2026-05-02</div>
+        <div class="meta"><span class="tk">BTC</span>2026-05-01</div>
         <div class="body">
-          <div class="head">Bitcoin hovered near $78,000 with reported ETF inflows around $1.9B, keeping demand constructive but flow-sensitive.</div>
-          <div class="src">Source:<a href="https://m.economictimes.com/markets/cryptocurrency/bitcoin-nears-78000-as-crypto-market-cap-hits-2-6-trillion-1-9-billion-etf-inflows-signal-strong-demand/articleshow/130712129.cms" target="_blank" rel="noopener noreferrer">Economic Times</a></div>
+          <div class="head">Bitcoin posts strong April but CryptoQuant flags futures-led rally with weak spot accumulation near $78k resistance.</div>
+          <div class="src">Source:<a href="https://www.cnbc.com/2026/05/01/bitcoin-surged-in-april-but-weak-buyer-demand-makes-rally-vulnerable.html" target="_blank" rel="noopener noreferrer">CNBC</a></div>
         </div>
-        <span class="impact pos">Positive</span>
+        <span class="impact warn">Neutral</span>
       </div>      <div class="item">
-        <div class="meta"><span class="tk">GOOGL</span>2026-05-01</div>
+        <div class="meta"><span class="tk">SMR</span>2026-05-01</div>
         <div class="body">
-          <div class="head">Alphabet was a winner of Big Tech earnings week as AI and cloud growth offset broader capex concerns.</div>
-          <div class="src">Source:<a href="https://www.businessinsider.com/big-tech-earnings-winners-losers-ai-capex-cloud-meta-goog-2026-4" target="_blank" rel="noopener noreferrer">Business Insider</a></div>
+          <div class="head">NuScale SMR coverage focuses on multi-year European project timelines, LCOE vs solar-plus-storage, and heavy pre-revenue cash burn.</div>
+          <div class="src">Source:<a href="https://www.fool.com/investing/2026/05/01/1-overlooked-detail-to-watch-as-nuscales-smr-proje/" target="_blank" rel="noopener noreferrer">Motley Fool</a></div>
         </div>
-        <span class="impact pos">Positive</span>
+        <span class="impact warn">Neutral</span>
       </div>      <div class="item">
-        <div class="meta"><span class="tk">NVDA</span>2026-05-01</div>
+        <div class="meta"><span class="tk">2330.TW</span>2026-04-29</div>
         <div class="body">
-          <div class="head">Nvidia slipped back below $200 as investors debated competition and the setup into May earnings.</div>
-          <div class="src">Source:<a href="https://stockanalysis.com/stocks/nvda/" target="_blank" rel="noopener noreferrer">Invezz via StockAnalysis</a></div>
-        </div>
-        <span class="impact neg">Negative</span>
-      </div>      <div class="item">
-        <div class="meta"><span class="tk">SMR</span>2026-04-30</div>
-        <div class="body">
-          <div class="head">NuScale opened a Houston operations center while legal-headline noise and Q1 earnings remain near-term risk.</div>
-          <div class="src">Source:<a href="https://stockanalysis.com/stocks/smr/" target="_blank" rel="noopener noreferrer">Business Wire via StockAnalysis</a></div>
+          <div class="head">TSMC trades ~25x forward EPS as analysts debate fair value after record highs; Taiwan fund single-name cap eased to 25%.</div>
+          <div class="src">Source:<a href="https://www.taipeitimes.com/News/biz/archives/2026/04/29/2003856408" target="_blank" rel="noopener noreferrer">Taipei Times</a></div>
         </div>
         <span class="impact neu">Neutral</span>
-      </div>      <div class="item">
-        <div class="meta"><span class="tk">2330.TW</span>2026-05-01</div>
-        <div class="body">
-          <div class="head">TSMC stayed in focus as AI demand, HPC exposure and leading foundry position kept the technical setup constructive.</div>
-          <div class="src">Source:<a href="https://www.investors.com/stock-lists/sector-leaders/tsm-stock-tsmc-taiwan-semiconductor-chip-ai-trade-tech-markets/" target="_blank" rel="noopener noreferrer">Investors Business Daily</a></div>
-        </div>
-        <span class="impact pos">Positive</span>
       </div></div>
   </section>
   <section class="section">
@@ -2108,8 +2385,8 @@ img, svg, table { max-width: 100%; }
     </div>
     <div class="timeline" aria-label="Forward 30-day event timeline">
       <div class="axis"></div>
-      <span class="tick" style="left:0%"></span><span class="tick-label" style="left:0%">05-02</span><span class="tick" style="left:25%"></span><span class="tick-label" style="left:25%">05-09</span><span class="tick" style="left:50%"></span><span class="tick-label" style="left:50%">05-17</span><span class="tick" style="left:75%"></span><span class="tick-label" style="left:75%">05-24</span><span class="tick" style="left:100%"></span><span class="tick-label" style="left:100%">06-01</span>
-      <span class="pin warn" style="left:10.0%" title="05-05 AMD Q1 2026 results and 5 p.m. ET call"></span><span class="pin-label" style="left:10.0%">AMD 05-05</span><span class="pin warn" style="left:16.7%" title="05-07 SMR Q1 2026 earnings conference call"></span><span class="pin-label" style="left:16.7%">SMR 05-07</span><span class="pin info" style="left:20.0%" title="05-08 Macro BLS Employment Situation for April 2026"></span><span class="pin-label" style="left:20.0%">Macro 05-08</span><span class="pin warn" style="left:33.3%" title="05-12 Macro BLS CPI for April 2026"></span><span class="pin-label" style="left:33.3%">Macro 05-12</span><span class="pin warn" style="left:60.0%" title="05-20 NVDA Q1 FY2027 results and 5 p.m. ET conference call"></span><span class="pin-label" style="left:60.0%">NVDA 05-20</span><span class="pin info" style="left:63.3%" title="05-21 MSFT Ex-dividend date"></span><span class="pin-label" style="left:63.3%">MSFT 05-21</span><span class="pin warn" style="left:86.7%" title="05-28 Macro BEA PCE and Q1 GDP second estimate"></span><span class="pin-label" style="left:86.7%">Macro 05-28</span>
+      <span class="tick" style="left:0%"></span><span class="tick-label" style="left:0%">05-03</span><span class="tick" style="left:25%"></span><span class="tick-label" style="left:25%">05-10</span><span class="tick" style="left:50%"></span><span class="tick-label" style="left:50%">05-18</span><span class="tick" style="left:75%"></span><span class="tick-label" style="left:75%">05-25</span><span class="tick" style="left:100%"></span><span class="tick-label" style="left:100%">06-02</span>
+      <span class="pin warn" style="left:56.7%" title="05-20 NVDA NVIDIA Q1 FY2027 results and conference call (after market)."></span><span class="pin-label" style="left:56.7%">NVDA 05-20</span><span class="pin warn" style="left:6.7%" title="05-05 AMD AMD Q1 2026 earnings release and 5:00 p.m. ET call."></span><span class="pin-label" style="left:6.7%">AMD 05-05</span><span class="pin info" style="left:13.3%" title="05-07 SMR NuScale Power Q1 2026 earnings conference call."></span><span class="pin-label" style="left:13.3%">SMR 05-07</span>
     </div>
     <div class="tbl-wrap scroll-y" style="margin-top:14px">
       <table>
@@ -2117,53 +2394,60 @@ img, svg, table { max-width: 100%; }
           <tr><th>Date</th><th>Ticker / Theme</th><th>Event</th><th>Impact</th><th>Watch Item</th></tr>
         </thead>
         <tbody>          <tr>
+            <td>2026-05-20</td>
+            <td>NVDA</td>
+            <td>NVIDIA Q1 FY2027 results and conference call (after market).</td>
+            <td><span class="tag warn">High</span></td>
+            <td>Data-center revenue mix, Blackwell/Rubin shipment commentary, China export controls tone.</td>
+          </tr>
+          <tr>
             <td>2026-05-05</td>
             <td>AMD</td>
-            <td>Q1 2026 results and 5 p.m. ET call</td>
+            <td>AMD Q1 2026 earnings release and 5:00 p.m. ET call.</td>
             <td><span class="tag warn">High</span></td>
-            <td>MI300/MI400 demand, data-center GPU guide and gross-margin path.</td>
+            <td>Data-center GPU vs CPU mix, MI450 customer pull-in, gross margin trajectory.</td>
           </tr>
           <tr>
             <td>2026-05-07</td>
             <td>SMR</td>
-            <td>Q1 2026 earnings conference call</td>
-            <td><span class="tag warn">High</span></td>
-            <td>Cash burn, new contract awards, ENTRA1/legal commentary and capital needs.</td>
+            <td>NuScale Power Q1 2026 earnings conference call.</td>
+            <td><span class="tag info">Med</span></td>
+            <td>Liquidity runway, partnership milestones, timeline to first utility revenue.</td>
           </tr>
           <tr>
-            <td>2026-05-08</td>
-            <td>Macro</td>
-            <td>BLS Employment Situation for April 2026</td>
-            <td><span class="tag info">Medium</span></td>
-            <td>Risk appetite and rate-path sensitivity for QQQ, BTC and long-duration AI names.</td>
-          </tr>
-          <tr>
-            <td>2026-05-12</td>
-            <td>Macro</td>
-            <td>BLS CPI for April 2026</td>
-            <td><span class="tag warn">High</span></td>
-            <td>Multiple compression risk for high-growth and crypto sleeve.</td>
-          </tr>
-          <tr>
-            <td>2026-05-20</td>
-            <td>NVDA</td>
-            <td>Q1 FY2027 results and 5 p.m. ET conference call</td>
-            <td><span class="tag warn">High</span></td>
-            <td>Data-center revenue versus $78B company outlook and any China compute drag.</td>
-          </tr>
-          <tr>
-            <td>2026-05-21</td>
+            <td>2026-04-29</td>
             <td>MSFT</td>
-            <td>Ex-dividend date</td>
-            <td><span class="tag info">Low</span></td>
-            <td>Housekeeping only; not a thesis event.</td>
+            <td>Microsoft FY26 Q3 earnings and guidance (cloud + AI capex path).</td>
+            <td><span class="tag pos">High</span></td>
+            <td>Azure deceleration risk vs guide; FY26 $190B capex message vs memory cost inflation.</td>
           </tr>
           <tr>
-            <td>2026-05-28</td>
-            <td>Macro</td>
-            <td>BEA PCE and Q1 GDP second estimate</td>
-            <td><span class="tag warn">High</span></td>
-            <td>Inflation and growth mix for cash deployment timing.</td>
+            <td>2026-04-29</td>
+            <td>GOOGL</td>
+            <td>Alphabet Q1 2026 results; Search growth vs AI Overviews; Cloud backlog.</td>
+            <td><span class="tag pos">High</span></td>
+            <td>Capex trajectory vs monetization of AI workloads; regulatory headlines.</td>
+          </tr>
+          <tr>
+            <td>2026-04-27</td>
+            <td>2330.TW</td>
+            <td>TSMC intraday record NT$2,330; FSC lifts onshore fund single-stock cap to 25%.</td>
+            <td><span class="tag info">Med</span></td>
+            <td>Multiple expansion vs Q2 guide; margin path around 2nm ramp.</td>
+          </tr>
+          <tr>
+            <td>2026-05-01</td>
+            <td>BTC</td>
+            <td>ETF flow volatility around month-end; macro prints into early May.</td>
+            <td><span class="tag warn">Med</span></td>
+            <td>Spot ETF net flows vs perp open interest; $78k/$80k resistance.</td>
+          </tr>
+          <tr>
+            <td>2026-05-01</td>
+            <td>QQQ</td>
+            <td>Index methodology: Nasdaq fast-entry rule effective; mega-IPO inclusion risk for Nasdaq-100 trackers.</td>
+            <td><span class="tag info">Med</span></td>
+            <td>Concentration and rebalance frictions if large new listings enter quickly.</td>
           </tr></tbody>
       </table>
     </div>
@@ -2176,18 +2460,18 @@ img, svg, table { max-width: 100%; }
     <div class="cols-2">
       <div>
         <div class="eyebrow" style="margin-bottom:10px">High Risk · Stable rubric v1</div>
-        <div class="risk-grid"><div class="risk r-high"><div class="t">BTC</div><div class="s">Risk 6 / 10 · Crypto asset · Mid-term bucket · Weight ≥ 10.0% cap</div><div class="m">11.0% · +0.9%</div></div><div class="risk r-low"><div class="t">AMD</div><div class="s">Risk 2 / 10 · Mid-term bucket · Weight ≥ 5.0%</div><div class="m">6.9% · +1.7%</div></div><div class="risk r-low"><div class="t">SMR</div><div class="s">Risk 2 / 10 · Short-term bucket</div><div class="m">0.8% · -2.6%</div></div><div class="risk r-low"><div class="t">QQQ</div><div class="s">Risk 1 / 10 · Weight ≥ 5.0%</div><div class="m">8.2% · +1.0%</div></div><div class="risk r-low"><div class="t">2330.TW</div><div class="s">Risk 1 / 10 · Weight ≥ 5.0%</div><div class="m">5.2% · -2.1%</div></div><div class="risk r-low"><div class="t">GOOGL</div><div class="s">Risk 1 / 10 · Mid-term bucket</div><div class="m">3.6% · +0.2%</div></div><div class="risk r-low"><div class="t">NVDA</div><div class="s">Risk 1 / 10 · Mid-term bucket</div><div class="m">2.2% · -0.6%</div></div><div class="risk r-low"><div class="t">MSFT</div><div class="s">Risk 0 / 10 · Core-sized / low-shock</div><div class="m">4.3% · +1.6%</div></div></div>
+        <div class="risk-grid"><div class="risk r-high"><div class="t">BTC</div><div class="s">Risk 6 / 10 · Crypto asset · Mid-term bucket · Weight ≥ 10.0% cap</div><div class="m">11.0% · +0.2%</div></div><div class="risk r-low"><div class="t">AMD</div><div class="s">Risk 2 / 10 · Mid-term bucket · Weight ≥ 5.0%</div><div class="m">6.9% · +2.5%</div></div><div class="risk r-low"><div class="t">SMR</div><div class="s">Risk 2 / 10 · Short-term bucket</div><div class="m">0.8% · -0.7%</div></div><div class="risk r-low"><div class="t">QQQ</div><div class="s">Risk 1 / 10 · Weight ≥ 5.0%</div><div class="m">8.2% · +0.7%</div></div><div class="risk r-low"><div class="t">2330.TW</div><div class="s">Risk 1 / 10 · Weight ≥ 5.0%</div><div class="m">5.2% · -2.1%</div></div><div class="risk r-low"><div class="t">GOOGL</div><div class="s">Risk 1 / 10 · Mid-term bucket</div><div class="m">3.6% · +1.1%</div></div><div class="risk r-low"><div class="t">NVDA</div><div class="s">Risk 1 / 10 · Mid-term bucket</div><div class="m">2.1% · -1.4%</div></div><div class="risk r-low"><div class="t">MSFT</div><div class="s">Risk 0 / 10 · Core-sized / low-shock</div><div class="m">4.3% · +0.4%</div></div></div>
       </div>
       <div>
         <div class="eyebrow" style="margin-bottom:10px">High Opportunity</div>
         <div class="opp-list">          <div class="item">
             <div class="tk">NVDA</div>
-            <div class="why">Consensus still expects strong Q1 FY27, but price is already sensitive around $200 and May 20 is the real thesis test.</div>
-            <div class="trig">Revisit only after earnings confirm data-center revenue near the $78B outlook.</div>
+            <div class="why">Thesis intact but priced for a strong May 20 guide; I want the print before adding to an already AI-heavy book.</div>
+            <div class="trig">Add only if post-call data-center revenue trajectory confirms supply constraints still bind pricing power.</div>
           </div>          <div class="item">
-            <div class="tk">2330.TW</div>
-            <div class="why">Foundry fundamentals remain strong and HPC mix is supportive, but Taiwan was closed May 1 and the latest quote is Apr 30.</div>
-            <div class="trig">Add only on refreshed Taiwan quote plus pullback toward TWD 2,000-2,050 or post-revenue confirmation.</div>
+            <div class="tk">SMR</div>
+            <div class="why">Nuclear SMR optionality is interesting, but cash burn and LCOE competition make this a catalyst trade, not a core compounder yet.</div>
+            <div class="trig"></div>
           </div></div>
       </div>
     </div>
@@ -2208,23 +2492,29 @@ img, svg, table { max-width: 100%; }
         </colgroup>
         <thead><tr><th>Ticker</th><th class="num">Current</th><th>Recommendation</th><th>Why</th><th>Trigger</th></tr></thead>
         <tbody>          <tr>
-            <td><span class="sym-trigger" tabindex="0" role="button">BTC</span></td>
-            <td class="num">11.0%</td>
-            <td><span class="adj-action trim">Trim to 10% rail</span></td>
-            <td class="why">Rebalance only: BTC is 11.0% of NAV versus the 10% single-name cap, while ETF-flow support remains intact. Trim about 1.0pp to restore rail and keep the remaining sleeve.<br><span class="pm-meta">Tag：rebalance<br>R:R = n/a (rebalance)<br>Portfolio fit — sized -1.0pp of NAV；rails OK；single-name 10.0% vs warn 10.0%</span><div class="reviewer-note-inline"><b>Reviewer note:</b> Senior PM note: this is housekeeping, not a bearish BTC call; avoid letting the trim become a discretionary exit.</div></td>
-            <td class="trig">Execute only if BTC remains above 10.5% NAV after the next spot check.</td>
-          </tr>          <tr>
-            <td><span class="sym-trigger" tabindex="0" role="button">AMD</span></td>
-            <td class="num">6.9%</td>
-            <td><span class="adj-action wait">Hold through earnings</span></td>
-            <td class="why">AI accelerator momentum is real, but the stock has run to 6.9% NAV and sits above the average target before May 5 results.</td>
-            <td class="trig">Reassess after May 5 results; do not add before the guide.</td>
-          </tr>          <tr>
-            <td><span class="sym-trigger" tabindex="0" role="button">SMR</span></td>
+            <td><span class="sym-label">SMR</span></td>
             <td class="num">0.8%</td>
-            <td><span class="adj-action watch">No add before call</span></td>
-            <td class="why">Short-term sleeve has aged into a stale trade and the newest lot is deeply underwater; the Q1 call must reset backlog/cash-burn confidence.</td>
-            <td class="trig">May 7 call: hold only if contract pipeline and liquidity improve.</td>
+            <td><span class="adj-action trim">Trim tactical stub</span></td>
+            <td class="why">Short-term sleeve into a high-variance pre-revenue name; reduce gap risk into the May 7 earnings call.<br><span class="pm-meta">Tag：variant；Consensus：unknown-consensus (no single IBES print summarized in demo sources)；Variant：Consensus chases SMR rebound; I treat dilution and LCOE vs renewables as under-discussed.；Anchor：NuScale Q1 2026 call scheduled May 7 5:00 p.m. ET per company notice (StockTitan syndication of Business Wire).<br>Target $13.6 (+12%) / Stop $10.68 (-12%) → R:R = 1:1<br>Failure mode：Retail squeeze fades post-call while losses remain structurally wide.<br>Kill：Close below prior week low after the May 7 session if liquidity commentary disappoints.<br>Kill action：cut to 0pp<br>Portfolio fit — sized -0.2pp of NAV；correlated with N, V, D, A, ,,  , A, M, D；theme overlap with 新, 能, 源,  , /,  , 核, 能, ,,  , A, I,  , 算, 力；rails OK；single-name 0.5% vs warn 10.0%</span></td>
+            <td class="trig">Before May 7 close unless management materially improves funding visibility on the call.</td>
+          </tr>          <tr>
+            <td><span class="sym-label">MSFT</span></td>
+            <td class="num">4.3%</td>
+            <td><span class="adj-action hold">Hold core</span></td>
+            <td class="why">FY26 Q3 beat with Azure +40% supports the quality anchor; no trim while strategic cloud/AI mix holds.</td>
+            <td class="trig">Revisit if Azure growth falls through 37% Street bar or AI capex returns look misallocated for two consecutive guides.</td>
+          </tr>          <tr>
+            <td><span class="sym-label">2330.TW</span></td>
+            <td class="num">5.2%</td>
+            <td><span class="adj-action hold">Hold foundry core</span></td>
+            <td class="why">TSMC remains the cleanest foundry lever to AI HPC demand; local fund cap rule supports flows, not the moat thesis.</td>
+            <td class="trig">Trim only if weight breaches my single-name rail after the next monthly mark-to-market.</td>
+          </tr>          <tr>
+            <td><span class="sym-label">QQQ</span></td>
+            <td class="num">8.2%</td>
+            <td><span class="adj-action hold">Hold broad growth beta</span></td>
+            <td class="why">QQQ is the deliberate beta stabilizer; fast-entry index rules are a tracking risk, not a near-term trade signal.</td>
+            <td class="trig">Rebalance if Nasdaq-100 concentration jumps materially post a mega-IPO inclusion.</td>
           </tr></tbody>
       </table>
     </div>
@@ -2236,12 +2526,10 @@ img, svg, table { max-width: 100%; }
       <span class="sub">Priority ordered</span>
     </div>
     <ul class="actions">
-<li><span class="lbl do">Must</span><span>BTC Trim to 10% rail — single-name rail breach; rebalance only — Trigger: if still above 10.5% NAV after next spot check<br><span class="pm-meta">Tag: rebalance<br>Kill action: rails restored<br>sized -1.0pp of NAV</span></span></li>
-<li><span class="lbl may">May</span><span>NVDA Wait for May 20 earnings before adding — the data-center guide is the real catalyst; current setup does not need pre-event chase — Trigger: reopen add plan only if Q1 results support the $78B revenue outlook</span></li>
-<li><span class="lbl no">Avoid</span><span>Do not add AMD before May 5 earnings; the expected move is large and the stock is already above average target.</span></li>
-<li><span class="lbl no">Avoid</span><span>Do not average up SMR before May 7; require contract/backlog and cash-burn evidence first.</span></li>
-<li><span class="lbl fix">Fix Data</span><span>Confirm QQQ May 1 close with a primary quote feed after the yfinance session issue is fixed.</span></li>
-<li><span class="lbl fix">Fix Data</span><span>Refresh 2330.TW after the Taiwan holiday because the latest reliable close is Apr 30.</span></li>
+<li><span class="lbl do">Must</span><span>SMR trim — Cut tactical heat ahead of NuScale Q1 call; keep only a lottery ticket sized to rails. — Trigger: Execute before May 7 4:00 p.m. ET if you still hold more than 0.5pp NAV.<br><span class="pm-meta">Tag: variant<br>Consensus: unknown-consensus (demo sources do not give a consolidated SMR EPS view)<br>Anchor: May 7, 2026 earnings call time published by NuScale (Business Wire via StockTitan).<br>Kill: If the trim already executed, cancel follow-on sells unless gross margin guidance cracks.<br>Kill action: cut to 0pp<br>sized -0.2pp of NAV</span></span></li>
+<li><span class="lbl may">May</span><span>BTC wait — Spot demand weakness vs perps is a red flag; I only add on confirmed ETF inflow streak + break above $80k. — Trigger: Two consecutive weeks of positive net ETF flows and weekly close above $80k.<br><span class="pm-meta">Tag: consensus-aligned<br>Consensus: Market split between ETF structural bid and macro/liquidity headwinds.<br>Anchor: CNBC 2026-05-01 article citing CryptoQuant futures vs spot divergence.<br>Kill: Break of $72k weekly support on closing basis.<br>Kill action: cut full crypto sleeve<br>sized +0.0pp of NAV</span></span></li>
+<li><span class="lbl no">Avoid</span><span>Chasing SMR after a +40% weekly squeeze without a new funded backlog disclosure.</span></li>
+<li><span class="lbl fix">Fix Data</span><span>Visible Alpha / IBES consensus refresh for NVDA implied growth post May-20 print — not pulled in this demo pass.</span></li>
     </ul>
     
   </section>
@@ -2250,7 +2538,7 @@ img, svg, table { max-width: 100%; }
       <h2>Sources and Data Gaps</h2>
       <span class="sub">Acquisition path and freshness for every quote · explicit gap list</span>
     </div>
-    <div class="strategy-readout-wrap" style="margin-bottom:18px"><div class="eyebrow" style="margin-bottom:8px">Strategy readout</div><div class="prose"><p>I run a dual-currency synthetic book with multi-year core US/TW holdings, tactical sleeves for shorter catalysts, rail-aware sizing, highest-cost-first trims, and low hype tolerance. I can hold volatility when the thesis is intact, but adds need earnings, guide, flow, or valuation confirmation. Today that means core QQQ/MSFT/2330.TW stays intact, AMD and NVDA wait for earnings proof, BTC is trimmed only for the 10% rail, and SMR must justify its stale short-term bucket.</p></div></div>
+    <div class="strategy-readout-wrap" style="margin-bottom:18px"><div class="eyebrow" style="margin-bottom:8px">Strategy readout</div><div class="prose"><p>I run this demo book as a deliberate stress layout: I keep multi-year core quality in MSFT, QQQ, and TSMC while carving mid-term growth in NVDA, AMD, GOOGL, and BTC, and I only allow SMR as a short-dated stub. I am rail-aware on single-name and theme caps, I trim highest-cost lots first when I de-risk, and I refuse hype without base/bull/bear brackets — so today&#x27;s calls bias to wait/trim into catalysts rather than chase.</p></div></div>
     <div class="eyebrow" style="margin-bottom:10px">Latest-price source audit</div>
     <div class="tbl-wrap scroll-y">
       <table class="src-tbl">
@@ -2259,60 +2547,60 @@ img, svg, table { max-width: 100%; }
         </thead>
         <tbody>          <tr>
             <td>2330.TW</td>
-            <td>web:stockanalysis</td>
-            <td>taiwan_holiday_latest_close</td>
-            <td class="num">2026-04-30T13:30:00+08:00</td>
+            <td>no_token:twse_mis</td>
+            <td>Unknown</td>
+            <td class="num">2026-05-03T09:24:05+00:00</td>
             <td><span class="freshness fresh">Fresh</span></td>
-            <td>Retry 2<br>correction_2:YFDataException</td>
+            <td>yfinance_per_ticker_miss</td>
           </tr>          <tr>
             <td>AMD</td>
-            <td>web:stockanalysis</td>
-            <td>weekend_latest_close</td>
-            <td class="num">2026-05-01T16:00:00-04:00</td>
+            <td>no_token:stooq</td>
+            <td>Unknown</td>
+            <td class="num">2026-05-01T22:00:18</td>
             <td><span class="freshness fresh">Fresh</span></td>
-            <td>Retry 2<br>correction_2:YFDataException</td>
+            <td>—</td>
           </tr>          <tr>
             <td>BTC</td>
-            <td>web:coinmarketcap</td>
-            <td>crypto_24_7_live</td>
-            <td class="num">2026-05-02T09:00:00Z</td>
+            <td>no_token:binance</td>
+            <td>24/7 market</td>
+            <td class="num">2026-05-03T09:24:10+00:00</td>
             <td><span class="freshness fresh">Fresh</span></td>
             <td>—</td>
           </tr>          <tr>
             <td>GOOGL</td>
-            <td>web:stockanalysis</td>
-            <td>weekend_latest_close</td>
-            <td class="num">2026-05-01T16:00:00-04:00</td>
+            <td>no_token:stooq</td>
+            <td>Unknown</td>
+            <td class="num">2026-05-01T22:00:19</td>
             <td><span class="freshness fresh">Fresh</span></td>
-            <td>Retry 2<br>correction_2:YFDataException</td>
+            <td>—</td>
           </tr>          <tr>
             <td>MSFT</td>
-            <td>web:stockanalysis</td>
-            <td>weekend_latest_close</td>
-            <td class="num">2026-05-01T16:00:00-04:00</td>
+            <td>no_token:stooq</td>
+            <td>Unknown</td>
+            <td class="num">2026-05-01T22:00:22</td>
             <td><span class="freshness fresh">Fresh</span></td>
-            <td>Retry 2<br>correction_2:YFDataException</td>
+            <td>—</td>
           </tr>          <tr>
             <td>NVDA</td>
-            <td>web:stockanalysis</td>
-            <td>weekend_latest_close</td>
-            <td class="num">2026-05-01T16:00:00-04:00</td>
+            <td>no_token:stooq</td>
+            <td>Unknown</td>
+            <td class="num">2026-05-01T22:00:19</td>
             <td><span class="freshness fresh">Fresh</span></td>
-            <td>Retry 2<br>correction_2:YFDataException</td>
+            <td>—</td>
           </tr>          <tr>
             <td>QQQ</td>
-            <td>web:barchart</td>
-            <td>weekend_latest_close</td>
-            <td class="num">2026-05-01T16:00:00-04:00</td>
+            <td>no_token:stooq</td>
+            <td>Unknown</td>
+            <td class="num">2026-05-01T22:00:19</td>
             <td><span class="freshness fresh">Fresh</span></td>
-            <td>Retry 2<br>correction_2:YFDataException</td>
+            <td>—</td>
           </tr>          <tr>
             <td>SMR</td>
-            <td>web:stockanalysis</td>
-            <td>weekend_latest_close</td>
-            <td class="num">2026-05-01T16:00:00-04:00</td>
+            <td>no_token:stooq</td>
+            <td>Unknown</td>
+            <td class="num">2026-05-01T22:00:46</td>
             <td><span class="freshness fresh">Fresh</span></td>
-            <td>Retry 2<br>correction_2:YFDataException</td>
+            <td>—</td>
           </tr>          <tr>
             <td>TWD</td>
             <td>cash</td>
@@ -2329,17 +2617,17 @@ img, svg, table { max-width: 100%; }
             <td>—</td>
           </tr>          <tr>
             <td>FX USD/TWD</td>
-            <td>web:exchangerates_org_uk</td>
-            <td>weekend_fx_latest_quote</td>
-            <td class="num">2026-05-02T09:03:00Z</td>
+            <td>no_token:open_er_api</td>
+            <td>Unknown</td>
+            <td class="num">Sun, 03 May 2026 00:02:31 +0000</td>
             <td><span class="freshness fresh">Fresh</span></td>
-            <td>rate=31.6295<br>correction_2:YFDataException</td>
+            <td>rate=31.629326<br>yfinance_per_ticker_miss</td>
           </tr></tbody>
       </table>
     </div>
     <div class="eyebrow" style="margin-top:22px;margin-bottom:6px">Data gaps</div>
-    <ul class="gap-list"><li><b>price_fallback:automated_yfinance_session_incompatibility:</b> fetch_prices.py could not use yfinance because yfinance 1.2.0 rejected requests.Session; listed, crypto and FX prices were completed with web fallbacks and source URLs.</li><li><b>quote_gap:QQQ_primary_feed:</b> QQQ price used Barchart web evidence after automated feeds failed; verify with Stooq/Yahoo once the session issue is fixed.</li><li><b>quote_gap:2330.TW_taiwan_holiday:</b> 2330.TW latest reliable close is Apr 30 because Taiwan market was not open on May 1.</li><li><b>Profit panel data gap:</b><ul class="gap-sublist"><li>1D: P&amp;L differs from realized + unrealized_delta by -71.11 (cash/FX drift or missing marks)</li><li>1D: residual -71.11 = fx_drift -71.11 + cash_drift -0.00</li><li>7D: P&amp;L differs from realized + unrealized_delta by -429.99 (cash/FX drift or missing marks)</li><li>7D: residual -429.99 = fx_drift -429.99 + cash_drift -0.00</li><li>MTD: P&amp;L differs from realized + unrealized_delta by -261.13 (cash/FX drift or missing marks)</li><li>MTD: residual -261.13 = fx_drift -261.13 + cash_drift -0.00</li><li>1M: P&amp;L differs from realized + unrealized_delta by 1316.58 (cash/FX drift or missing marks)</li><li>1M: residual 1316.58 = fx_drift 1316.58 + cash_drift -0.00</li><li>YTD: P&amp;L differs from realized + unrealized_delta by -1632.04 (cash/FX drift or missing marks)</li><li>YTD: residual -1632.04 = fx_drift -1599.35 + cash_drift -32.69</li><li>1Y: P&amp;L differs from realized + unrealized_delta by 1860.97 (cash/FX drift or missing marks)</li><li>1Y: residual 1860.97 = fx_drift 1898.10 + cash_drift -37.13</li><li class="gap-overflow">+2 more</li></ul></li><li class="reviewer-summary"><b>Reviewer summary:</b> The analysis is appropriately conservative despite high cash: cash is not a reason to chase AMD into an 8% expected earnings move. The main unresolved issue is quote infrastructure, not portfolio math; manual web prices are auditable but should be replaced by primary automated feeds next run.</li></ul>
-    <div class="bucket-note" style="margin-top:18px"><b>Suggested agent spec update:</b>Suggested agent spec update: yfinance 1.2.0 may reject a requests.Session; allow scripts to instantiate yf.Ticker without passing a requests.Session when this exception appears, while preserving per-ticker pacing.</div>
+    <ul class="gap-list"><li><b>Profit panel data gap:</b><ul class="gap-sublist"><li>1D: P&amp;L differs from realized + unrealized_delta by -70.36 (cash/FX drift or missing marks)</li><li>1D: residual -70.36 = fx_drift -70.36 + cash_drift -0.00</li><li>7D: P&amp;L differs from realized + unrealized_delta by -820.52 (cash/FX drift or missing marks)</li><li>7D: residual -820.52 = fx_drift -820.52 + cash_drift 0.00</li><li>MTD: P&amp;L differs from realized + unrealized_delta by -260.38 (cash/FX drift or missing marks)</li><li>MTD: residual -260.38 = fx_drift -260.38 + cash_drift -0.00</li><li>1M: P&amp;L differs from realized + unrealized_delta by 1317.33 (cash/FX drift or missing marks)</li><li>1M: residual 1317.33 = fx_drift 1317.33 + cash_drift -0.00</li><li>YTD: P&amp;L differs from realized + unrealized_delta by -1631.29 (cash/FX drift or missing marks)</li><li>YTD: residual -1631.29 = fx_drift -1598.64 + cash_drift -32.65</li><li>1Y: P&amp;L differs from realized + unrealized_delta by 1861.70 (cash/FX drift or missing marks)</li><li>1Y: residual 1861.70 = fx_drift 1898.79 + cash_drift -37.09</li><li class="gap-overflow">+2 more</li></ul></li></ul>
+    
   </section>
   <footer class="footer">
     This report follows docs/portfolio_report_agent_guidelines.md and uses a static price snapshot captured at generation time.

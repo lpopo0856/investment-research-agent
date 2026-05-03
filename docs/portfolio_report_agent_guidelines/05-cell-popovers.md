@@ -6,12 +6,14 @@ Symbol and Price cells expose non-modal detail popovers: desktop opens on hover/
 
 ### 13.2 Markup contract
 
-Trigger must be `<div tabindex="0" role="button">`, not `<button>`, because popovers contain block/table content.
+Trigger must be `<div tabindex="0" role="button">`, not `<button>`, because popovers contain block/table content. Holdings phone cards reuse the same Symbol/Price trigger contract as the desktop table; do not create visually similar substitute controls.
 
 ```html
-<td><div class="sym-trigger" tabindex="0" role="button">NVDA<div class="pop pop-sym" role="tooltip">...</div></div></td>
+<td><div class="sym-trigger" tabindex="0" role="button"><span class="sym-text">NVDA</span><div class="pop pop-sym" role="tooltip">...</div></div></td>
 <td class="num price-cell"><div class="price-trigger" tabindex="0" role="button"><span class="price-num">$211.62</span><span class="price-sub pos">較前收 +1.40%</span><div class="pop pop-px" role="tooltip">...</div></div></td>
 ```
+
+Only real Symbol/Price popover triggers may use `.sym-trigger` / `.price-trigger`; static ticker text in other tables must use `.sym-label` or plain text with no `tabindex`, `role="button"`, pointer cursor, or dotted underline. The trigger text (`.sym-trigger .sym-text`, `.price-trigger .price-num`) should show a dotted underline even before hover/focus so users can identify the hover/tap affordance; non-interactive cells must not show that affordance.
 
 ### 13.3 Desktop CSS requirements
 
@@ -31,7 +33,7 @@ Heading ticker + translated "per-lot P&L"; subline latest price + selected sourc
 
 ### 13.6 Responsive / touch
 
-`.tbl-wrap` overflow rule: desktop ≥881px no overflow; tablet/phone set `overflow-x:auto` only when popovers switch to fixed bottom sheet, otherwise descendant popovers clip.
+`.tbl-wrap` overflow rule: desktop ≥881px no overflow; tablet may set `overflow-x:auto` only when popovers switch to fixed bottom sheet, otherwise descendant popovers clip. Phone holdings (≤600px) use `.holdings-cards` outside the table wrapper for normal reading; the cards still reuse `.sym-trigger` / `.price-trigger`, so the fixed bottom-sheet popover behavior below remains mandatory.
 
 For `@media (max-width:880px), (hover:none)`, `.pop` becomes fixed bottom sheet:
 

@@ -55,6 +55,10 @@ You must prioritize the latest public information on the web, including but not 
 - Technicals and positioning data
 - Catalyst calendar (earnings dates, FDA / regulatory dates, product launches, macro releases, lockup expiries, debt maturities)
 
+### Horizon-aware research standard
+
+For portfolio reports, follow the `horizon_v1` / `research_targets` contract in `docs/portfolio_report_agent_guidelines/04-computations-to-static-snapshot.md`: derive expected horizon lots-first from snapshot lots, reject generic headline-only support, prefer primary/official sources, and keep Phase A research metadata separate from Phase B investment judgment. For ad hoc single-name notes, inherit the same decision-grade standard when judging a ticker — short-term reads need a tactical state (`act_now` / `wait` / `exit` / `need_data`), mid/long reads need thesis or strategic status, and source gaps need explicit audit — but do **not** require portfolio-report JSON schema or `research_targets` outside report runs.
+
 ## Personal context — strategy binding
 
 Read `SETTINGS.md` every run. The **whole** `## Investment Style And Strategy` section drives behavior — there is no separate lever block, no keyword inference, no structured override grid. **Internalise the section before drafting anything**: what kind of investor you are, what horizons you operate in, what setups you hunt for, what you avoid, how you size, how you exit, how you talk. Every downstream judgment in the report — alerts, watchlist, recommendations, action list, sizing, kill criteria, lot-trim ordering — flows from that internalised picture.

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>投資組合健康檢查 · 2026-05-02</title>
+<title>投資組合健康檢查</title>
 <style>
 /* =========================================================
    Portfolio Research Note — sample redesign
@@ -248,6 +248,7 @@ body{
    squeezes the price / weight / value columns. Action wraps onto multiple lines
    instead of monopolising the row. Numeric columns stay tabular and tight. */
 .tbl-wrap table.holdings-tbl{table-layout:fixed;min-width:880px}
+.holdings-cards{display:none}
 .tbl-wrap table.holdings-tbl td.col-action,
 .tbl-wrap table.holdings-tbl th.col-action{
   white-space:normal;
@@ -287,21 +288,35 @@ tbody tr:last-child td{border-bottom:0}
 tbody tr:hover{background:var(--surface-2)}
 td.num,th.num{text-align:right}
 
-/* Symbol cell — ticker only, hover-activated popover trigger */
+/* Ticker text. Only `.sym-trigger` is interactive; static ticker labels use
+   `.sym-label` so non-hover/non-tap table cells do not falsely advertise detail. */
+.sym-label,
 .sym-trigger{
   display:inline-block;
   color:var(--ink);
   font-weight:680;letter-spacing:-.005em;
   font-size: clamp(13px, 0.35vw + 12px, 14.5px);
-  cursor:help;
   text-decoration:none;
   outline:0;
 }
-.sym-trigger:hover,.sym-trigger:focus-visible{
-  text-decoration:underline dotted;text-underline-offset:3px;outline:0;
+.sym-label{cursor:default}
+.sym-trigger{
+  cursor:help;
+}
+.sym-trigger .sym-text{
+  text-decoration-line:underline;
+  text-decoration-style:dotted;
+  text-decoration-thickness:1px;
+  text-decoration-color:var(--muted);
+  text-underline-offset:3px;
+}
+.sym-trigger:hover,.sym-trigger:focus-visible{outline:0}
+.sym-trigger:hover .sym-text,.sym-trigger:focus-visible .sym-text{
+  text-decoration-color:currentColor;outline:0;
 }
 
-/* Price cell — static latest-price snapshot, hover-activated popover trigger */
+/* Price cell — static latest-price snapshot, hover-/tap-activated popover trigger.
+   The dotted underline is always visible only on the interactive price number. */
 .price-cell{position:relative}
 .price-trigger{
   display:inline-flex;flex-direction:column;align-items:flex-end;gap:2px;
@@ -310,7 +325,14 @@ td.num,th.num{text-align:right}
   color:inherit;outline:0;
 }
 .price-trigger:hover,.price-trigger:focus-visible{outline:0}
-.price-trigger:hover .price-num,.price-trigger:focus-visible .price-num{text-decoration:underline dotted;text-underline-offset:3px}
+.price-trigger .price-num{
+  text-decoration-line:underline;
+  text-decoration-style:dotted;
+  text-decoration-thickness:1px;
+  text-decoration-color:var(--muted);
+  text-underline-offset:3px;
+}
+.price-trigger:hover .price-num,.price-trigger:focus-visible .price-num{text-decoration-color:currentColor}
 .price-num{
   font-size: clamp(15px, 0.6vw + 13px, 17px);
   font-weight:600;color:var(--ink);
@@ -969,8 +991,8 @@ img, svg, table { max-width: 100%; }
      loss/gain lot lists, recent activity). These have 2–8 simple columns
      and DO NOT need the canonical 760-/880-px min-width.
      Forcing min-width:0 + tight typography lets them render without
-     horizontal-scroll bleed at ≤430px viewports. The holdings table is
-     the ONLY table that legitimately needs horizontal scroll on phone. */
+     horizontal-scroll bleed at ≤430px viewports. Holdings uses a phone-only
+     card list instead of requiring horizontal table scroll. */
   .tbl-wrap table.periods-tbl,
   .tbl-wrap table.dim-tbl,
   .tbl-wrap table.adj-tbl,
@@ -1038,19 +1060,79 @@ img, svg, table { max-width: 100%; }
   }
   .tbl-wrap.scroll-y td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
 
-  /* Holdings table is the ONLY one that genuinely needs horizontal scroll
-     on phone (7 fixed columns + free-form action narrative). Keep nowrap
-     on the first column so the holding row never wraps. */
+  /* Tablet keeps table ergonomics; phone hides the holdings table in favor of
+     `.holdings-cards`, so these nowrap rules only matter before the phone card
+     display switch applies. */
   .tbl-wrap table.holdings-tbl td:first-child,
   .tbl-wrap table.holdings-tbl th:first-child{white-space:nowrap}
 
-  /* Drop the right-edge fade mask for tables that fit. Only the
-     holdings-tbl and adj-tbl keep the mask as a swipe affordance. */
+  /* Drop the right-edge fade mask for tables that fit. Phone holdings cards do
+     not need a swipe affordance; adjustment tables may still overflow if very
+     long action labels are supplied. */
   .tbl-wrap:has(table.periods-tbl),
   .tbl-wrap.scroll-y{
     -webkit-mask-image:none!important;
             mask-image:none!important;
   }
+
+  /* Holdings cards — phone replaces the wide 7-column holdings table with
+     one holding per card. Cards reuse the exact Symbol/Price trigger HTML,
+     so the existing fixed bottom-sheet popover rules still apply on touch. */
+  .holdings-table-wrap{display:none}
+  .holdings-cards{
+    display:grid;
+    gap:12px;
+    margin-top:2px;
+    width:100%;
+  }
+  .holding-card{
+    min-width:0;
+    border-top:1px solid var(--ink);
+    border-bottom:1px solid var(--hairline-2);
+    padding:12px 0 13px;
+    background:transparent;
+  }
+  .holding-card-head{
+    display:grid;
+    grid-template-columns:minmax(0,1fr) auto;
+    gap:8px 12px;
+    align-items:start;
+    margin-bottom:10px;
+  }
+  .holding-card-symbol{min-width:0}
+  .holding-card-category{justify-self:end;text-align:right;min-width:0}
+  .holding-card-category .tag{margin-left:4px}
+  .holding-card-grid{
+    display:grid;
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:9px 14px;
+    margin:0;
+  }
+  .holding-card-grid>div{min-width:0}
+  .holding-card-grid dt{
+    margin:0 0 2px;
+    color:var(--muted);
+    font-size:10px;
+    line-height:1.2;
+    letter-spacing:.12em;
+    text-transform:uppercase;
+    font-weight:700;
+  }
+  .holding-card-grid dd{
+    margin:0;
+    color:var(--ink-soft);
+    font-size:13px;
+    line-height:1.42;
+    overflow-wrap:anywhere;
+  }
+  .holding-card-grid .num,
+  .holding-card-grid dd{font-variant-numeric:tabular-nums lining-nums}
+  .holding-card-price .price-trigger{align-items:flex-start;text-align:left}
+  .holding-card-price .price-sub{font-size:11px}
+  .holding-card-pnl.pos-txt dd{color:var(--pos);font-weight:600}
+  .holding-card-pnl.neg-txt dd{color:var(--neg);font-weight:600}
+  .holding-card-action{grid-column:1/-1}
+  .holding-card-action dd{line-height:1.5;word-break:break-word}
 
   /* Tag chip — tighter padding so wrapping is rare */
   .tag{margin-left:3px;padding:1px 5px}
@@ -1093,7 +1175,8 @@ img, svg, table { max-width: 100%; }
   /* Donut — slightly smaller so it doesn't dominate */
   .donut-wrap svg{width:148px;height:148px}
 
-  /* Holdings table — relax the min-width floor a touch so the swipe is shorter */
+  /* Phone holdings use cards, so the hidden table's min-width no longer drives
+     normal reading. Other non-card tables keep a compact floor. */
   .tbl-wrap table.holdings-tbl{min-width:760px}
   .tbl-wrap table{min-width:600px;font-size:12px}
   th,td{padding:7px 6px}
@@ -1112,30 +1195,28 @@ img, svg, table { max-width: 100%; }
 <div class="wrap">
   <header class="masthead">
     <div class="eyebrow">投資研究筆記 · 繁體中文</div>
-    <h1>投資組合健康檢查 · 2026-05-02</h1>
-    <p class="dek">合成帳本；價格、歷史與研究皆為本次生成時點重新抓取。</p>
+    <h1>投資組合健康檢查</h1>
+    <p class="dek"></p>
     <div class="masthead-meta">
-      <span><b>產生時間</b>　2026-05-02 20:46</span>
-      <span><b>基準匯率</b>　USD/TWD 31.634149 @ Sat, 02 May 2026 00:02:31 +0000</span>
-      <span><b>下個事件</b>　05-05 AMD 財報；05-07 SMR 財報；05-12 美國 CPI</span>
+      <span><b>產生時間</b>　2026-05-03 17:47</span>
+      <span><b>基準匯率</b>　USD/TWD 31.629326 @ Sun, 03 May 2026 00:02:31 +0000</span>
+      <span><b>下個事件</b>　n/a</span>
     </div>
   </header>
   <section class="callout">
     <div class="ctitle"><span class="badge">高優先</span>本日須立即關注</div>
     <ul>
-      <li>BTC 權重 11.0%，高於 10% 單一資產警示；先修回到 10% 以內，不是否定長期 crypto thesis。</li>
-      <li>半導體行業 34.0%，AI 算力/雲端/Mega-cap Tech 三大相關主題均高於 30% 軌道；AMD、NVDA、2330.TW、QQQ 同時吃同一個 AI capex 週期。</li>
-      <li>SMR 短期桶兩筆批次已持有超過 12 個月，且 2026-02-03 批次約 -43%；05-07 更新是部位分類與留倉紀律檢查。</li>
-      <li>05-05 AMD、05-07 SMR、05-12 CPI、05-20 NVDA/FOMC minutes 在 30 天內密集到來；高預期部位不適合用市價追高。</li>
+      <li>BTC 權重逾單一標的 10% 警戒線，若槓桿反轉我會優先檢視是否觸及高波動桶上限。</li>
+      <li>SMR 短線桶累積未實現虧損與事件臨近，與我「先數據後行動」的紀律一致，禁止在財報前情緒加碼。</li>
     </ul>
-    <aside class="reviewer-note-block"><ul><li><b>審稿備註:</b> 半導體/AI/雲端的主題加總不是可相加的總權重，而是相關性熱度；讀者應把它當成風險重疊訊號。</li></ul></aside>
+    
   </section>
   <section class="section">
     <div class="section-head">
       <h2>今日總結</h2>
       <span class="sub">總體 × 持股 × 風險</span>
     </div>
-    <div class="prose cols-2"><div><p>帳面 NAV 約 156.9 萬美元，現金 58.0%，風險資產 42.0%。這不是滿倉進攻狀態；真正的風險集中在 BTC 11.0% 超過 10% 單一資產軌道、半導體/AI/雲端主題彼此高度相關，而不是現金不足。</p></div><div><p>近期證據偏向繼續持有核心科技與台積電：MSFT、GOOGL 已交出雲端/AI 成長，TSMC Q1 與 Q2 指引仍支持 AI 供應鏈。今天唯一需要執行的是把 BTC 降回 10% 軌道；AMD 與 NVDA 等待財報確認，不在高預期前追價。</p><p>SMR 仍是小型、高波動、商業化待驗證部位。它不大到會傷害全書，但短期倉已持有超過 12 個月，下一次 05-07 財報/更新必須決定是轉成中期 thesis，還是砍掉 2026-02-03 高成本批次。</p></div></div>
+    <div class="prose cols-2"><div><p>截至 2026-05-03，組合約 42% 資產在股票與加密貨幣，其餘為美元／台幣現金；加密與美股大型成長是主要單日波動來源。</p></div><div><p>本週主軸在大型科技股財報後的指引差異、AMD／NuScale 等事件前風險，以及比特幣現貨需求與槓桿部位是否背離。</p></div></div>
   </section>
   <section class="section">
     <div class="section-head">
@@ -1143,10 +1224,10 @@ img, svg, table { max-width: 100%; }
       <span class="sub">總體 KPI · USD 基準</span>
     </div>
     <div class="kpis">
-      <div class="kpi"><div class="k">總資產</div><div class="v">$1,569,141</div><div class="delta">含現金、加密、股票</div></div>
-      <div class="kpi"><div class="k">投資部位</div><div class="v">$660,004</div><div class="delta">42.1% 風險資產</div></div>
-      <div class="kpi"><div class="k">現金與類現金</div><div class="v">$909,137</div><div class="delta">57.9% 防守彈藥</div></div>
-      <div class="kpi"><div class="k">已知損益</div><div class="v">$234,120</div><div class="delta">僅統計已知成本部位</div><div class="delta pos">+$234,120</div></div>
+      <div class="kpi"><div class="k">總資產</div><div class="v">$1,569,877</div><div class="delta">含現金、加密、股票</div></div>
+      <div class="kpi"><div class="k">投資部位</div><div class="v">$660,724</div><div class="delta">42.1% 風險資產</div></div>
+      <div class="kpi"><div class="k">現金與類現金</div><div class="v">$909,153</div><div class="delta">57.9% 防守彈藥</div></div>
+      <div class="kpi"><div class="k">已知損益</div><div class="v">$234,835</div><div class="delta">僅統計已知成本部位</div><div class="delta pos">+$234,835</div></div>
     </div>
 
     <div style="margin-top:22px">
@@ -1155,8 +1236,8 @@ img, svg, table { max-width: 100%; }
         <span class="seg cash" style="width:57.9%"></span>
       </div>
       <div class="cash-legend">
-        <span><i style="background:var(--ink)"></i>風險資產 42.1% · $660,004</span>
-        <span><i style="background:var(--accent-warm)"></i>現金與類現金 57.9% · $909,137</span>
+        <span><i style="background:var(--ink)"></i>風險資產 42.1% · $660,724</span>
+        <span><i style="background:var(--accent-warm)"></i>現金與類現金 57.9% · $909,153</span>
       </div>
     </div>
   </section>
@@ -1167,9 +1248,9 @@ img, svg, table { max-width: 100%; }
     </div>
     <div class="kpis">
       <div class="kpi"><div class="k">歷年已實現損益</div>
-        <div class="v pos-txt">+$13,953</div></div>
+        <div class="v pos-txt">+$13,954</div></div>
       <div class="kpi"><div class="k">目前未實現損益</div>
-        <div class="v pos-txt">+$234,120</div></div>
+        <div class="v pos-txt">+$234,835</div></div>
     </div>
     <div class="tbl-wrap" style="margin-top:14px">
       <table class="periods-tbl">
@@ -1185,60 +1266,60 @@ img, svg, table { max-width: 100%; }
         </thead>
         <tbody>
       <tr>
-        <td>1日 <span class="muted">(自 2026-05-01)</span></td>
-        <td class="num pos-txt">+$115</td>
-        <td class="num pos-txt">+0.01%</td>
+        <td>1日 <span class="muted">(自 2026-05-02)</span></td>
+        <td class="num pos-txt">+$851</td>
+        <td class="num pos-txt">+0.05%</td>
         <td class="num pos-txt">+$0</td>
-        <td class="num pos-txt">+$206</td>
+        <td class="num pos-txt">+$921</td>
         <td class="num pos-txt">+$0</td>
       </tr>
       <tr>
-        <td>7日 <span class="muted">(自 2026-04-25)</span></td>
-        <td class="num pos-txt">+$7,343</td>
-        <td class="num pos-txt">+0.47%</td>
+        <td>7日 <span class="muted">(自 2026-04-26)</span></td>
+        <td class="num pos-txt">+$5,267</td>
+        <td class="num pos-txt">+0.34%</td>
         <td class="num pos-txt">+$0</td>
-        <td class="num pos-txt">+$7,793</td>
+        <td class="num pos-txt">+$6,087</td>
         <td class="num pos-txt">+$0</td>
       </tr>
       <tr>
         <td>本月 <span class="muted">(自 2026-04-30)</span></td>
-        <td class="num pos-txt">+$7,450</td>
-        <td class="num pos-txt">+0.48%</td>
+        <td class="num pos-txt">+$8,186</td>
+        <td class="num pos-txt">+0.52%</td>
         <td class="num pos-txt">+$0</td>
-        <td class="num pos-txt">+$7,731</td>
+        <td class="num pos-txt">+$8,446</td>
         <td class="num pos-txt">+$0</td>
       </tr>
       <tr>
-        <td>近1月 <span class="muted">(自 2026-04-02)</span></td>
-        <td class="num pos-txt">+$124,207</td>
-        <td class="num pos-txt">+8.60%</td>
+        <td>近1月 <span class="muted">(自 2026-04-03)</span></td>
+        <td class="num pos-txt">+$124,806</td>
+        <td class="num pos-txt">+8.64%</td>
         <td class="num pos-txt">+$0</td>
-        <td class="num pos-txt">+$122,910</td>
+        <td class="num pos-txt">+$123,488</td>
         <td class="num pos-txt">+$0</td>
       </tr>
       <tr>
         <td>今年 <span class="muted">(自 2025-12-31)</span></td>
-        <td class="num pos-txt">+$65,139</td>
-        <td class="num pos-txt">+4.33%</td>
+        <td class="num pos-txt">+$65,874</td>
+        <td class="num pos-txt">+4.38%</td>
         <td class="num pos-txt">+$4,161</td>
-        <td class="num pos-txt">+$62,630</td>
+        <td class="num pos-txt">+$63,345</td>
         <td class="num pos-txt">+$0</td>
       </tr>
       <tr>
-        <td>近1年 <span class="muted">(自 2025-05-02)</span></td>
-        <td class="num pos-txt">+$167,073</td>
-        <td class="num pos-txt">+11.92%</td>
+        <td>近1年 <span class="muted">(自 2025-05-03)</span></td>
+        <td class="num pos-txt">+$170,180</td>
+        <td class="num pos-txt">+12.16%</td>
         <td class="num pos-txt">+$8,177</td>
-        <td class="num pos-txt">+$157,055</td>
+        <td class="num pos-txt">+$160,141</td>
         <td class="num pos-txt">+$0</td>
       </tr>
       <tr>
         <td>歷年 <span class="muted">(自 2024-01-04)</span></td>
-        <td class="num pos-txt">+$247,768</td>
-        <td class="num pos-txt">+37.50%</td>
-        <td class="num pos-txt">+$13,953</td>
-        <td class="num pos-txt">+$234,120</td>
-        <td class="num pos-txt">+$1,321,373</td>
+        <td class="num pos-txt">+$248,488</td>
+        <td class="num pos-txt">+37.61%</td>
+        <td class="num pos-txt">+$13,954</td>
+        <td class="num pos-txt">+$234,835</td>
+        <td class="num pos-txt">+$1,321,389</td>
       </tr>
         </tbody>
       </table>
@@ -1252,7 +1333,7 @@ img, svg, table { max-width: 100%; }
     <div class="kpis kpis-solo">
       <div class="kpi">
         <div class="k">綜合分數</div>
-        <div class="v">92.8</div>
+        <div class="v">97.1</div>
         <div class="delta"><span class="tag pos">可信度高</span></div>
       </div>
     </div>
@@ -1267,7 +1348,7 @@ img, svg, table { max-width: 100%; }
 <tr><td>報價覆蓋（目前持倉）</td><td class="num">100.0</td><td>8/8 檔有最新價 · fresh 8 · delayed 0 · stale/n/a 0</td></tr>
 <tr><td>報價新鮮度</td><td class="num">100.0</td><td>8/8 檔有最新價 · fresh 8 · delayed 0 · stale/n/a 0</td></tr>
 <tr><td>獲利面板 — 邊界估價</td><td class="num">100.0</td><td>稽核筆數 — 無歷史收盤: 0、無收盤且無現價: 0、缺價: 0、未實現排除: 0、以最新價回填邊界: 0、無 FX 歷史: 0</td></tr>
-<tr><td>獲利面板 — 損益勾稽</td><td class="num">57.6</td><td>最大 |損益−(已實現+未實現Δ)| ≈ 1,841.40 · 最大相對 0.7903</td></tr>
+<tr><td>獲利面板 — 損益勾稽</td><td class="num">83.2</td><td>最大 |損益−(已實現+未實現Δ)| ≈ 1,861.70 · 最大相對 0.1558</td></tr>
 <tr><td>分析管線</td><td class="num">100.0</td><td>硬錯誤數: 0</td></tr>
         </tbody>
       </table>
@@ -1281,8 +1362,8 @@ img, svg, table { max-width: 100%; }
       <span class="sub">依市場別獲利面板（欄位與上方獲利面板相同）· USD 基準</span>
     </div>
     <div class="kpis">
-      <div class="kpi"><div class="k">期末 NAV</div><div class="v">$1,569,141</div><div class="delta">目前重播估值</div></div>
-      <div class="kpi"><div class="k">MWR 年化</div><div class="v">+8.90%</div><div class="delta">資金加權，含入出金時點</div></div>
+      <div class="kpi"><div class="k">期末 NAV</div><div class="v">$1,569,877</div><div class="delta">目前重播估值</div></div>
+      <div class="kpi"><div class="k">MWR 年化</div><div class="v">+8.91%</div><div class="delta">資金加權，含入出金時點</div></div>
       <div class="kpi"><div class="k">最大貢獻</div><div class="v">AMD $67,534</div><div class="delta">已實現 + 目前未實現</div></div>
       <div class="kpi"><div class="k">最大拖累</div><div class="v">SMR −$1,483</div><div class="delta">已實現 + 目前未實現</div></div>
     </div>
@@ -1302,7 +1383,7 @@ img, svg, table { max-width: 100%; }
         </thead>
           <tbody>
       <tr>
-        <td>1日 <span class="muted">(自 2026-05-01)</span></td>
+        <td>1日 <span class="muted">(自 2026-05-02)</span></td>
         <td class="num neg-txt">−$0</td>
         <td class="num pos-txt">+0.00%</td>
         <td class="num pos-txt">+$0</td>
@@ -1310,7 +1391,7 @@ img, svg, table { max-width: 100%; }
         <td class="num muted"><span class="muted">—</span></td>
       </tr>
       <tr>
-        <td>7日 <span class="muted">(自 2026-04-25)</span></td>
+        <td>7日 <span class="muted">(自 2026-04-26)</span></td>
         <td class="num pos-txt">+$8,609</td>
         <td class="num pos-txt">+2.17%</td>
         <td class="num pos-txt">+$0</td>
@@ -1326,7 +1407,7 @@ img, svg, table { max-width: 100%; }
         <td class="num muted"><span class="muted">—</span></td>
       </tr>
       <tr>
-        <td>近1月 <span class="muted">(自 2026-04-02)</span></td>
+        <td>近1月 <span class="muted">(自 2026-04-03)</span></td>
         <td class="num pos-txt">+$85,143</td>
         <td class="num pos-txt">+26.57%</td>
         <td class="num pos-txt">+$0</td>
@@ -1342,7 +1423,7 @@ img, svg, table { max-width: 100%; }
         <td class="num muted"><span class="muted">—</span></td>
       </tr>
       <tr>
-        <td>近1年 <span class="muted">(自 2025-05-02)</span></td>
+        <td>近1年 <span class="muted">(自 2025-05-03)</span></td>
         <td class="num pos-txt">+$153,028</td>
         <td class="num pos-txt">+70.34%</td>
         <td class="num neg-txt">−$796</td>
@@ -1377,59 +1458,59 @@ img, svg, table { max-width: 100%; }
         </thead>
           <tbody>
       <tr>
-        <td>1日 <span class="muted">(自 2026-05-01)</span></td>
-        <td class="num neg-txt">−$34</td>
-        <td class="num neg-txt">−0.04%</td>
+        <td>1日 <span class="muted">(自 2026-05-02)</span></td>
+        <td class="num neg-txt">−$26</td>
+        <td class="num neg-txt">−0.03%</td>
         <td class="num pos-txt">+$0</td>
-        <td class="num neg-txt">−$34</td>
+        <td class="num neg-txt">−$26</td>
         <td class="num muted"><span class="muted">—</span></td>
       </tr>
       <tr>
-        <td>7日 <span class="muted">(自 2026-04-25)</span></td>
-        <td class="num neg-txt">−$2,100</td>
-        <td class="num neg-txt">−2.48%</td>
+        <td>7日 <span class="muted">(自 2026-04-26)</span></td>
+        <td class="num neg-txt">−$2,242</td>
+        <td class="num neg-txt">−2.64%</td>
         <td class="num pos-txt">+$0</td>
-        <td class="num neg-txt">−$2,100</td>
+        <td class="num neg-txt">−$2,242</td>
         <td class="num muted"><span class="muted">—</span></td>
       </tr>
       <tr>
         <td>本月 <span class="muted">(自 2026-04-30)</span></td>
-        <td class="num neg-txt">−$104</td>
-        <td class="num neg-txt">−0.13%</td>
+        <td class="num neg-txt">−$96</td>
+        <td class="num neg-txt">−0.12%</td>
         <td class="num pos-txt">+$0</td>
-        <td class="num neg-txt">−$104</td>
+        <td class="num neg-txt">−$96</td>
         <td class="num muted"><span class="muted">—</span></td>
       </tr>
       <tr>
-        <td>近1月 <span class="muted">(自 2026-04-02)</span></td>
-        <td class="num pos-txt">+$12,892</td>
-        <td class="num pos-txt">+18.65%</td>
+        <td>近1月 <span class="muted">(自 2026-04-03)</span></td>
+        <td class="num pos-txt">+$12,900</td>
+        <td class="num pos-txt">+18.66%</td>
         <td class="num pos-txt">+$0</td>
-        <td class="num pos-txt">+$12,892</td>
+        <td class="num pos-txt">+$12,900</td>
         <td class="num muted"><span class="muted">—</span></td>
       </tr>
       <tr>
         <td>今年 <span class="muted">(自 2025-12-31)</span></td>
-        <td class="num pos-txt">+$24,919</td>
-        <td class="num pos-txt">+46.94%</td>
+        <td class="num pos-txt">+$24,927</td>
+        <td class="num pos-txt">+46.96%</td>
         <td class="num pos-txt">+$0</td>
-        <td class="num pos-txt">+$24,919</td>
+        <td class="num pos-txt">+$24,927</td>
         <td class="num muted"><span class="muted">—</span></td>
       </tr>
       <tr>
-        <td>近1年 <span class="muted">(自 2025-05-02)</span></td>
-        <td class="num pos-txt">+$48,654</td>
-        <td class="num pos-txt">+153.70%</td>
+        <td>近1年 <span class="muted">(自 2025-05-03)</span></td>
+        <td class="num pos-txt">+$48,662</td>
+        <td class="num pos-txt">+153.73%</td>
         <td class="num pos-txt">+$3,060</td>
-        <td class="num pos-txt">+$45,594</td>
+        <td class="num pos-txt">+$45,602</td>
         <td class="num muted"><span class="muted">—</span></td>
       </tr>
       <tr>
         <td>歷年 <span class="muted">(自 2024-01-04)</span></td>
-        <td class="num pos-txt">+$58,985</td>
+        <td class="num pos-txt">+$58,994</td>
         <td class="num "><span class="na">n/a</span></td>
-        <td class="num pos-txt">+$8,829</td>
-        <td class="num pos-txt">+$50,156</td>
+        <td class="num pos-txt">+$8,830</td>
+        <td class="num pos-txt">+$50,164</td>
         <td class="num muted"><span class="muted">—</span></td>
       </tr>
           </tbody>
@@ -1452,59 +1533,59 @@ img, svg, table { max-width: 100%; }
         </thead>
           <tbody>
       <tr>
-        <td>1日 <span class="muted">(自 2026-05-01)</span></td>
-        <td class="num pos-txt">+$240</td>
-        <td class="num pos-txt">+0.14%</td>
+        <td>1日 <span class="muted">(自 2026-05-02)</span></td>
+        <td class="num pos-txt">+$947</td>
+        <td class="num pos-txt">+0.55%</td>
         <td class="num pos-txt">+$0</td>
-        <td class="num pos-txt">+$240</td>
+        <td class="num pos-txt">+$947</td>
         <td class="num muted"><span class="muted">—</span></td>
       </tr>
       <tr>
-        <td>7日 <span class="muted">(自 2026-04-25)</span></td>
-        <td class="num pos-txt">+$1,285</td>
-        <td class="num pos-txt">+0.75%</td>
+        <td>7日 <span class="muted">(自 2026-04-26)</span></td>
+        <td class="num neg-txt">−$279</td>
+        <td class="num neg-txt">−0.16%</td>
         <td class="num pos-txt">+$0</td>
-        <td class="num pos-txt">+$1,285</td>
+        <td class="num neg-txt">−$279</td>
         <td class="num muted"><span class="muted">—</span></td>
       </tr>
       <tr>
         <td>本月 <span class="muted">(自 2026-04-30)</span></td>
-        <td class="num pos-txt">+$4,098</td>
-        <td class="num pos-txt">+2.44%</td>
+        <td class="num pos-txt">+$4,805</td>
+        <td class="num pos-txt">+2.86%</td>
         <td class="num pos-txt">+$0</td>
-        <td class="num pos-txt">+$4,098</td>
+        <td class="num pos-txt">+$4,805</td>
         <td class="num muted"><span class="muted">—</span></td>
       </tr>
       <tr>
-        <td>近1月 <span class="muted">(自 2026-04-02)</span></td>
-        <td class="num pos-txt">+$24,876</td>
-        <td class="num pos-txt">+16.90%</td>
+        <td>近1月 <span class="muted">(自 2026-04-03)</span></td>
+        <td class="num pos-txt">+$25,446</td>
+        <td class="num pos-txt">+17.27%</td>
         <td class="num pos-txt">+$0</td>
-        <td class="num pos-txt">+$24,876</td>
+        <td class="num pos-txt">+$25,446</td>
         <td class="num muted"><span class="muted">—</span></td>
       </tr>
       <tr>
         <td>今年 <span class="muted">(自 2025-12-31)</span></td>
-        <td class="num neg-txt">−$13,667</td>
-        <td class="num neg-txt">−5.78%</td>
+        <td class="num neg-txt">−$12,960</td>
+        <td class="num neg-txt">−5.48%</td>
         <td class="num pos-txt">+$5,913</td>
-        <td class="num neg-txt">−$19,580</td>
+        <td class="num neg-txt">−$18,873</td>
         <td class="num muted"><span class="muted">—</span></td>
       </tr>
       <tr>
-        <td>近1年 <span class="muted">(自 2025-05-02)</span></td>
-        <td class="num neg-txt">−$36,450</td>
-        <td class="num neg-txt">−16.36%</td>
+        <td>近1年 <span class="muted">(自 2025-05-03)</span></td>
+        <td class="num neg-txt">−$33,372</td>
+        <td class="num neg-txt">−15.14%</td>
         <td class="num pos-txt">+$5,913</td>
-        <td class="num neg-txt">−$42,362</td>
+        <td class="num neg-txt">−$39,284</td>
         <td class="num muted"><span class="muted">—</span></td>
       </tr>
       <tr>
         <td>歷年 <span class="muted">(自 2024-01-04)</span></td>
-        <td class="num pos-txt">+$21,540</td>
+        <td class="num pos-txt">+$22,248</td>
         <td class="num "><span class="na">n/a</span></td>
         <td class="num pos-txt">+$1,361</td>
-        <td class="num pos-txt">+$20,179</td>
+        <td class="num pos-txt">+$20,886</td>
         <td class="num muted"><span class="muted">—</span></td>
       </tr>
           </tbody>
@@ -1522,20 +1603,20 @@ img, svg, table { max-width: 100%; }
             </tr>
           </thead>
           <tbody>
-      <tr><td>1日 <span class="muted">(自 2026-05-01)</span></td><td class="num neg-txt">−$91</td></tr>
-      <tr><td>7日 <span class="muted">(自 2026-04-25)</span></td><td class="num neg-txt">−$450</td></tr>
-      <tr><td>本月 <span class="muted">(自 2026-04-30)</span></td><td class="num neg-txt">−$281</td></tr>
-      <tr><td>近1月 <span class="muted">(自 2026-04-02)</span></td><td class="num pos-txt">+$1,297</td></tr>
-      <tr><td>今年 <span class="muted">(自 2025-12-31)</span></td><td class="num neg-txt">−$1,652</td></tr>
-      <tr><td>近1年 <span class="muted">(自 2025-05-02)</span></td><td class="num pos-txt">+$1,841</td></tr>
-      <tr><td>歷年 <span class="muted">(自 2024-01-04)</span></td><td class="num neg-txt">−$304</td></tr>
+      <tr><td>1日 <span class="muted">(自 2026-05-02)</span></td><td class="num neg-txt">−$70</td></tr>
+      <tr><td>7日 <span class="muted">(自 2026-04-26)</span></td><td class="num neg-txt">−$821</td></tr>
+      <tr><td>本月 <span class="muted">(自 2026-04-30)</span></td><td class="num neg-txt">−$260</td></tr>
+      <tr><td>近1月 <span class="muted">(自 2026-04-03)</span></td><td class="num pos-txt">+$1,317</td></tr>
+      <tr><td>今年 <span class="muted">(自 2025-12-31)</span></td><td class="num neg-txt">−$1,631</td></tr>
+      <tr><td>近1年 <span class="muted">(自 2025-05-03)</span></td><td class="num pos-txt">+$1,862</td></tr>
+      <tr><td>歷年 <span class="muted">(自 2024-01-04)</span></td><td class="num neg-txt">−$300</td></tr>
           </tbody>
         </table>
       </div>
     </div><div class="prose" style="margin-top:16px"><p>各市場淨流動未歸因（顯示 —）。報酬率分母為該市場期初持倉市值（僅部位、不含共用現金）；總表獲利面板則使用期初 NAV + 半額淨流動。入出金與全組合報酬率以總表獲利面板為準。</p></div>
     <div class="cols-2" style="margin-top:22px">
-      <div><div class="eyebrow" style="margin-bottom:10px">最大貢獻</div><div class="bars"><div class="bar-row"><div class="bar-label">AMD</div><div class="bar-track"><div class="bar pos" style="width:100.0%"></div></div><div class="bar-value pos-txt">+$67,534</div></div><div class="bar-row"><div class="bar-label">2330.TW</div><div class="bar-track"><div class="bar pos" style="width:87.3%"></div></div><div class="bar-value pos-txt">+$58,985</div></div><div class="bar-row"><div class="bar-label">QQQ</div><div class="bar-track"><div class="bar pos" style="width:64.8%"></div></div><div class="bar-value pos-txt">+$43,776</div></div><div class="bar-row"><div class="bar-label">GOOGL</div><div class="bar-track"><div class="bar pos" style="width:49.0%"></div></div><div class="bar-value pos-txt">+$33,063</div></div><div class="bar-row"><div class="bar-label">BTC</div><div class="bar-track"><div class="bar pos" style="width:31.9%"></div></div><div class="bar-value pos-txt">+$21,540</div></div><div class="bar-row"><div class="bar-label">NVDA</div><div class="bar-track"><div class="bar pos" style="width:31.4%"></div></div><div class="bar-value pos-txt">+$21,200</div></div><div class="bar-row"><div class="bar-label">MSFT</div><div class="bar-track"><div class="bar pos" style="width:5.1%"></div></div><div class="bar-value pos-txt">+$3,455</div></div><div class="bar-row"><div class="bar-label">SMR</div><div class="bar-track"><div class="bar neg" style="width:2.2%"></div></div><div class="bar-value neg-txt">−$1,483</div></div></div></div>
-      <div><div class="eyebrow" style="margin-bottom:10px">最大拖累</div><div class="bars"><div class="bar-row"><div class="bar-label">SMR</div><div class="bar-track"><div class="bar neg" style="width:2.2%"></div></div><div class="bar-value neg-txt">−$1,483</div></div><div class="bar-row"><div class="bar-label">MSFT</div><div class="bar-track"><div class="bar pos" style="width:5.1%"></div></div><div class="bar-value pos-txt">+$3,455</div></div><div class="bar-row"><div class="bar-label">NVDA</div><div class="bar-track"><div class="bar pos" style="width:31.4%"></div></div><div class="bar-value pos-txt">+$21,200</div></div><div class="bar-row"><div class="bar-label">BTC</div><div class="bar-track"><div class="bar pos" style="width:31.9%"></div></div><div class="bar-value pos-txt">+$21,540</div></div><div class="bar-row"><div class="bar-label">GOOGL</div><div class="bar-track"><div class="bar pos" style="width:49.0%"></div></div><div class="bar-value pos-txt">+$33,063</div></div><div class="bar-row"><div class="bar-label">QQQ</div><div class="bar-track"><div class="bar pos" style="width:64.8%"></div></div><div class="bar-value pos-txt">+$43,776</div></div><div class="bar-row"><div class="bar-label">2330.TW</div><div class="bar-track"><div class="bar pos" style="width:87.3%"></div></div><div class="bar-value pos-txt">+$58,985</div></div><div class="bar-row"><div class="bar-label">AMD</div><div class="bar-track"><div class="bar pos" style="width:100.0%"></div></div><div class="bar-value pos-txt">+$67,534</div></div></div></div>
+      <div><div class="eyebrow" style="margin-bottom:10px">最大貢獻</div><div class="bars"><div class="bar-row"><div class="bar-label">AMD</div><div class="bar-track"><div class="bar pos" style="width:100.0%"></div></div><div class="bar-value pos-txt">+$67,534</div></div><div class="bar-row"><div class="bar-label">2330.TW</div><div class="bar-track"><div class="bar pos" style="width:87.4%"></div></div><div class="bar-value pos-txt">+$58,994</div></div><div class="bar-row"><div class="bar-label">QQQ</div><div class="bar-track"><div class="bar pos" style="width:64.8%"></div></div><div class="bar-value pos-txt">+$43,776</div></div><div class="bar-row"><div class="bar-label">GOOGL</div><div class="bar-track"><div class="bar pos" style="width:49.0%"></div></div><div class="bar-value pos-txt">+$33,063</div></div><div class="bar-row"><div class="bar-label">BTC</div><div class="bar-track"><div class="bar pos" style="width:32.9%"></div></div><div class="bar-value pos-txt">+$22,248</div></div><div class="bar-row"><div class="bar-label">NVDA</div><div class="bar-track"><div class="bar pos" style="width:31.4%"></div></div><div class="bar-value pos-txt">+$21,200</div></div><div class="bar-row"><div class="bar-label">MSFT</div><div class="bar-track"><div class="bar pos" style="width:5.1%"></div></div><div class="bar-value pos-txt">+$3,455</div></div><div class="bar-row"><div class="bar-label">SMR</div><div class="bar-track"><div class="bar neg" style="width:2.2%"></div></div><div class="bar-value neg-txt">−$1,483</div></div></div></div>
+      <div><div class="eyebrow" style="margin-bottom:10px">最大拖累</div><div class="bars"><div class="bar-row"><div class="bar-label">SMR</div><div class="bar-track"><div class="bar neg" style="width:2.2%"></div></div><div class="bar-value neg-txt">−$1,483</div></div><div class="bar-row"><div class="bar-label">MSFT</div><div class="bar-track"><div class="bar pos" style="width:5.1%"></div></div><div class="bar-value pos-txt">+$3,455</div></div><div class="bar-row"><div class="bar-label">NVDA</div><div class="bar-track"><div class="bar pos" style="width:31.4%"></div></div><div class="bar-value pos-txt">+$21,200</div></div><div class="bar-row"><div class="bar-label">BTC</div><div class="bar-track"><div class="bar pos" style="width:32.9%"></div></div><div class="bar-value pos-txt">+$22,248</div></div><div class="bar-row"><div class="bar-label">GOOGL</div><div class="bar-track"><div class="bar pos" style="width:49.0%"></div></div><div class="bar-value pos-txt">+$33,063</div></div><div class="bar-row"><div class="bar-label">QQQ</div><div class="bar-track"><div class="bar pos" style="width:64.8%"></div></div><div class="bar-value pos-txt">+$43,776</div></div><div class="bar-row"><div class="bar-label">2330.TW</div><div class="bar-track"><div class="bar pos" style="width:87.4%"></div></div><div class="bar-value pos-txt">+$58,994</div></div><div class="bar-row"><div class="bar-label">AMD</div><div class="bar-track"><div class="bar pos" style="width:100.0%"></div></div><div class="bar-value pos-txt">+$67,534</div></div></div></div>
     </div>
   </section>
   <section class="section">
@@ -1564,7 +1645,7 @@ img, svg, table { max-width: 100%; }
         <tbody>      <tr>
         <td>2026-04-01</td>
         <td><span class="adj-action buy">買入</span></td>
-        <td><span class="sym-trigger" tabindex="0" role="button">GOOGL</span></td>
+        <td><span class="sym-label">GOOGL</span></td>
         <td class="num">25</td>
         <td class="num">153.85</td>
         <td class="num"><span class="muted">—</span></td>
@@ -1574,7 +1655,7 @@ img, svg, table { max-width: 100%; }
       <tr>
         <td>2026-03-18</td>
         <td><span class="adj-action sell">賣出</span></td>
-        <td><span class="sym-trigger" tabindex="0" role="button">NVDA</span></td>
+        <td><span class="sym-label">NVDA</span></td>
         <td class="num">30</td>
         <td class="num">117.60</td>
         <td class="num">−$1,838</td>
@@ -1584,7 +1665,7 @@ img, svg, table { max-width: 100%; }
       <tr>
         <td>2026-03-03</td>
         <td><span class="adj-action buy">買入</span></td>
-        <td><span class="sym-trigger" tabindex="0" role="button">2330.TW</span></td>
+        <td><span class="sym-label">2330.TW</span></td>
         <td class="num">150</td>
         <td class="num">987.00</td>
         <td class="num"><span class="muted">—</span></td>
@@ -1594,7 +1675,7 @@ img, svg, table { max-width: 100%; }
       <tr>
         <td>2026-02-03</td>
         <td><span class="adj-action buy">買入</span></td>
-        <td><span class="sym-trigger" tabindex="0" role="button">SMR</span></td>
+        <td><span class="sym-label">SMR</span></td>
         <td class="num">280</td>
         <td class="num">21.35</td>
         <td class="num"><span class="muted">—</span></td>
@@ -1604,7 +1685,7 @@ img, svg, table { max-width: 100%; }
       <tr>
         <td>2026-01-24</td>
         <td><span class="adj-action sell">賣出</span></td>
-        <td><span class="sym-trigger" tabindex="0" role="button">BTC</span></td>
+        <td><span class="sym-label">BTC</span></td>
         <td class="num">0.5</td>
         <td class="num">101,850.00</td>
         <td class="num">$5,915</td>
@@ -1614,7 +1695,7 @@ img, svg, table { max-width: 100%; }
       <tr>
         <td>2026-01-06</td>
         <td><span class="adj-action buy">買入</span></td>
-        <td><span class="sym-trigger" tabindex="0" role="button">MSFT</span></td>
+        <td><span class="sym-label">MSFT</span></td>
         <td class="num">18</td>
         <td class="num">427.90</td>
         <td class="num"><span class="muted">—</span></td>
@@ -1624,7 +1705,7 @@ img, svg, table { max-width: 100%; }
       <tr>
         <td>2025-12-08</td>
         <td><span class="adj-action buy">買入</span></td>
-        <td><span class="sym-trigger" tabindex="0" role="button">AMD</span></td>
+        <td><span class="sym-label">AMD</span></td>
         <td class="num">80</td>
         <td class="num">121.65</td>
         <td class="num"><span class="muted">—</span></td>
@@ -1634,7 +1715,7 @@ img, svg, table { max-width: 100%; }
       <tr>
         <td>2025-11-22</td>
         <td><span class="adj-action sell">賣出</span></td>
-        <td><span class="sym-trigger" tabindex="0" role="button">GOOGL</span></td>
+        <td><span class="sym-label">GOOGL</span></td>
         <td class="num">40</td>
         <td class="num">177.95</td>
         <td class="num">−$388</td>
@@ -1644,7 +1725,7 @@ img, svg, table { max-width: 100%; }
       <tr>
         <td>2025-11-04</td>
         <td><span class="adj-action buy">買入</span></td>
-        <td><span class="sym-trigger" tabindex="0" role="button">NVDA</span></td>
+        <td><span class="sym-label">NVDA</span></td>
         <td class="num">25</td>
         <td class="num">191.85</td>
         <td class="num"><span class="muted">—</span></td>
@@ -1654,7 +1735,7 @@ img, svg, table { max-width: 100%; }
       <tr>
         <td>2025-10-01</td>
         <td><span class="adj-action buy">買入</span></td>
-        <td><span class="sym-trigger" tabindex="0" role="button">QQQ</span></td>
+        <td><span class="sym-label">QQQ</span></td>
         <td class="num">40</td>
         <td class="num">511.60</td>
         <td class="num"><span class="muted">—</span></td>
@@ -1678,17 +1759,17 @@ img, svg, table { max-width: 100%; }
     <div class="cols-2" style="margin-top:18px">
       <div>
         <div class="eyebrow" style="margin-bottom:10px">前大部位權重</div>
-        <div class="tbl-wrap scroll-y"><table><tbody><tr><td>BTC</td><td class="num">10.97%</td></tr><tr><td>QQQ</td><td class="num">8.16%</td></tr><tr><td>AMD</td><td class="num">6.89%</td></tr><tr><td>2330.TW</td><td class="num">5.25%</td></tr><tr><td>MSFT</td><td class="num">4.31%</td></tr><tr><td>GOOGL</td><td class="num">3.56%</td></tr><tr><td>NVDA</td><td class="num">2.15%</td></tr><tr><td>SMR</td><td class="num">0.77%</td></tr></tbody></table></div>
+        <div class="tbl-wrap scroll-y"><table><tbody><tr><td>BTC</td><td class="num">11.01%</td></tr><tr><td>QQQ</td><td class="num">8.16%</td></tr><tr><td>AMD</td><td class="num">6.89%</td></tr><tr><td>2330.TW</td><td class="num">5.25%</td></tr><tr><td>MSFT</td><td class="num">4.30%</td></tr><tr><td>GOOGL</td><td class="num">3.56%</td></tr><tr><td>NVDA</td><td class="num">2.15%</td></tr><tr><td>SMR</td><td class="num">0.77%</td></tr></tbody></table></div>
       </div>
       <div>
         <div class="bucket-note"><b>近 30 日頻繁買入:</b><ul><li>n/a</li></ul></div>
-        <div class="bucket-note"><b>短線桶持有 &gt;1 年:</b><ul><li>SMR 2024-08-01 (639d)</li><li>SMR 2025-02-03 (453d)</li></ul></div>
+        <div class="bucket-note"><b>短線桶持有 &gt;1 年:</b><ul><li>SMR 2024-08-01 (640d)</li><li>SMR 2025-02-03 (454d)</li></ul></div>
         <div class="bucket-note"><b>高成本加碼:</b><ul><li>QQQ 2025-10-01: +18.22% vs older avg</li><li>NVDA 2025-05-12: +65.95% vs older avg</li><li>2330.TW 2026-03-03: +21.39% vs older avg</li><li>BTC 2025-03-01: +23.22% vs older avg</li><li>SMR 2026-02-03: +92.54% vs older avg</li></ul></div>
       </div>
     </div>
     <div class="cols-2" style="margin-top:18px">
-      <div class="tbl-wrap scroll-y"><table><thead><tr><th>最大浮虧批次</th><th>取得日</th><th class="num">損益</th><th class="num">%</th></tr></thead><tbody><tr><td>SMR</td><td>2026-02-03</td><td class="num">−$2,579</td><td class="num">−43.14%</td></tr><tr><td>SMR</td><td>2025-02-03</td><td class="num">−$755</td><td class="num">−14.39%</td></tr><tr><td>MSFT</td><td>2025-06-20</td><td class="num">−$744</td><td class="num">−5.65%</td></tr><tr><td>BTC</td><td>2025-03-01</td><td class="num">−$597</td><td class="num">−7.09%</td></tr><tr><td>MSFT</td><td>2026-01-06</td><td class="num">−$242</td><td class="num">−3.15%</td></tr><tr><td>MSFT</td><td>2024-05-03</td><td class="num">$238</td><td class="num">+1.67%</td></tr></tbody></table></div>
-      <div class="tbl-wrap scroll-y"><table><thead><tr><th>最大浮盈批次</th><th>取得日</th><th class="num">損益</th><th class="num">%</th></tr></thead><tbody><tr><td>QQQ</td><td>2024-01-16</td><td class="num">$29,582</td><td class="num">+57.65%</td></tr><tr><td>AMD</td><td>2025-04-08</td><td class="num">$26,039</td><td class="num">+151.16%</td></tr><tr><td>2330.TW</td><td>2024-02-14</td><td class="num">$22,389</td><td class="num">+197.15%</td></tr><tr><td>AMD</td><td>2024-02-02</td><td class="num">$19,139</td><td class="num">+143.81%</td></tr><tr><td>AMD</td><td>2025-12-08</td><td class="num">$19,111</td><td class="num">+196.37%</td></tr><tr><td>GOOGL</td><td>2024-02-21</td><td class="num">$17,139</td><td class="num">+173.83%</td></tr></tbody></table></div>
+      <div class="tbl-wrap scroll-y"><table><thead><tr><th>最大浮虧批次</th><th>取得日</th><th class="num">損益</th><th class="num">%</th></tr></thead><tbody><tr><td>SMR</td><td>2026-02-03</td><td class="num">−$2,579</td><td class="num">−43.14%</td></tr><tr><td>SMR</td><td>2025-02-03</td><td class="num">−$755</td><td class="num">−14.39%</td></tr><tr><td>MSFT</td><td>2025-06-20</td><td class="num">−$744</td><td class="num">−5.65%</td></tr><tr><td>BTC</td><td>2025-03-01</td><td class="num">−$565</td><td class="num">−6.71%</td></tr><tr><td>MSFT</td><td>2026-01-06</td><td class="num">−$242</td><td class="num">−3.15%</td></tr><tr><td>MSFT</td><td>2024-05-03</td><td class="num">$238</td><td class="num">+1.67%</td></tr></tbody></table></div>
+      <div class="tbl-wrap scroll-y"><table><thead><tr><th>最大浮盈批次</th><th>取得日</th><th class="num">損益</th><th class="num">%</th></tr></thead><tbody><tr><td>QQQ</td><td>2024-01-16</td><td class="num">$29,582</td><td class="num">+57.65%</td></tr><tr><td>AMD</td><td>2025-04-08</td><td class="num">$26,039</td><td class="num">+151.16%</td></tr><tr><td>2330.TW</td><td>2024-02-14</td><td class="num">$22,392</td><td class="num">+197.15%</td></tr><tr><td>AMD</td><td>2024-02-02</td><td class="num">$19,139</td><td class="num">+143.81%</td></tr><tr><td>AMD</td><td>2025-12-08</td><td class="num">$19,111</td><td class="num">+196.37%</td></tr><tr><td>GOOGL</td><td>2024-02-21</td><td class="num">$17,139</td><td class="num">+173.83%</td></tr></tbody></table></div>
     </div>
   </section>
   <section class="section">
@@ -1696,24 +1777,24 @@ img, svg, table { max-width: 100%; }
       <h2>近期交易心態與可改進處</h2>
       <span class="sub">依交易紀錄與紀律檢查的證據進行評估</span>
     </div>
-    <div class="prose psych-headline"><p>我有耐心等 thesis，但需要把軌道與批次紀律寫得更硬。</p></div>
+    <div class="prose psych-headline"><p>紀律：讓數據在事件前發聲</p></div>
     <div class="cols-2" style="align-items:start">
       <div>
         <div class="eyebrow" style="margin-bottom:10px">近期行為觀察</div>
-        <ul class="psych-list"><li><div class="psych-li-main"><span class="tag warn">警示</span><span style="margin-left:6px">BTC 11.0% 為第一大倉，已高於 10% 單一資產軌道。</span></div><div class="psych-evidence"><span class="psych-ev-prefix">證據</span>snapshot.transaction_analytics.discipline_check.top_position_weights[0]</div></li><li><div class="psych-li-main"><span class="tag warn">警示</span><span style="margin-left:6px">SMR 兩筆短期桶批次持有超過 12 個月，分類已漂移。</span></div><div class="psych-evidence"><span class="psych-ev-prefix">證據</span>snapshot.transaction_analytics.discipline_check.short_bucket_over_1y</div></li><li><div class="psych-li-main"><span class="tag pos">正向</span><span style="margin-left:6px">GOOGL 2026-04-01 買進後 30 日 +150.69%，右側加碼有效。</span></div><div class="psych-evidence"><span class="psych-ev-prefix">證據</span>snapshot.transaction_analytics.trade_quality.recent_activity[0]</div></li></ul>
+        <ul class="psych-list"><li><div class="psych-li-main"><span class="tag warn">警示</span><span style="margin-left:6px">短線桶 SMR 出現長天期持有與深度虧損並存。</span></div><div class="psych-evidence"><span class="psych-ev-prefix">證據</span>snapshot.transaction_analytics.discipline_check.short_bucket_over_1y 與 largest_unrealized_losses 皆列出 SMR。</div></li><li><div class="psych-li-main"><span class="tag info">中性</span><span style="margin-left:6px">加密與台股在 7D 歸因上波動方向相反，顯示資產類別分散有效。</span></div><div class="psych-evidence"><span class="psych-ev-prefix">證據</span>snapshot.transaction_analytics.performance_attribution.periods[1].per_market_detail.crypto 與 tw 的 pnl 符號相反。</div></li></ul>
       </div>
       <div>
         <div class="eyebrow" style="margin-bottom:10px">可改進的部分</div>
-        <ul class="psych-list"><li><div class="psych-li-main"><span class="tag warn">優先</span><span style="margin-left:6px">高波動倉位容易用故事延長持有期。</span></div><div class="psych-suggestion"><span class="psych-suggestion-label">建議</span>下次短期倉超過 12 個月時，依 SETTINGS holding-period bias 強制重分類或砍最高成本批次。</div></li><li><div class="psych-li-main"><span class="tag info">次要</span><span style="margin-left:6px">加碼後成本上移明顯，需防止單純追漲。</span></div><div class="psych-suggestion"><span class="psych-suggestion-label">建議</span>每次 AMD/NVDA/2330.TW 加碼前先寫 §15.4 變異觀點與錨點，否則只等待財報確認。</div></li></ul>
+        <ul class="psych-list"><li><div class="psych-li-main"><span class="tag warn">優先</span><span style="margin-left:6px">部分賣出後 30 日價格追蹤對 BTC 出現大幅逆轉，顯示衛星部位需要更嚴格的事件前檢核。</span></div><div class="psych-suggestion"><span class="psych-suggestion-label">建議</span>對高波動衛星引入「財報／流量雙錨點」檢查表，避免單邊槓桿行情驅動再加碼。</div></li><li><div class="psych-li-main"><span class="tag info">次要</span><span style="margin-left:6px">QQQ 最新一筆成本顯著高於舊批次，有平均成本上行風險。</span></div><div class="psych-suggestion"><span class="psych-suggestion-label">建議</span>檢視 latest_lot_cost_flags 中 QQQ 的 premium_pct，考慮以定投或拉回分層消化。</div></li></ul>
       </div>
     </div>
-    <div class="psych-strengths-wrap"><div class="eyebrow" style="margin-bottom:8px">值得保留的紀律</div><ul class="psych-list"><li>近期 GOOGL 與 2330.TW 右側買進後表現強，符合以財報/需求確認再擴張的紀律。</li></ul></div>
-    <aside class="reviewer-note-block"><ul><li><b>審稿備註:</b> GOOGL 追蹤結果很好，但單一成功樣本不足以升級為可重複流程；下一筆仍需先寫變異錨點。</li></ul></aside>
+    <div class="psych-strengths-wrap"><div class="eyebrow" style="margin-bottom:8px">值得保留的紀律</div><ul class="psych-list"><li>已實現交易勝率與盈虧比維持正偏。</li></ul></div>
+    
   </section>
   <section class="section">
     <div class="section-head">
       <h2>配置與持股權重</h2>
-      <span class="sub">USD 基準, 2026-05-02</span>
+      <span class="sub">USD 基準, 2026-05-03</span>
     </div>
     <div class="cols-2">
       <div>
@@ -1722,13 +1803,13 @@ img, svg, table { max-width: 100%; }
             <circle cx="60" cy="60" r="52" fill="#f0ece0"/>
             <g transform="rotate(-90 60 60)" fill="none" stroke-width="20">
               <circle cx="60" cy="60" r="42" stroke="#1f2937"
-                      stroke-dasharray="152.90 263.89" stroke-dashoffset="-0.00"/>
+                      stroke-dasharray="152.83 263.89" stroke-dashoffset="-0.00"/>
               <circle cx="60" cy="60" r="42" stroke="#15703d"
-                      stroke-dasharray="68.21 263.89" stroke-dashoffset="-152.90"/>
+                      stroke-dasharray="68.18 263.89" stroke-dashoffset="-152.83"/>
               <circle cx="60" cy="60" r="42" stroke="#8a5a1c"
-                      stroke-dasharray="28.94 263.89" stroke-dashoffset="-221.11"/>
+                      stroke-dasharray="29.04 263.89" stroke-dashoffset="-221.01"/>
               <circle cx="60" cy="60" r="42" stroke="#1d4690"
-                      stroke-dasharray="13.85 263.89" stroke-dashoffset="-250.05"/>
+                      stroke-dasharray="13.84 263.89" stroke-dashoffset="-250.05"/>
             </g>
             <text x="60" y="56" text-anchor="middle"
                   font-size="8" fill="#6b7280" letter-spacing=".15em">總計</text>
@@ -1746,7 +1827,7 @@ img, svg, table { max-width: 100%; }
       <div>
         <div class="bars">
           <div class="bar-row"><div class="bar-label">USD</div><div class="bar-track"><div class="bar" style="width:100.0%"></div></div><div class="bar-value">51.3%</div></div>
-          <div class="bar-row"><div class="bar-label">BTC</div><div class="bar-track"><div class="bar" style="width:21.4%"></div></div><div class="bar-value">11.0%</div></div>
+          <div class="bar-row"><div class="bar-label">BTC</div><div class="bar-track"><div class="bar" style="width:21.5%"></div></div><div class="bar-value">11.0%</div></div>
           <div class="bar-row"><div class="bar-label">QQQ</div><div class="bar-track"><div class="bar" style="width:15.9%"></div></div><div class="bar-value">8.2%</div></div>
           <div class="bar-row"><div class="bar-label">AMD</div><div class="bar-track"><div class="bar" style="width:13.4%"></div></div><div class="bar-value">6.9%</div></div>
           <div class="bar-row"><div class="bar-label">TWD</div><div class="bar-track"><div class="bar" style="width:12.9%"></div></div><div class="bar-value">6.6%</div></div>
@@ -1764,7 +1845,7 @@ img, svg, table { max-width: 100%; }
       <h2>持股損益與權重</h2>
       <span class="sub">前 10 大部位 · 價格為產出時靜態快照 · 滑鼠移到代號或價格可看細節</span>
     </div>
-    <div class="tbl-wrap">
+    <div class="tbl-wrap holdings-table-wrap">
       <table class="holdings-tbl">
         <colgroup>
           <col style="width:7%">
@@ -1788,7 +1869,7 @@ img, svg, table { max-width: 100%; }
         </thead>
         <tbody>
           <tr>
-            <td><div class="sym-trigger" tabindex="0" role="button">USD<div class="pop pop-sym" role="tooltip">
+            <td><div class="sym-trigger" tabindex="0" role="button"><span class="sym-text">USD</span><div class="pop pop-sym" role="tooltip">
                 <h4>USD · 現金部位</h4>
                 <div class="pop-sub">現金</div>
                 <div class="pop-row"><span class="k">建倉時間</span><span class="v">n/a · n/a</span></div>
@@ -1802,29 +1883,29 @@ img, svg, table { max-width: 100%; }
             <td class="col-action">—</td>
           </tr>
           <tr>
-            <td><div class="sym-trigger" tabindex="0" role="button">BTC<div class="pop pop-sym" role="tooltip">
+            <td><div class="sym-trigger" tabindex="0" role="button"><span class="sym-text">BTC</span><div class="pop pop-sym" role="tooltip">
                 <h4>BTC · 中線（1 年以上）</h4>
                 <div class="pop-sub">加密資產</div>
                 <div class="pop-row"><span class="k">建倉時間</span><span class="v">2024-03 · 2y 1m</span></div>
                 <div class="pop-row"><span class="k">批次數</span><span class="v">3 批</span></div>
               </div></div></td>
             <td>加密資產<span class="tag">中線</span></td>
-            <td class="num price-cell"><div class="price-trigger" tabindex="0" role="button"><span class="price-num">$78,209.17</span><span class="price-sub pos">24h +0.23%</span><div class="pop pop-px" role="tooltip">
+            <td class="num price-cell"><div class="price-trigger" tabindex="0" role="button"><span class="price-num">$78,530.62</span><span class="price-sub pos">24h +0.27%</span><div class="pop pop-px" role="tooltip">
                 <h4>BTC · 每批損益</h4>
-                <div class="pop-sub">最新價 $78,209.17 · 來源：no_token:binance · 新鮮度：新鮮 · 市場基準：24 小時交易 · 幣別：USD · 交易所：Binance · 2026-05-02T12:41:47+00:00</div>
+                <div class="pop-sub">最新價 $78,530.62 · 來源：no_token:binance · 新鮮度：新鮮 · 市場基準：24 小時交易 · 幣別：USD · 交易所：Binance · 2026-05-03T09:44:28+00:00</div>
                 <table>
                   <thead><tr><th>取得日</th><th class="num">成本</th><th class="num">數量</th><th class="num">損益</th></tr></thead>
-                  <tbody><tr><td>2024-03-18</td><td class="num">$67,240.00</td><td class="num">1.2</td><td class="num"><span class="pop-pos">+$13,163</span></td></tr><tr><td>2024-08-20</td><td class="num">$69,750.00</td><td class="num">0.9</td><td class="num"><span class="pop-pos">+$7,613</span></td></tr><tr><td>2025-03-01</td><td class="num">$84,180.00</td><td class="num">0.1</td><td class="num"><span class="pop-neg">−$597</span></td></tr></tbody>
-                  <tfoot class="summary"><tr><td>平均成本 $69,036.82 (USD)</td><td class="num">$151,881</td><td class="num">2.2</td><td class="num"><span class="pop-pos">+$20,179</span></td></tr></tfoot>
+                  <tbody><tr><td>2024-03-18</td><td class="num">$67,240.00</td><td class="num">1.2</td><td class="num"><span class="pop-pos">+$13,549</span></td></tr><tr><td>2024-08-20</td><td class="num">$69,750.00</td><td class="num">0.9</td><td class="num"><span class="pop-pos">+$7,903</span></td></tr><tr><td>2025-03-01</td><td class="num">$84,180.00</td><td class="num">0.1</td><td class="num"><span class="pop-neg">−$565</span></td></tr></tbody>
+                  <tfoot class="summary"><tr><td>平均成本 $69,036.82 (USD)</td><td class="num">$151,881</td><td class="num">2.2</td><td class="num"><span class="pop-pos">+$20,886</span></td></tr></tfoot>
                 </table>
               </div></div></td>
             <td class="num">11.0%</td>
-            <td class="num">$172,060</td>
-            <td class="num pos-txt">+$20,179 / +13.3%</td>
-            <td class="col-action">減碼 -1.0pp 回單一資產軌道。</td>
+            <td class="num">$172,767</td>
+            <td class="num pos-txt">+$20,886 / +13.8%</td>
+            <td class="col-action">減碼衛星；若本週無法站回資金流入正軌則執行減碼約 1pp NAV。</td>
           </tr>
           <tr>
-            <td><div class="sym-trigger" tabindex="0" role="button">QQQ<div class="pop pop-sym" role="tooltip">
+            <td><div class="sym-trigger" tabindex="0" role="button"><span class="sym-text">QQQ</span><div class="pop pop-sym" role="tooltip">
                 <h4>QQQ · 長線（不賣）</h4>
                 <div class="pop-sub">美股</div>
                 <div class="pop-row"><span class="k">建倉時間</span><span class="v">2024-01 · 2y 3m</span></div>
@@ -1843,10 +1924,10 @@ img, svg, table { max-width: 100%; }
             <td class="num">8.2%</td>
             <td class="num">$128,088</td>
             <td class="num pos-txt">+$42,712 / +50.0%</td>
-            <td class="col-action">核心續抱；避免因 fast-entry 新規造成的被動追高而加碼。</td>
+            <td class="col-action">—</td>
           </tr>
           <tr>
-            <td><div class="sym-trigger" tabindex="0" role="button">AMD<div class="pop pop-sym" role="tooltip">
+            <td><div class="sym-trigger" tabindex="0" role="button"><span class="sym-text">AMD</span><div class="pop pop-sym" role="tooltip">
                 <h4>AMD · 中線（1 年以上）</h4>
                 <div class="pop-sub">美股</div>
                 <div class="pop-row"><span class="k">建倉時間</span><span class="v">2024-02 · 2y 3m</span></div>
@@ -1865,10 +1946,10 @@ img, svg, table { max-width: 100%; }
             <td class="num">6.9%</td>
             <td class="num">$108,162</td>
             <td class="num pos-txt">+$66,321 / +158.5%</td>
-            <td class="col-action">等待 05-05 財報，不在 implied move 前追價。</td>
+            <td class="col-action">—</td>
           </tr>
           <tr>
-            <td><div class="sym-trigger" tabindex="0" role="button">TWD<div class="pop pop-sym" role="tooltip">
+            <td><div class="sym-trigger" tabindex="0" role="button"><span class="sym-text">TWD</span><div class="pop pop-sym" role="tooltip">
                 <h4>TWD · 現金部位</h4>
                 <div class="pop-sub">現金</div>
                 <div class="pop-row"><span class="k">建倉時間</span><span class="v">n/a · n/a</span></div>
@@ -1877,12 +1958,12 @@ img, svg, table { max-width: 100%; }
             <td>現金<span class="tag">現金</span></td>
             <td class="num price-cell"><div class="price-trigger" tabindex="0" role="button"><span class="na">—</span></div></td>
             <td class="num">6.6%</td>
-            <td class="num">$104,055</td>
+            <td class="num">$104,071</td>
             <td class="num">—</td>
             <td class="col-action">—</td>
           </tr>
           <tr>
-            <td><div class="sym-trigger" tabindex="0" role="button">2330.TW<div class="pop pop-sym" role="tooltip">
+            <td><div class="sym-trigger" tabindex="0" role="button"><span class="sym-text">2330.TW</span><div class="pop pop-sym" role="tooltip">
                 <h4>2330.TW · 長線（不賣）</h4>
                 <div class="pop-sub">台股</div>
                 <div class="pop-row"><span class="k">建倉時間</span><span class="v">2024-02 · 2y 2m</span></div>
@@ -1891,20 +1972,20 @@ img, svg, table { max-width: 100%; }
             <td>台股<span class="tag pos">長線</span></td>
             <td class="num price-cell"><div class="price-trigger" tabindex="0" role="button"><span class="price-num">NT$2,135.00</span><span class="price-sub neg">較前收 −2.06%</span><div class="pop pop-px" role="tooltip">
                 <h4>2330.TW · 每批損益</h4>
-                <div class="pop-sub">最新價 NT$2,135.00 · 來源：no_token:twse_mis · 新鮮度：新鮮 · 市場基準：未知 · 幣別：TWD · 交易所：TWSE · 2026-05-02T12:41:43+00:00</div>
+                <div class="pop-sub">最新價 NT$2,135.00 · 來源：no_token:twse_mis · 新鮮度：新鮮 · 市場基準：未知 · 幣別：TWD · 交易所：TWSE · 2026-05-03T09:44:24+00:00</div>
                 <table>
                   <thead><tr><th>取得日</th><th class="num">成本</th><th class="num">數量</th><th class="num">損益</th></tr></thead>
                   <tbody><tr><td>2024-02-14</td><td class="num">NT$718.50</td><td class="num">500</td><td class="num"><span class="pop-pos">+NT$708,250</span></td></tr><tr><td>2024-06-18</td><td class="num">NT$867.50</td><td class="num">350</td><td class="num"><span class="pop-pos">+NT$443,625</span></td></tr><tr><td>2025-03-14</td><td class="num">NT$941.50</td><td class="num">220</td><td class="num"><span class="pop-pos">+NT$262,570</span></td></tr><tr><td>2026-03-03</td><td class="num">NT$987.00</td><td class="num">150</td><td class="num"><span class="pop-pos">+NT$172,200</span></td></tr></tbody>
-                  <tfoot class="summary"><tr><td>平均成本 $26.38 (USD)</td><td class="num">$32,182</td><td class="num">1220</td><td class="num"><span class="pop-pos">+$50,156</span></td></tr></tfoot>
+                  <tfoot class="summary"><tr><td>平均成本 $26.38 (USD)</td><td class="num">$32,187</td><td class="num">1220</td><td class="num"><span class="pop-pos">+$50,164</span></td></tr></tfoot>
                 </table>
               </div></div></td>
             <td class="num">5.2%</td>
-            <td class="num">$82,338</td>
-            <td class="num pos-txt">+$50,156 / +155.9%</td>
-            <td class="col-action">續抱；跌回 1,900–1,980 且月營收不失速才加碼。</td>
+            <td class="num">$82,351</td>
+            <td class="num pos-txt">+$50,164 / +155.9%</td>
+            <td class="col-action">續抱核心；下次法說前維持；若本益比突破 29 倍過熱警戒則檢視減碼。</td>
           </tr>
           <tr>
-            <td><div class="sym-trigger" tabindex="0" role="button">MSFT<div class="pop pop-sym" role="tooltip">
+            <td><div class="sym-trigger" tabindex="0" role="button"><span class="sym-text">MSFT</span><div class="pop pop-sym" role="tooltip">
                 <h4>MSFT · 長線（不賣）</h4>
                 <div class="pop-sub">美股</div>
                 <div class="pop-row"><span class="k">建倉時間</span><span class="v">2024-01 · 2y 3m</span></div>
@@ -1923,10 +2004,10 @@ img, svg, table { max-width: 100%; }
             <td class="num">4.3%</td>
             <td class="num">$67,554</td>
             <td class="num pos-txt">+$2,213 / +3.4%</td>
-            <td class="col-action">續抱；雲端/AI 強，但 capex 回收仍需觀察。</td>
+            <td class="col-action">—</td>
           </tr>
           <tr>
-            <td><div class="sym-trigger" tabindex="0" role="button">GOOGL<div class="pop pop-sym" role="tooltip">
+            <td><div class="sym-trigger" tabindex="0" role="button"><span class="sym-text">GOOGL</span><div class="pop pop-sym" role="tooltip">
                 <h4>GOOGL · 中線（1 年以上）</h4>
                 <div class="pop-sub">美股</div>
                 <div class="pop-row"><span class="k">建倉時間</span><span class="v">2024-02 · 2y 2m</span></div>
@@ -1945,10 +2026,10 @@ img, svg, table { max-width: 100%; }
             <td class="num">3.6%</td>
             <td class="num">$55,925</td>
             <td class="num pos-txt">+$33,650 / +151.1%</td>
-            <td class="col-action">續抱；Cloud +63% 是正向錨點，等回落再加。</td>
+            <td class="col-action">—</td>
           </tr>
           <tr>
-            <td><div class="sym-trigger" tabindex="0" role="button">NVDA<div class="pop pop-sym" role="tooltip">
+            <td><div class="sym-trigger" tabindex="0" role="button"><span class="sym-text">NVDA</span><div class="pop pop-sym" role="tooltip">
                 <h4>NVDA · 中線（1 年以上）</h4>
                 <div class="pop-sub">美股</div>
                 <div class="pop-row"><span class="k">建倉時間</span><span class="v">2024-01 · 2y 3m</span></div>
@@ -1967,10 +2048,10 @@ img, svg, table { max-width: 100%; }
             <td class="num">2.1%</td>
             <td class="num">$33,736</td>
             <td class="num pos-txt">+$20,711 / +159.0%</td>
-            <td class="col-action">等待 05-20 財報，資料中心指引確認後再動。</td>
+            <td class="col-action">—</td>
           </tr>
           <tr>
-            <td><div class="sym-trigger" tabindex="0" role="button">SMR<div class="pop pop-sym" role="tooltip">
+            <td><div class="sym-trigger" tabindex="0" role="button"><span class="sym-text">SMR</span><div class="pop pop-sym" role="tooltip">
                 <h4>SMR · 短線（12 個月）</h4>
                 <div class="pop-sub">美股</div>
                 <div class="pop-row"><span class="k">建倉時間</span><span class="v">2024-08 · 1y 9m</span></div>
@@ -1989,10 +2070,196 @@ img, svg, table { max-width: 100%; }
             <td class="num">0.8%</td>
             <td class="num">$12,140</td>
             <td class="num neg-txt">−$1,822 / −13.0%</td>
-            <td class="col-action">05-07 後決定砍高成本批次或重分類。</td>
+            <td class="col-action">事件前觀望；財報後 48 小時內重估流動性與商業化里程碑。</td>
           </tr>
         </tbody>
       </table>
+    </div>
+    <div class="holdings-cards" aria-label="持股損益與權重">
+      <article class="holding-card" aria-label="USD">
+        <div class="holding-card-head">
+          <div class="holding-card-symbol"><div class="sym-trigger" tabindex="0" role="button"><span class="sym-text">USD</span><div class="pop pop-sym" role="tooltip">
+                <h4>USD · 現金部位</h4>
+                <div class="pop-sub">現金</div>
+                <div class="pop-row"><span class="k">建倉時間</span><span class="v">n/a · n/a</span></div>
+                <div class="pop-row"><span class="k">批次數</span><span class="v">1 批</span></div>
+              </div></div></div>
+          <div class="holding-card-category">現金<span class="tag">現金</span></div>
+        </div>
+        <dl class="holding-card-grid"><div class="holding-card-price"><dt>最新價</dt><dd><div class="price-trigger" tabindex="0" role="button"><span class="na">—</span></div></dd></div><div class="holding-card-weight"><dt>比重</dt><dd>51.3%</dd></div><div class="holding-card-value"><dt>市值</dt><dd>$805,082</dd></div><div class="holding-card-pnl"><dt>損益</dt><dd>—</dd></div><div class="holding-card-action"><dt>行動</dt><dd>—</dd></div></dl>
+      </article>
+      <article class="holding-card" aria-label="BTC">
+        <div class="holding-card-head">
+          <div class="holding-card-symbol"><div class="sym-trigger" tabindex="0" role="button"><span class="sym-text">BTC</span><div class="pop pop-sym" role="tooltip">
+                <h4>BTC · 中線（1 年以上）</h4>
+                <div class="pop-sub">加密資產</div>
+                <div class="pop-row"><span class="k">建倉時間</span><span class="v">2024-03 · 2y 1m</span></div>
+                <div class="pop-row"><span class="k">批次數</span><span class="v">3 批</span></div>
+              </div></div></div>
+          <div class="holding-card-category">加密資產<span class="tag">中線</span></div>
+        </div>
+        <dl class="holding-card-grid"><div class="holding-card-price"><dt>最新價</dt><dd><div class="price-trigger" tabindex="0" role="button"><span class="price-num">$78,530.62</span><span class="price-sub pos">24h +0.27%</span><div class="pop pop-px" role="tooltip">
+                <h4>BTC · 每批損益</h4>
+                <div class="pop-sub">最新價 $78,530.62 · 來源：no_token:binance · 新鮮度：新鮮 · 市場基準：24 小時交易 · 幣別：USD · 交易所：Binance · 2026-05-03T09:44:28+00:00</div>
+                <table>
+                  <thead><tr><th>取得日</th><th class="num">成本</th><th class="num">數量</th><th class="num">損益</th></tr></thead>
+                  <tbody><tr><td>2024-03-18</td><td class="num">$67,240.00</td><td class="num">1.2</td><td class="num"><span class="pop-pos">+$13,549</span></td></tr><tr><td>2024-08-20</td><td class="num">$69,750.00</td><td class="num">0.9</td><td class="num"><span class="pop-pos">+$7,903</span></td></tr><tr><td>2025-03-01</td><td class="num">$84,180.00</td><td class="num">0.1</td><td class="num"><span class="pop-neg">−$565</span></td></tr></tbody>
+                  <tfoot class="summary"><tr><td>平均成本 $69,036.82 (USD)</td><td class="num">$151,881</td><td class="num">2.2</td><td class="num"><span class="pop-pos">+$20,886</span></td></tr></tfoot>
+                </table>
+              </div></div></dd></div><div class="holding-card-weight"><dt>比重</dt><dd>11.0%</dd></div><div class="holding-card-value"><dt>市值</dt><dd>$172,767</dd></div><div class="holding-card-pnl pos-txt"><dt>損益</dt><dd>+$20,886 / +13.8%</dd></div><div class="holding-card-action"><dt>行動</dt><dd>減碼衛星；若本週無法站回資金流入正軌則執行減碼約 1pp NAV。</dd></div></dl>
+      </article>
+      <article class="holding-card" aria-label="QQQ">
+        <div class="holding-card-head">
+          <div class="holding-card-symbol"><div class="sym-trigger" tabindex="0" role="button"><span class="sym-text">QQQ</span><div class="pop pop-sym" role="tooltip">
+                <h4>QQQ · 長線（不賣）</h4>
+                <div class="pop-sub">美股</div>
+                <div class="pop-row"><span class="k">建倉時間</span><span class="v">2024-01 · 2y 3m</span></div>
+                <div class="pop-row"><span class="k">批次數</span><span class="v">4 批</span></div>
+              </div></div></div>
+          <div class="holding-card-category">美股<span class="tag pos">長線</span></div>
+        </div>
+        <dl class="holding-card-grid"><div class="holding-card-price"><dt>最新價</dt><dd><div class="price-trigger" tabindex="0" role="button"><span class="price-num">$674.15</span><span class="price-sub pos">較前收 +0.75%</span><div class="pop pop-px" role="tooltip">
+                <h4>QQQ · 每批損益</h4>
+                <div class="pop-sub">最新價 $674.15 · 來源：no_token:stooq · 新鮮度：新鮮 · 市場基準：未知 · 幣別：USD · 交易所：Stooq · 2026-05-01T22:00:19</div>
+                <table>
+                  <thead><tr><th>取得日</th><th class="num">成本</th><th class="num">數量</th><th class="num">損益</th></tr></thead>
+                  <tbody><tr><td>2024-01-16</td><td class="num">$427.63</td><td class="num">120</td><td class="num"><span class="pop-pos">+$29,582</span></td></tr><tr><td>2024-04-02</td><td class="num">$435.90</td><td class="num">20</td><td class="num"><span class="pop-pos">+$4,765</span></td></tr><tr><td>2024-11-05</td><td class="num">$487.90</td><td class="num">10</td><td class="num"><span class="pop-pos">+$1,862</span></td></tr><tr><td>2025-10-01</td><td class="num">$511.60</td><td class="num">40</td><td class="num"><span class="pop-pos">+$6,502</span></td></tr></tbody>
+                  <tfoot class="summary"><tr><td>平均成本 $449.35 (USD)</td><td class="num">$85,377</td><td class="num">190</td><td class="num"><span class="pop-pos">+$42,712</span></td></tr></tfoot>
+                </table>
+              </div></div></dd></div><div class="holding-card-weight"><dt>比重</dt><dd>8.2%</dd></div><div class="holding-card-value"><dt>市值</dt><dd>$128,088</dd></div><div class="holding-card-pnl pos-txt"><dt>損益</dt><dd>+$42,712 / +50.0%</dd></div><div class="holding-card-action"><dt>行動</dt><dd>—</dd></div></dl>
+      </article>
+      <article class="holding-card" aria-label="AMD">
+        <div class="holding-card-head">
+          <div class="holding-card-symbol"><div class="sym-trigger" tabindex="0" role="button"><span class="sym-text">AMD</span><div class="pop pop-sym" role="tooltip">
+                <h4>AMD · 中線（1 年以上）</h4>
+                <div class="pop-sub">美股</div>
+                <div class="pop-row"><span class="k">建倉時間</span><span class="v">2024-02 · 2y 3m</span></div>
+                <div class="pop-row"><span class="k">批次數</span><span class="v">4 批</span></div>
+              </div></div></div>
+          <div class="holding-card-category">美股<span class="tag">中線</span></div>
+        </div>
+        <dl class="holding-card-grid"><div class="holding-card-price"><dt>最新價</dt><dd><div class="price-trigger" tabindex="0" role="button"><span class="price-num">$360.54</span><span class="price-sub pos">較前收 +2.46%</span><div class="pop pop-px" role="tooltip">
+                <h4>AMD · 每批損益</h4>
+                <div class="pop-sub">最新價 $360.54 · 來源：no_token:stooq · 新鮮度：新鮮 · 市場基準：未知 · 幣別：USD · 交易所：Stooq · 2026-05-01T22:00:18</div>
+                <table>
+                  <thead><tr><th>取得日</th><th class="num">成本</th><th class="num">數量</th><th class="num">損益</th></tr></thead>
+                  <tbody><tr><td>2024-02-02</td><td class="num">$147.88</td><td class="num">90</td><td class="num"><span class="pop-pos">+$19,139</span></td></tr><tr><td>2024-09-16</td><td class="num">$157.40</td><td class="num">10</td><td class="num"><span class="pop-pos">+$2,031</span></td></tr><tr><td>2025-04-08</td><td class="num">$143.55</td><td class="num">120</td><td class="num"><span class="pop-pos">+$26,039</span></td></tr><tr><td>2025-12-08</td><td class="num">$121.65</td><td class="num">80</td><td class="num"><span class="pop-pos">+$19,111</span></td></tr></tbody>
+                  <tfoot class="summary"><tr><td>平均成本 $139.47 (USD)</td><td class="num">$41,841</td><td class="num">300</td><td class="num"><span class="pop-pos">+$66,321</span></td></tr></tfoot>
+                </table>
+              </div></div></dd></div><div class="holding-card-weight"><dt>比重</dt><dd>6.9%</dd></div><div class="holding-card-value"><dt>市值</dt><dd>$108,162</dd></div><div class="holding-card-pnl pos-txt"><dt>損益</dt><dd>+$66,321 / +158.5%</dd></div><div class="holding-card-action"><dt>行動</dt><dd>—</dd></div></dl>
+      </article>
+      <article class="holding-card" aria-label="TWD">
+        <div class="holding-card-head">
+          <div class="holding-card-symbol"><div class="sym-trigger" tabindex="0" role="button"><span class="sym-text">TWD</span><div class="pop pop-sym" role="tooltip">
+                <h4>TWD · 現金部位</h4>
+                <div class="pop-sub">現金</div>
+                <div class="pop-row"><span class="k">建倉時間</span><span class="v">n/a · n/a</span></div>
+                <div class="pop-row"><span class="k">批次數</span><span class="v">1 批</span></div>
+              </div></div></div>
+          <div class="holding-card-category">現金<span class="tag">現金</span></div>
+        </div>
+        <dl class="holding-card-grid"><div class="holding-card-price"><dt>最新價</dt><dd><div class="price-trigger" tabindex="0" role="button"><span class="na">—</span></div></dd></div><div class="holding-card-weight"><dt>比重</dt><dd>6.6%</dd></div><div class="holding-card-value"><dt>市值</dt><dd>$104,071</dd></div><div class="holding-card-pnl"><dt>損益</dt><dd>—</dd></div><div class="holding-card-action"><dt>行動</dt><dd>—</dd></div></dl>
+      </article>
+      <article class="holding-card" aria-label="2330.TW">
+        <div class="holding-card-head">
+          <div class="holding-card-symbol"><div class="sym-trigger" tabindex="0" role="button"><span class="sym-text">2330.TW</span><div class="pop pop-sym" role="tooltip">
+                <h4>2330.TW · 長線（不賣）</h4>
+                <div class="pop-sub">台股</div>
+                <div class="pop-row"><span class="k">建倉時間</span><span class="v">2024-02 · 2y 2m</span></div>
+                <div class="pop-row"><span class="k">批次數</span><span class="v">4 批</span></div>
+              </div></div></div>
+          <div class="holding-card-category">台股<span class="tag pos">長線</span></div>
+        </div>
+        <dl class="holding-card-grid"><div class="holding-card-price"><dt>最新價</dt><dd><div class="price-trigger" tabindex="0" role="button"><span class="price-num">NT$2,135.00</span><span class="price-sub neg">較前收 −2.06%</span><div class="pop pop-px" role="tooltip">
+                <h4>2330.TW · 每批損益</h4>
+                <div class="pop-sub">最新價 NT$2,135.00 · 來源：no_token:twse_mis · 新鮮度：新鮮 · 市場基準：未知 · 幣別：TWD · 交易所：TWSE · 2026-05-03T09:44:24+00:00</div>
+                <table>
+                  <thead><tr><th>取得日</th><th class="num">成本</th><th class="num">數量</th><th class="num">損益</th></tr></thead>
+                  <tbody><tr><td>2024-02-14</td><td class="num">NT$718.50</td><td class="num">500</td><td class="num"><span class="pop-pos">+NT$708,250</span></td></tr><tr><td>2024-06-18</td><td class="num">NT$867.50</td><td class="num">350</td><td class="num"><span class="pop-pos">+NT$443,625</span></td></tr><tr><td>2025-03-14</td><td class="num">NT$941.50</td><td class="num">220</td><td class="num"><span class="pop-pos">+NT$262,570</span></td></tr><tr><td>2026-03-03</td><td class="num">NT$987.00</td><td class="num">150</td><td class="num"><span class="pop-pos">+NT$172,200</span></td></tr></tbody>
+                  <tfoot class="summary"><tr><td>平均成本 $26.38 (USD)</td><td class="num">$32,187</td><td class="num">1220</td><td class="num"><span class="pop-pos">+$50,164</span></td></tr></tfoot>
+                </table>
+              </div></div></dd></div><div class="holding-card-weight"><dt>比重</dt><dd>5.2%</dd></div><div class="holding-card-value"><dt>市值</dt><dd>$82,351</dd></div><div class="holding-card-pnl pos-txt"><dt>損益</dt><dd>+$50,164 / +155.9%</dd></div><div class="holding-card-action"><dt>行動</dt><dd>續抱核心；下次法說前維持；若本益比突破 29 倍過熱警戒則檢視減碼。</dd></div></dl>
+      </article>
+      <article class="holding-card" aria-label="MSFT">
+        <div class="holding-card-head">
+          <div class="holding-card-symbol"><div class="sym-trigger" tabindex="0" role="button"><span class="sym-text">MSFT</span><div class="pop pop-sym" role="tooltip">
+                <h4>MSFT · 長線（不賣）</h4>
+                <div class="pop-sub">美股</div>
+                <div class="pop-row"><span class="k">建倉時間</span><span class="v">2024-01 · 2y 3m</span></div>
+                <div class="pop-row"><span class="k">批次數</span><span class="v">4 批</span></div>
+              </div></div></div>
+          <div class="holding-card-category">美股<span class="tag pos">長線</span></div>
+        </div>
+        <dl class="holding-card-grid"><div class="holding-card-price"><dt>最新價</dt><dd><div class="price-trigger" tabindex="0" role="button"><span class="price-num">$414.44</span><span class="price-sub pos">較前收 +0.40%</span><div class="pop pop-px" role="tooltip">
+                <h4>MSFT · 每批損益</h4>
+                <div class="pop-sub">最新價 $414.44 · 來源：no_token:stooq · 新鮮度：新鮮 · 市場基準：未知 · 幣別：USD · 交易所：Stooq · 2026-05-01T22:00:22</div>
+                <table>
+                  <thead><tr><th>取得日</th><th class="num">成本</th><th class="num">數量</th><th class="num">損益</th></tr></thead>
+                  <tbody><tr><td>2024-01-19</td><td class="num">$377.42</td><td class="num">80</td><td class="num"><span class="pop-pos">+$2,962</span></td></tr><tr><td>2024-05-03</td><td class="num">$407.65</td><td class="num">35</td><td class="num"><span class="pop-pos">+$238</span></td></tr><tr><td>2025-06-20</td><td class="num">$439.25</td><td class="num">30</td><td class="num"><span class="pop-neg">−$744</span></td></tr><tr><td>2026-01-06</td><td class="num">$427.90</td><td class="num">18</td><td class="num"><span class="pop-neg">−$242</span></td></tr></tbody>
+                  <tfoot class="summary"><tr><td>平均成本 $400.87 (USD)</td><td class="num">$65,341</td><td class="num">163</td><td class="num"><span class="pop-pos">+$2,213</span></td></tr></tfoot>
+                </table>
+              </div></div></dd></div><div class="holding-card-weight"><dt>比重</dt><dd>4.3%</dd></div><div class="holding-card-value"><dt>市值</dt><dd>$67,554</dd></div><div class="holding-card-pnl pos-txt"><dt>損益</dt><dd>+$2,213 / +3.4%</dd></div><div class="holding-card-action"><dt>行動</dt><dd>—</dd></div></dl>
+      </article>
+      <article class="holding-card" aria-label="GOOGL">
+        <div class="holding-card-head">
+          <div class="holding-card-symbol"><div class="sym-trigger" tabindex="0" role="button"><span class="sym-text">GOOGL</span><div class="pop pop-sym" role="tooltip">
+                <h4>GOOGL · 中線（1 年以上）</h4>
+                <div class="pop-sub">美股</div>
+                <div class="pop-row"><span class="k">建倉時間</span><span class="v">2024-02 · 2y 2m</span></div>
+                <div class="pop-row"><span class="k">批次數</span><span class="v">5 批</span></div>
+              </div></div></div>
+          <div class="holding-card-category">美股<span class="tag">中線</span></div>
+        </div>
+        <dl class="holding-card-grid"><div class="holding-card-price"><dt>最新價</dt><dd><div class="price-trigger" tabindex="0" role="button"><span class="price-num">$385.69</span><span class="price-sub pos">較前收 +1.06%</span><div class="pop pop-px" role="tooltip">
+                <h4>GOOGL · 每批損益</h4>
+                <div class="pop-sub">最新價 $385.69 · 來源：no_token:stooq · 新鮮度：新鮮 · 市場基準：未知 · 幣別：USD · 交易所：Stooq · 2026-05-01T22:00:19</div>
+                <table>
+                  <thead><tr><th>取得日</th><th class="num">成本</th><th class="num">數量</th><th class="num">損益</th></tr></thead>
+                  <tbody><tr><td>2024-02-21</td><td class="num">$140.85</td><td class="num">70</td><td class="num"><span class="pop-pos">+$17,139</span></td></tr><tr><td>2024-07-01</td><td class="num">$167.55</td><td class="num">5</td><td class="num"><span class="pop-pos">+$1,091</span></td></tr><tr><td>2025-01-08</td><td class="num">$187.65</td><td class="num">15</td><td class="num"><span class="pop-pos">+$2,971</span></td></tr><tr><td>2025-08-18</td><td class="num">$163.90</td><td class="num">30</td><td class="num"><span class="pop-pos">+$6,654</span></td></tr><tr><td>2026-04-01</td><td class="num">$153.85</td><td class="num">25</td><td class="num"><span class="pop-pos">+$5,796</span></td></tr></tbody>
+                  <tfoot class="summary"><tr><td>平均成本 $153.62 (USD)</td><td class="num">$22,275</td><td class="num">145</td><td class="num"><span class="pop-pos">+$33,650</span></td></tr></tfoot>
+                </table>
+              </div></div></dd></div><div class="holding-card-weight"><dt>比重</dt><dd>3.6%</dd></div><div class="holding-card-value"><dt>市值</dt><dd>$55,925</dd></div><div class="holding-card-pnl pos-txt"><dt>損益</dt><dd>+$33,650 / +151.1%</dd></div><div class="holding-card-action"><dt>行動</dt><dd>—</dd></div></dl>
+      </article>
+      <article class="holding-card" aria-label="NVDA">
+        <div class="holding-card-head">
+          <div class="holding-card-symbol"><div class="sym-trigger" tabindex="0" role="button"><span class="sym-text">NVDA</span><div class="pop pop-sym" role="tooltip">
+                <h4>NVDA · 中線（1 年以上）</h4>
+                <div class="pop-sub">美股</div>
+                <div class="pop-row"><span class="k">建倉時間</span><span class="v">2024-01 · 2y 3m</span></div>
+                <div class="pop-row"><span class="k">批次數</span><span class="v">3 批</span></div>
+              </div></div></div>
+          <div class="holding-card-category">美股<span class="tag">中線</span></div>
+        </div>
+        <dl class="holding-card-grid"><div class="holding-card-price"><dt>最新價</dt><dd><div class="price-trigger" tabindex="0" role="button"><span class="price-num">$198.45</span><span class="price-sub neg">較前收 −1.41%</span><div class="pop pop-px" role="tooltip">
+                <h4>NVDA · 每批損益</h4>
+                <div class="pop-sub">最新價 $198.45 · 來源：no_token:stooq · 新鮮度：新鮮 · 市場基準：未知 · 幣別：USD · 交易所：Stooq · 2026-05-01T22:00:19</div>
+                <table>
+                  <thead><tr><th>取得日</th><th class="num">成本</th><th class="num">數量</th><th class="num">損益</th></tr></thead>
+                  <tbody><tr><td>2024-01-26</td><td class="num">$56.12</td><td class="num">95</td><td class="num"><span class="pop-pos">+$13,521</span></td></tr><tr><td>2024-05-20</td><td class="num">$95.05</td><td class="num">45</td><td class="num"><span class="pop-pos">+$4,653</span></td></tr><tr><td>2025-05-12</td><td class="num">$113.90</td><td class="num">30</td><td class="num"><span class="pop-pos">+$2,536</span></td></tr></tbody>
+                  <tfoot class="summary"><tr><td>平均成本 $76.62 (USD)</td><td class="num">$13,026</td><td class="num">170</td><td class="num"><span class="pop-pos">+$20,711</span></td></tr></tfoot>
+                </table>
+              </div></div></dd></div><div class="holding-card-weight"><dt>比重</dt><dd>2.1%</dd></div><div class="holding-card-value"><dt>市值</dt><dd>$33,736</dd></div><div class="holding-card-pnl pos-txt"><dt>損益</dt><dd>+$20,711 / +159.0%</dd></div><div class="holding-card-action"><dt>行動</dt><dd>—</dd></div></dl>
+      </article>
+      <article class="holding-card" aria-label="SMR">
+        <div class="holding-card-head">
+          <div class="holding-card-symbol"><div class="sym-trigger" tabindex="0" role="button"><span class="sym-text">SMR</span><div class="pop pop-sym" role="tooltip">
+                <h4>SMR · 短線（12 個月）</h4>
+                <div class="pop-sub">美股</div>
+                <div class="pop-row"><span class="k">建倉時間</span><span class="v">2024-08 · 1y 9m</span></div>
+                <div class="pop-row"><span class="k">批次數</span><span class="v">3 批</span></div>
+              </div></div></div>
+          <div class="holding-card-category">美股<span class="tag warn">短線</span></div>
+        </div>
+        <dl class="holding-card-grid"><div class="holding-card-price"><dt>最新價</dt><dd><div class="price-trigger" tabindex="0" role="button"><span class="price-num">$12.14</span><span class="price-sub neg">較前收 −0.74%</span><div class="pop pop-px" role="tooltip">
+                <h4>SMR · 每批損益</h4>
+                <div class="pop-sub">最新價 $12.14 · 來源：no_token:stooq · 新鮮度：新鮮 · 市場基準：未知 · 幣別：USD · 交易所：Stooq · 2026-05-01T22:00:46</div>
+                <table>
+                  <thead><tr><th>取得日</th><th class="num">成本</th><th class="num">數量</th><th class="num">損益</th></tr></thead>
+                  <tbody><tr><td>2024-08-01</td><td class="num">$7.82</td><td class="num">350</td><td class="num"><span class="pop-pos">+$1,512</span></td></tr><tr><td>2025-02-03</td><td class="num">$14.18</td><td class="num">370</td><td class="num"><span class="pop-neg">−$755</span></td></tr><tr><td>2026-02-03</td><td class="num">$21.35</td><td class="num">280</td><td class="num"><span class="pop-neg">−$2,579</span></td></tr></tbody>
+                  <tfoot class="summary"><tr><td>平均成本 $13.96 (USD)</td><td class="num">$13,962</td><td class="num">1000</td><td class="num"><span class="pop-neg">−$1,822</span></td></tr></tfoot>
+                </table>
+              </div></div></dd></div><div class="holding-card-weight"><dt>比重</dt><dd>0.8%</dd></div><div class="holding-card-value"><dt>市值</dt><dd>$12,140</dd></div><div class="holding-card-pnl neg-txt"><dt>損益</dt><dd>−$1,822 / −13.0%</dd></div><div class="holding-card-action"><dt>行動</dt><dd>事件前觀望；財報後 48 小時內重估流動性與商業化里程碑。</dd></div></dl>
+      </article>
     </div>
   </section>
   <section class="section">
@@ -2000,7 +2267,7 @@ img, svg, table { max-width: 100%; }
       <h2>持股損益排序</h2>
       <span class="sub">已實現＋未實現損益（USD）</span>
     </div>
-    <div class="bars"><div class="bar-row"><div class="bar-label">AMD</div><div class="bar-track"><div class="bar pos" style="width:100.0%"></div></div><div class="bar-value pos-txt">+$66,321</div></div><div class="bar-row"><div class="bar-label">2330.TW</div><div class="bar-track"><div class="bar pos" style="width:75.6%"></div></div><div class="bar-value pos-txt">+$50,156</div></div><div class="bar-row"><div class="bar-label">QQQ</div><div class="bar-track"><div class="bar pos" style="width:64.4%"></div></div><div class="bar-value pos-txt">+$42,712</div></div><div class="bar-row"><div class="bar-label">GOOGL</div><div class="bar-track"><div class="bar pos" style="width:50.7%"></div></div><div class="bar-value pos-txt">+$33,650</div></div><div class="bar-row"><div class="bar-label">NVDA</div><div class="bar-track"><div class="bar pos" style="width:31.2%"></div></div><div class="bar-value pos-txt">+$20,711</div></div><div class="bar-row"><div class="bar-label">BTC</div><div class="bar-track"><div class="bar pos" style="width:30.4%"></div></div><div class="bar-value pos-txt">+$20,179</div></div><div class="bar-row"><div class="bar-label">MSFT</div><div class="bar-track"><div class="bar pos" style="width:3.3%"></div></div><div class="bar-value pos-txt">+$2,213</div></div><div class="bar-row"><div class="bar-label">SMR</div><div class="bar-track"><div class="bar neg" style="width:2.7%"></div></div><div class="bar-value neg-txt">−$1,822</div></div></div>
+    <div class="bars"><div class="bar-row"><div class="bar-label">AMD</div><div class="bar-track"><div class="bar pos" style="width:100.0%"></div></div><div class="bar-value pos-txt">+$66,321</div></div><div class="bar-row"><div class="bar-label">2330.TW</div><div class="bar-track"><div class="bar pos" style="width:75.6%"></div></div><div class="bar-value pos-txt">+$50,164</div></div><div class="bar-row"><div class="bar-label">QQQ</div><div class="bar-track"><div class="bar pos" style="width:64.4%"></div></div><div class="bar-value pos-txt">+$42,712</div></div><div class="bar-row"><div class="bar-label">GOOGL</div><div class="bar-track"><div class="bar pos" style="width:50.7%"></div></div><div class="bar-value pos-txt">+$33,650</div></div><div class="bar-row"><div class="bar-label">BTC</div><div class="bar-track"><div class="bar pos" style="width:31.5%"></div></div><div class="bar-value pos-txt">+$20,886</div></div><div class="bar-row"><div class="bar-label">NVDA</div><div class="bar-track"><div class="bar pos" style="width:31.2%"></div></div><div class="bar-value pos-txt">+$20,711</div></div><div class="bar-row"><div class="bar-label">MSFT</div><div class="bar-track"><div class="bar pos" style="width:3.3%"></div></div><div class="bar-value pos-txt">+$2,213</div></div><div class="bar-row"><div class="bar-label">SMR</div><div class="bar-track"><div class="bar neg" style="width:2.7%"></div></div><div class="bar-value neg-txt">−$1,822</div></div></div>
   </section>
   <section class="section">
     <div class="section-head">
@@ -2036,31 +2303,7 @@ img, svg, table { max-width: 100%; }
       <h2>主題與行業暴險</h2>
       <span class="sub">USD 基準 · 含 ETF 穿透分配</span>
     </div>
-    <div class="cols-2">
-  <div>
-    <div class="eyebrow" style="margin-bottom:10px">主題</div>
-    <div class="bars">
-      <div class="bar-row"><div class="bar-label">Mega-cap Tech</div><div class="bar-track"><div class="bar warn" style="width:100%"></div></div><div class="bar-value">43.2%</div></div>
-      <div class="bar-row"><div class="bar-label">AI 算力</div><div class="bar-track"><div class="bar warn" style="width:99%"></div></div><div class="bar-value">42.7%</div></div>
-      <div class="bar-row"><div class="bar-label">雲端 / 資料中心</div><div class="bar-track"><div class="bar warn" style="width:86%"></div></div><div class="bar-value">37.1%</div></div>
-      <div class="bar-row"><div class="bar-label">加密資產</div><div class="bar-track"><div class="bar warn" style="width:60%"></div></div><div class="bar-value">26.1%</div></div>
-      <div class="bar-row"><div class="bar-label">先進封裝</div><div class="bar-track"><div class="bar info" style="width:29%"></div></div><div class="bar-value">12.4%</div></div>
-      <div class="bar-row"><div class="bar-label">新能源 / 核能</div><div class="bar-track"><div class="bar" style="width:4%"></div></div><div class="bar-value">1.8%</div></div>
-    </div>
-  </div>
-  <div>
-    <div class="eyebrow" style="margin-bottom:10px">行業</div>
-    <div class="bars">
-      <div class="bar-row"><div class="bar-label">半導體</div><div class="bar-track"><div class="bar warn" style="width:100%"></div></div><div class="bar-value">34.0%</div></div>
-      <div class="bar-row"><div class="bar-label">加密資產</div><div class="bar-track"><div class="bar warn" style="width:77%"></div></div><div class="bar-value">26.1%</div></div>
-      <div class="bar-row"><div class="bar-label">多元 ETF / 指數</div><div class="bar-track"><div class="bar warn" style="width:57%"></div></div><div class="bar-value">19.4%</div></div>
-      <div class="bar-row"><div class="bar-label">軟體 / 雲端</div><div class="bar-track"><div class="bar warn" style="width:55%"></div></div><div class="bar-value">18.7%</div></div>
-      <div class="bar-row"><div class="bar-label">能源 / 資源</div><div class="bar-track"><div class="bar" style="width:5%"></div></div><div class="bar-value">1.8%</div></div>
-    </div>
-  </div>
-</div>
-<div class="bucket-note"><b>集中度警示：</b>Mega-cap Tech 43.2% ＋ AI 算力 42.7% ＋ 雲端 / 資料中心 37.1% ＝ <b>123.0%</b>，超過 30% 相關性主題上限。</div>
-<div class="bucket-note"><b>行業集中：</b>半導體 34.0%，超過 30% 單一行業上限。</div>
+    <div class="cols-2"><div><div class="eyebrow" style="margin-bottom:10px">主題</div><div class="bars"><div class="bar-row"><div class="bar-label">AI 算力</div><div class="bar-track"><div class="bar warn" style="width:100.0%"></div></div><div class="bar-value">21.0%</div></div><div class="bar-row"><div class="bar-label">加密資產</div><div class="bar-track"><div class="bar " style="width:52.4%"></div></div><div class="bar-value">11.0%</div></div><div class="bar-row"><div class="bar-label">Mega-cap Tech</div><div class="bar-track"><div class="bar " style="width:28.1%"></div></div><div class="bar-value">5.9%</div></div><div class="bar-row"><div class="bar-label">雲端 / 資料中心</div><div class="bar-track"><div class="bar " style="width:14.3%"></div></div><div class="bar-value">3.0%</div></div><div class="bar-row"><div class="bar-label">先進封裝</div><div class="bar-track"><div class="bar " style="width:12.4%"></div></div><div class="bar-value">2.6%</div></div><div class="bar-row"><div class="bar-label">半導體設備</div><div class="bar-track"><div class="bar " style="width:8.1%"></div></div><div class="bar-value">1.7%</div></div><div class="bar-row"><div class="bar-label">新能源 / 核能</div><div class="bar-track"><div class="bar " style="width:3.8%"></div></div><div class="bar-value">0.8%</div></div></div></div><div><div class="eyebrow" style="margin-bottom:10px">行業</div><div class="bars"><div class="bar-row"><div class="bar-label">半導體</div><div class="bar-track"><div class="bar warn" style="width:100.0%"></div></div><div class="bar-value">33.9%</div></div><div class="bar-row"><div class="bar-label">加密資產</div><div class="bar-track"><div class="bar warn" style="width:77.0%"></div></div><div class="bar-value">26.1%</div></div><div class="bar-row"><div class="bar-label">多元 ETF / 指數</div><div class="bar-track"><div class="bar warn" style="width:57.2%"></div></div><div class="bar-value">19.4%</div></div><div class="bar-row"><div class="bar-label">軟體 / 雲端</div><div class="bar-track"><div class="bar warn" style="width:55.2%"></div></div><div class="bar-value">18.7%</div></div><div class="bar-row"><div class="bar-label">新能源 / 核能</div><div class="bar-track"><div class="bar " style="width:5.3%"></div></div><div class="bar-value">1.8%</div></div></div></div></div><div class="bucket-note" style="margin-top:18px"><b>集中度警示：</b>AI 算力 21.0% ＋ 加密資產 11.0% ＋ Mega-cap Tech 5.9% ＝ <b>37.9%</b>，超過 30% 相關性主題上限。</div><div class="bucket-note" style="margin-top:18px"><b>行業集中：</b>半導體 佔 33.9%，超過 30% 單一行業上限。</div>
   </section>
   <section class="section">
     <div class="section-head">
@@ -2068,61 +2311,61 @@ img, svg, table { max-width: 100%; }
       <span class="sub">每核心部位 1–3 則</span>
     </div>
     <div class="news">      <div class="item">
-        <div class="meta"><span class="tk">2330.TW</span>2026-04-17</div>
+        <div class="meta"><span class="tk">2330.TW</span>2026-04-29</div>
         <div class="body">
-          <div class="head">TSMC 上調 2026 revenue / capex 語氣，AI megatrend 仍是管理層主軸；但能源與地緣成本壓力需納入毛利風險。</div>
-          <div class="src">來源：<a href="https://www.tomshardware.com/tech-industry/semiconductors/tsmc-ups-revenue-guidance-and-capex-buoyed-by-multiyear-ai-megatrend-warns-middle-east-conflict-may-impact-profitability-as-costs-increase" target="_blank" rel="noopener noreferrer">Tom&#x27;s Hardware</a></div>
+          <div class="head">台積電股價創高後拉回，分析師指本益比仍落在歷史區間內</div>
+          <div class="src">來源：<a href="https://www.taipeitimes.com/News/biz/archives/2026/04/29/2003856408" target="_blank" rel="noopener noreferrer">Taipei Times</a></div>
         </div>
-        <span class="impact pos">正面</span>
+        <span class="impact neu">中性</span>
       </div>      <div class="item">
         <div class="meta"><span class="tk">MSFT</span>2026-04-29</div>
         <div class="body">
-          <div class="head">FY26 Q3 revenue 829 億美元 +18%，EPS 4.27 美元 +23%；Microsoft Cloud 545 億美元 +29%。</div>
+          <div class="head">Microsoft FY26 Q3：營收 829 億美元、Azure 增 40%，並上修全年資本支出展望</div>
           <div class="src">來源：<a href="https://www.microsoft.com/en-us/Investor/earnings/FY-2026-Q3/press-release-webcast" target="_blank" rel="noopener noreferrer">Microsoft IR</a></div>
         </div>
-        <span class="impact pos">正面</span>
-      </div>      <div class="item">
-        <div class="meta"><span class="tk">QQQ</span>2026-05-01</div>
-        <div class="body">
-          <div class="head">Nasdaq-100 fast-entry rule 生效，未來大型 IPO 可能更快進入指數，對 QQQ 被動資金增加價格發現與追高風險。</div>
-          <div class="src">來源：<a href="https://www.kiplinger.com/investing/what-the-nasdaqs-new-fast-entry-rule-means-for-investors" target="_blank" rel="noopener noreferrer">Kiplinger</a></div>
-        </div>
         <span class="impact neu">中性</span>
       </div>      <div class="item">
-        <div class="meta"><span class="tk">AMD</span>2026-05-02</div>
+        <div class="meta"><span class="tk">QQQ</span>2026-04-30</div>
         <div class="body">
-          <div class="head">AMD 財報前 options implied move 約 8%；市場預期 Q1 revenue 98.8 億美元、adj. EPS 1.27 美元。</div>
-          <div class="src">來源：<a href="https://www.investopedia.com/how-much-is-amd-stock-expected-to-move-after-earnings-q1-fy2026-11962852" target="_blank" rel="noopener noreferrer">Investopedia</a></div>
+          <div class="head">QQQ 創新高，估值與 mega-cap 財報週成為短線主要變數</div>
+          <div class="src">來源：<a href="https://www.ainvest.com/news/qqq-hits-record-high-big-tech-earnings-trigger-sharp-reset-2605/" target="_blank" rel="noopener noreferrer">AInvest</a></div>
         </div>
-        <span class="impact neu">中性</span>
+        <span class="impact warn">中性</span>
       </div>      <div class="item">
-        <div class="meta"><span class="tk">BTC</span>2026-05-02</div>
+        <div class="meta"><span class="tk">AMD</span>2026-04-30</div>
         <div class="body">
-          <div class="head">BTC 接近 7.8 萬美元，近期區間約 75,700–79,100；ETF inflows 約 19 億美元支撐需求。</div>
-          <div class="src">來源：<a href="https://m.economictimes.com/markets/cryptocurrency/bitcoin-nears-78000-as-crypto-market-cap-hits-2-6-trillion-1-9-billion-etf-inflows-signal-strong-demand/articleshow/130712129.cms" target="_blank" rel="noopener noreferrer">Economic Times</a></div>
+          <div class="head">華爾街密集上調 AMD 目標價，市場聚焦 5/5 財報與資料中心需求能見度</div>
+          <div class="src">來源：<a href="https://finance.yahoo.com/markets/stocks/articles/wall-street-resets-amd-stock-175810271.html" target="_blank" rel="noopener noreferrer">Yahoo Finance</a></div>
         </div>
         <span class="impact pos">正面</span>
+      </div>      <div class="item">
+        <div class="meta"><span class="tk">BTC</span>2026-05-01</div>
+        <div class="body">
+          <div class="head">比特幣 4 月大漲但現貨需求疲弱，CryptoQuant 指槓桿主導行情</div>
+          <div class="src">來源：<a href="https://www.cnbc.com/2026/05/01/bitcoin-surged-in-april-but-weak-buyer-demand-makes-rally-vulnerable.html" target="_blank" rel="noopener noreferrer">CNBC</a></div>
+        </div>
+        <span class="impact warn">中性</span>
       </div>      <div class="item">
         <div class="meta"><span class="tk">GOOGL</span>2026-04-29</div>
         <div class="body">
-          <div class="head">Alphabet Q1 revenue 1,099 億美元 +22%，Google Cloud 200 億美元 +63%，operating margin 36.1%。</div>
-          <div class="src">來源：<a href="https://www.sec.gov/Archives/edgar/data/1652044/000165204426000043/googexhibit991q12026.htm" target="_blank" rel="noopener noreferrer">SEC exhibit 99.1</a></div>
+          <div class="head">Alphabet Q1 2026：營收 1,099 億美元、Google Cloud 年增 63%</div>
+          <div class="src">來源：<a href="https://www.cnbc.com/2026/04/29/alphabet-googl-q1-2026-earnings.html" target="_blank" rel="noopener noreferrer">CNBC</a></div>
         </div>
         <span class="impact pos">正面</span>
       </div>      <div class="item">
-        <div class="meta"><span class="tk">NVDA</span>2026-02-25</div>
+        <div class="meta"><span class="tk">NVDA</span>2026-04-27</div>
         <div class="body">
-          <div class="head">NVIDIA FY26 revenue 2,159 億美元 +65%，Data Center Q4 revenue 623 億美元 +75%；下一個檢查點是 05-20 財報。</div>
-          <div class="src">來源：<a href="https://investor.nvidia.com/news/press-release-details/2026/NVIDIA-Announces-Financial-Results-for-Fourth-Quarter-and-Fiscal-2026/" target="_blank" rel="noopener noreferrer">NVIDIA IR</a></div>
+          <div class="head">NVIDIA 股價創新高，市場等待 5 月下旬財報驗證資料中心動能</div>
+          <div class="src">來源：<a href="https://www.ibtimes.com.au/nvidia-stock-hits-record-high-216-4-surge-ai-demand-powers-2026-rally-1867662" target="_blank" rel="noopener noreferrer">IBTimes</a></div>
         </div>
         <span class="impact pos">正面</span>
       </div>      <div class="item">
-        <div class="meta"><span class="tk">SMR</span>2026-04-25</div>
+        <div class="meta"><span class="tk">SMR</span>2026-05-01</div>
         <div class="body">
-          <div class="head">NuScale 仍以工業合作與商業化路徑作為敘事核心；05-07 Q1 call 需驗證訂單、現金與 dilution 風險。</div>
-          <div class="src">來源：<a href="https://simplywall.st/stocks/us/capital-goods/nyse-smr/nuscale-power/news/is-nuscale-smr-turning-industrial-partnerships-into-a-credib" target="_blank" rel="noopener noreferrer">Simply Wall St</a></div>
+          <div class="head">NuScale 歐洲首座 SMR 專案推進，市場關注 LCOE 與 5/7 財報現金路徑</div>
+          <div class="src">來源：<a href="https://www.fool.com/investing/2026/05/01/1-overlooked-detail-to-watch-as-nuscales-smr-proje/" target="_blank" rel="noopener noreferrer">Motley Fool</a></div>
         </div>
-        <span class="impact neu">中性</span>
+        <span class="impact warn">中性</span>
       </div></div>
   </section>
   <section class="section">
@@ -2132,8 +2375,8 @@ img, svg, table { max-width: 100%; }
     </div>
     <div class="timeline" aria-label="未來 30 天事件時間軸">
       <div class="axis"></div>
-      <span class="tick" style="left:0%"></span><span class="tick-label" style="left:0%">05-02</span><span class="tick" style="left:25%"></span><span class="tick-label" style="left:25%">05-09</span><span class="tick" style="left:50%"></span><span class="tick-label" style="left:50%">05-17</span><span class="tick" style="left:75%"></span><span class="tick-label" style="left:75%">05-24</span><span class="tick" style="left:100%"></span><span class="tick-label" style="left:100%">06-01</span>
-      <span class="pin warn" style="left:10.0%" title="05-05 AMD FY2026 Q1 financial results"></span><span class="pin-label" style="left:10.0%">AMD 05-05</span><span class="pin warn" style="left:16.7%" title="05-07 SMR Q1 2026 results call"></span><span class="pin-label" style="left:16.7%">SMR 05-07</span><span class="pin info" style="left:20.0%" title="05-08 Macro BLS April Employment Situation"></span><span class="pin-label" style="left:20.0%">Macro 05-08</span><span class="pin warn" style="left:33.3%" title="05-12 Macro BLS April CPI"></span><span class="pin-label" style="left:33.3%">Macro 05-12</span><span class="pin warn" style="left:60.0%" title="05-20 NVDA Next earnings report expected"></span><span class="pin-label" style="left:60.0%">NVDA 05-20</span><span class="pin info" style="left:60.0%" title="05-20 Macro FOMC minutes for April 28-29 meeting"></span><span class="pin-label" style="left:60.0%">Macro 05-20</span><span class="pin warn" style="left:86.7%" title="05-28 Macro BEA April Personal Income and Outlays / PCE"></span><span class="pin-label" style="left:86.7%">Macro 05-28</span>
+      <span class="tick" style="left:0%"></span><span class="tick-label" style="left:0%">05-03</span><span class="tick" style="left:25%"></span><span class="tick-label" style="left:25%">05-10</span><span class="tick" style="left:50%"></span><span class="tick-label" style="left:50%">05-18</span><span class="tick" style="left:75%"></span><span class="tick-label" style="left:75%">05-25</span><span class="tick" style="left:100%"></span><span class="tick-label" style="left:100%">06-02</span>
+      <span class="pin warn" style="left:6.7%" title="05-05 AMD Q1 2026 財報（盤後）"></span><span class="pin-label" style="left:6.7%">AMD 05-05</span><span class="pin warn" style="left:13.3%" title="05-07 SMR Q1 2026 財報電話會議（盤後）"></span><span class="pin-label" style="left:13.3%">SMR 05-07</span><span class="pin warn" style="left:56.7%" title="05-20 NVDA NVIDIA 財報窗口（共識關注資料中心營收）"></span><span class="pin-label" style="left:56.7%">NVDA 05-20</span><span class="pin" style="left:23.3%" title="05-10 MSFT Build / 投資人溝通檢視 AI 產品採用與 capex 效率"></span><span class="pin-label" style="left:23.3%">MSFT 05-10</span>
     </div>
     <div class="tbl-wrap scroll-y" style="margin-top:14px">
       <table>
@@ -2143,51 +2386,30 @@ img, svg, table { max-width: 100%; }
         <tbody>          <tr>
             <td>2026-05-05</td>
             <td>AMD</td>
-            <td>FY2026 Q1 financial results</td>
+            <td>Q1 2026 財報（盤後）</td>
             <td><span class="tag warn">高</span></td>
-            <td>確認 AI accelerator / EPYC 指引能否支撐財報前高預期。</td>
+            <td>資料中心營收占比與 MI 系列 ramp 指引</td>
           </tr>
           <tr>
             <td>2026-05-07</td>
             <td>SMR</td>
-            <td>Q1 2026 results call</td>
+            <td>Q1 2026 財報電話會議（盤後）</td>
             <td><span class="tag warn">高</span></td>
-            <td>確認 ENTRA1/TVA、工業合作、現金消耗與 ATM 稀釋節奏。</td>
-          </tr>
-          <tr>
-            <td>2026-05-08</td>
-            <td>Macro</td>
-            <td>BLS April Employment Situation</td>
-            <td><span class="tag info">中</span></td>
-            <td>利率預期與 QQQ / BTC beta。</td>
-          </tr>
-          <tr>
-            <td>2026-05-12</td>
-            <td>Macro</td>
-            <td>BLS April CPI</td>
-            <td><span class="tag warn">高</span></td>
-            <td>高估值 AI 與 BTC 對通膨/殖利率再定價敏感。</td>
+            <td>現金跑道與專案里程碑是否下修</td>
           </tr>
           <tr>
             <td>2026-05-20</td>
             <td>NVDA</td>
-            <td>Next earnings report expected</td>
+            <td>NVIDIA 財報窗口（共識關注資料中心營收）</td>
             <td><span class="tag warn">高</span></td>
-            <td>確認 Vera Rubin / data center revenue runway，避免只靠多重擴張。</td>
+            <td>Blackwell 出貨與毛利率路徑</td>
           </tr>
           <tr>
-            <td>2026-05-20</td>
-            <td>Macro</td>
-            <td>FOMC minutes for April 28-29 meeting</td>
-            <td><span class="tag info">中</span></td>
-            <td>觀察委員分歧與 easing bias 是否支撐長 duration growth。</td>
-          </tr>
-          <tr>
-            <td>2026-05-28</td>
-            <td>Macro</td>
-            <td>BEA April Personal Income and Outlays / PCE</td>
-            <td><span class="tag warn">高</span></td>
-            <td>核心 PCE 若再熱，QQQ/GOOGL/MSFT 估值承壓。</td>
+            <td>2026-05-10</td>
+            <td>MSFT</td>
+            <td>Build / 投資人溝通檢視 AI 產品採用與 capex 效率</td>
+            <td><span class="tag neu">中</span></td>
+            <td>企業 Copilot 滲透與雲端邊際</td>
           </tr></tbody>
       </table>
     </div>
@@ -2200,22 +2422,14 @@ img, svg, table { max-width: 100%; }
     <div class="cols-2">
       <div>
         <div class="eyebrow" style="margin-bottom:10px">高風險 · 固定規則 v1</div>
-        <div class="risk-grid"><div class="risk r-high"><div class="t">BTC</div><div class="s">風險 6 / 10 · 加密資產 · 中線桶 · 權重 ≥ 10.0% 上限</div><div class="m">11.0% · +0.2%</div></div><div class="risk r-low"><div class="t">AMD</div><div class="s">風險 2 / 10 · 中線桶 · 權重 ≥ 5.0%</div><div class="m">6.9% · +2.5%</div></div><div class="risk r-low"><div class="t">SMR</div><div class="s">風險 2 / 10 · 短線桶</div><div class="m">0.8% · -0.7%</div></div><div class="risk r-low"><div class="t">QQQ</div><div class="s">風險 1 / 10 · 權重 ≥ 5.0%</div><div class="m">8.2% · +0.7%</div></div><div class="risk r-low"><div class="t">2330.TW</div><div class="s">風險 1 / 10 · 權重 ≥ 5.0%</div><div class="m">5.2% · -2.1%</div></div><div class="risk r-low"><div class="t">GOOGL</div><div class="s">風險 1 / 10 · 中線桶</div><div class="m">3.6% · +1.1%</div></div><div class="risk r-low"><div class="t">NVDA</div><div class="s">風險 1 / 10 · 中線桶</div><div class="m">2.1% · -1.4%</div></div><div class="risk r-low"><div class="t">MSFT</div><div class="s">風險 0 / 10 · 核心部位 / 波動低</div><div class="m">4.3% · +0.4%</div></div></div>
+        <div class="risk-grid"><div class="risk r-high"><div class="t">BTC</div><div class="s">風險 6 / 10 · 加密資產 · 中線桶 · 權重 ≥ 10.0% 上限</div><div class="m">11.0% · +0.3%</div></div><div class="risk r-low"><div class="t">AMD</div><div class="s">風險 2 / 10 · 中線桶 · 權重 ≥ 5.0%</div><div class="m">6.9% · +2.5%</div></div><div class="risk r-low"><div class="t">SMR</div><div class="s">風險 2 / 10 · 短線桶</div><div class="m">0.8% · -0.7%</div></div><div class="risk r-low"><div class="t">QQQ</div><div class="s">風險 1 / 10 · 權重 ≥ 5.0%</div><div class="m">8.2% · +0.7%</div></div><div class="risk r-low"><div class="t">2330.TW</div><div class="s">風險 1 / 10 · 權重 ≥ 5.0%</div><div class="m">5.2% · -2.1%</div></div><div class="risk r-low"><div class="t">GOOGL</div><div class="s">風險 1 / 10 · 中線桶</div><div class="m">3.6% · +1.1%</div></div><div class="risk r-low"><div class="t">NVDA</div><div class="s">風險 1 / 10 · 中線桶</div><div class="m">2.1% · -1.4%</div></div><div class="risk r-low"><div class="t">MSFT</div><div class="s">風險 0 / 10 · 核心部位 / 波動低</div><div class="m">4.3% · +0.4%</div></div></div>
       </div>
       <div>
         <div class="eyebrow" style="margin-bottom:10px">高機會</div>
         <div class="opp-list">          <div class="item">
-            <div class="tk">2330.TW</div>
-            <div class="why">Q1、月營收與 Q2 指引支撐 AI foundry demand，且倉位 5.2% 未碰單名軌道；但半導體行業已 34.0%，不急著擴張。</div>
-            <div class="trig">若跌回 1,900–1,980 TWD 且月營收 YoY 仍 &gt;25%，再評估 +1pp。</div>
-          </div>          <div class="item">
             <div class="tk">GOOGL</div>
-            <div class="why">Q1 Cloud +63%、Search +19% 是本輪 AI capex 中少數已看到收入回收的證據；但 2026-04-01 批次已大幅獲利，等回落。</div>
-            <div class="trig">若財報後回測 350 美元附近且 Cloud backlog 未降溫，才考慮加碼。</div>
-          </div>          <div class="item">
-            <div class="tk">NVDA</div>
-            <div class="why">05-20 財報是全書 AI beta 的核心驗證；目前 2.1% 權重太小但預期很滿，等待數據。</div>
-            <div class="trig">財報後若 revenue guide &gt; 市場預期且 gross margin 未破壞，再評估右側加碼。</div>
+            <div class="why">雲端與搜尋 AI 敘事同步加速，但部位已反應部分利多；我不在情緒高檔追價。</div>
+            <div class="trig">若回檔至年內風險報酬重新優於 2:1 再評估加碼。</div>
           </div></div>
       </div>
     </div>
@@ -2236,27 +2450,27 @@ img, svg, table { max-width: 100%; }
         </colgroup>
         <thead><tr><th>標的</th><th class="num">目前</th><th>建議</th><th>理由</th><th>觸發</th></tr></thead>
         <tbody>          <tr>
-            <td><span class="sym-trigger" tabindex="0" role="button">BTC</span></td>
-            <td class="num">11.0%</td>
-            <td><span class="adj-action trim">減碼 -1.0pp</span></td>
-            <td class="why">BTC 11.0% 超過 10% 單一資產軌道；ETF flow 強但這是軌道修正，不是否定長期配置。<br><span class="pm-meta">標籤：rebalance<br>R:R = n/a（再平衡）<br>組合適配 — 規模 -1.0 NAV百分點；相關標的 Q, Q, Q,  , /,  , h, i, g, h, -, b, e, t, a,  , l, i, q, u, i, d, i, t, y；主題重疊 加, 密, 資, 產；限制通過；單一標的 10.0% vs 警戒 10.0%；現金 59.0% vs 底線 10.0%</span><div class="reviewer-note-inline"><b>審稿備註:</b> 此處用軌道修正而非價格停損，符合合成策略的 rail-aware sizing；但若 BTC 重新跌破 72,000，需另寫非再平衡 kill。</div></td>
-            <td class="trig">賣出約 1.0pp NAV，使 BTC 權重回到 10% 以內；優先減 2025-03-01 高成本批次。</td>
+            <td><span class="sym-label">2330.TW</span></td>
+            <td class="num">5.2%</td>
+            <td><span class="adj-action hold">續抱核心</span></td>
+            <td class="why">法說上修展望與 FSC 鬆綁單一持股上限強化長線結構，估值仍在歷史區間內。<br><span class="pm-meta">組合適配 — 規模 +0.0 NAV百分點；限制通過；單一標的 5.2% vs 警戒 10.0%</span></td>
+            <td class="trig">下次法說前維持；若本益比突破 29 倍過熱警戒則檢視減碼。</td>
           </tr>          <tr>
-            <td><span class="sym-trigger" tabindex="0" role="button">SMR</span></td>
+            <td><span class="sym-label">SMR</span></td>
             <td class="num">0.8%</td>
-            <td><span class="adj-action watch">等待 05-07</span></td>
-            <td class="why">短期桶已持有過長，2026-02-03 批次 -43%；但倉位僅 0.8%，可用財報事件驗證商業化，而不是現在用噪音砍光。</td>
-            <td class="trig">05-07 call 若沒有實質訂單/現金跑道改善，砍 2026-02-03 批次；若有進展，重分類為中期高波動倉。</td>
+            <td><span class="adj-action wait">事件前觀望</span></td>
+            <td class="why">5/7 財報與現金消耗是主要不確定性；短線桶已出現深度虧損部位。<br><span class="pm-meta">組合適配 — 規模 +0.0 NAV百分點；限制通過；單一標的 0.8% vs 警戒 10.0%</span></td>
+            <td class="trig">財報後 48 小時內重估流動性與商業化里程碑。</td>
           </tr>          <tr>
-            <td><span class="sym-trigger" tabindex="0" role="button">AMD</span></td>
-            <td class="num">6.9%</td>
-            <td><span class="adj-action watch">財報後再決定</span></td>
-            <td class="why">AMD 已 +158% unrealized，05-05 implied move 約 8%，市場預期已高；此刻追價不符合低 hype 容忍度。</td>
-            <td class="trig">財報後若 revenue/EPS beat 且 AI guide 上修，回測不破 331–340 美元再看 +1pp。</td>
+            <td><span class="sym-label">BTC</span></td>
+            <td class="num">11.0%</td>
+            <td><span class="adj-action trim">減碼衛星</span></td>
+            <td class="why">槓桿主導漲勢與現貨需求背離，且權重觸及單一標的警戒；我降低尾部曝險。<br><span class="pm-meta">標籤：variant；共識：ETF 淨流入與機構買盤支撐延續上行（公開報導彙整）。；變異觀點：市場押注延續升勢，我認為槓桿結構使回檔速度被低估。；錨點：CryptoQuant 指出 4 月漲勢主要由永續合約需求驅動、現貨 30 日變化仍為負。<br>目標 $82000 (+5%) / 停損 $74800 (-4%) → R:R = 1.13:1<br>錯誤原因：若現貨買盤回補且 ETF 週流入重新放大，則減碼可能是左側。<br>失效：週線收低於 74,800 且 ETF 單週淨流出連兩週。<br>失效動作：cut<br>組合適配 — 規模 -1.0 NAV百分點；相關標的 Q, Q, Q, 、, N, V, D, A, （, 風, 險, 偏, 好, 同, 向, ）；主題重疊 加, 密, 資, 產, 主, 題；觸及限制： single-name；單一標的 10.0% vs 警戒 10.0%</span></td>
+            <td class="trig">若本週無法站回資金流入正軌則執行減碼約 1pp NAV。</td>
           </tr></tbody>
       </table>
     </div>
-    
+    <aside class="reviewer-note-block"><ul><li><b>審稿備註:</b> 審稿備註：SMR 建議為事件前觀望，若財報現金跑道顯著惡化，應把「wait」升級為具體 trim 並指名 lot。</li></ul></aside>
   </section>
   <section class="section">
     <div class="section-head">
@@ -2264,11 +2478,10 @@ img, svg, table { max-width: 100%; }
       <span class="sub">優先順序</span>
     </div>
     <ul class="actions">
-<li><span class="lbl do">必做</span><span>BTC 減碼 -1.0pp — 單一資產 11.0% 超過 10% 軌道。 — 觸發: 用 2025-03-01 高成本批次把權重降回 10% 以內。<br><span class="pm-meta">標籤: rebalance<br>失效動作: n/a (housekeeping)<br>規模 -1.0 NAV百分點</span></span></li>
-<li><span class="lbl may">可做</span><span>SMR 05-07 後處理批次 — 短期桶已跨年且高成本批次大幅虧損。 — 觸發: 若 call 無訂單/現金跑道改善，砍 2026-02-03 批次；若有，重分類。</span></li>
-<li><span class="lbl no">不建議</span><span>避免在 05-05 AMD 與 05-20 NVDA 前用市價追 AI beta；先等財報與指引。</span></li>
-<li><span class="lbl no">不建議</span><span>避免把 58% 現金視為問題；目前它是等待財報與通膨事件後再部署的選擇權。</span></li>
-<li><span class="lbl fix">補資料</span><span>MSFT / GOOGL 下一季 capex ROI 與 cloud backlog conversion；若只剩 capex story 而收入不跟，才需要降權重。</span></li>
+<li><span class="lbl do">必做</span><span>AMD 5/5 財報前維持部位，驗證資料中心與 MI GPU 斜率。 — 投行模型上修已部分定價，我等待官方數字確認。 — 觸發: EPS 與下季指引 vs Visible Alpha 共識。<br><span class="pm-meta">規模 +0.0 NAV百分點</span></span></li>
+<li><span class="lbl may">可做</span><span>MSFT 雲端強勁但 capex 上修壓縮自由現金；我觀察下一季邊際而非加碼。 — FY26 Q3 beat 已反映於價格，指引保守。 — 觸發: 若 FCF margin 連兩季回升再評估。<br><span class="pm-meta">規模 +0.0 NAV百分點</span></span></li>
+<li><span class="lbl no">不建議</span><span>在缺乏現貨承接證據下追價加碼 BTC 槓桿單邊行情。</span></li>
+<li><span class="lbl fix">補資料</span><span>NuScale 與歐洲 SMR 專案的具體收入認列時間表仍待管理層量化。</span></li>
     </ul>
     
   </section>
@@ -2277,7 +2490,7 @@ img, svg, table { max-width: 100%; }
       <h2>資料來源與缺口</h2>
       <span class="sub">每筆價格的取得方式與新鮮度 · 待補資料逐項列出</span>
     </div>
-    <div class="strategy-readout-wrap" style="margin-bottom:18px"><div class="eyebrow" style="margin-bottom:8px">投資策略筆記</div><div class="prose"><p>策略讀出 — 我把這個合成帳本當成雙幣別、多年期核心科技加小型戰術倉來管：核心 US/TW 與 QQQ 可忍受波動，BTC/SMR 受單一資產、主題、高波動與現金底線軌道約束。我的加碼必須有財報、需求或技術面確認；低 hype 容忍度要求所有上行都用 base/bull/bear 或明確觸發，不用故事追價。減風險時優先賣最高成本批次。</p></div></div>
+    <div class="strategy-readout-wrap" style="margin-bottom:18px"><div class="eyebrow" style="margin-bottom:8px">投資策略筆記</div><div class="prose"><p>我是雙貨幣模型帳戶：核心放在美台大型品質與成長，加密為衛星高波動倉；我接受多年持有但要求每個上行論述有 base／bull／bear 區間與可驗證錨點。單一標的與主題集中度遵守部位上限欄位，減碼時優先處理最高成本短線桶位。我不相信用情緒性語言包裝沒有數據的樂觀，因此今天所有判斷都綁在公開財報、監管與市場數據上。</p></div></div>
     <div class="eyebrow" style="margin-bottom:10px">最新價來源稽核</div>
     <div class="tbl-wrap scroll-y">
       <table class="src-tbl">
@@ -2288,7 +2501,7 @@ img, svg, table { max-width: 100%; }
             <td>2330.TW</td>
             <td>no_token:twse_mis</td>
             <td>未知</td>
-            <td class="num">2026-05-02T12:41:43+00:00</td>
+            <td class="num">2026-05-03T09:44:24+00:00</td>
             <td><span class="freshness fresh">新鮮</span></td>
             <td>yfinance_per_ticker_miss</td>
           </tr>          <tr>
@@ -2302,7 +2515,7 @@ img, svg, table { max-width: 100%; }
             <td>BTC</td>
             <td>no_token:binance</td>
             <td>24 小時交易</td>
-            <td class="num">2026-05-02T12:41:47+00:00</td>
+            <td class="num">2026-05-03T09:44:28+00:00</td>
             <td><span class="freshness fresh">新鮮</span></td>
             <td>—</td>
           </tr>          <tr>
@@ -2358,14 +2571,14 @@ img, svg, table { max-width: 100%; }
             <td>FX USD/TWD</td>
             <td>no_token:open_er_api</td>
             <td>未知</td>
-            <td class="num">Sat, 02 May 2026 00:02:31 +0000</td>
+            <td class="num">Sun, 03 May 2026 00:02:31 +0000</td>
             <td><span class="freshness fresh">新鮮</span></td>
-            <td>rate=31.634149<br>yfinance_per_ticker_miss</td>
+            <td>rate=31.629326<br>yfinance_per_ticker_miss</td>
           </tr></tbody>
       </table>
     </div>
     <div class="eyebrow" style="margin-top:22px;margin-bottom:6px">資料缺口</div>
-    <ul class="gap-list"><li><b>event_search:2330.TW:no_dated_catalyst_within_30d:</b> TSMC 近期已有 Q1 call 與 March revenue；30 天內未找到已公告下一個公司事件。</li><li><b>event_search:MSFT:no_dated_catalyst_within_30d:</b> FY26 Q3 已於 2026-04-29 發布；30 天內未找到下一個正式公司催化日。</li><li><b>event_search:GOOGL:no_dated_catalyst_within_30d:</b> Q1 已於 2026-04-29 發布；30 天內未找到下一個正式公司催化日。</li><li><b>event_search:QQQ:no_company_dated_catalyst_within_30d:</b> Macro CPI/PCE/FOMC events are included, but QQQ itself has no issuer-style dated catalyst.</li><li><b>event_search:BTC:no_asset_specific_dated_catalyst_within_30d:</b> Macro CPI/PCE events are included as liquidity catalysts, but BTC has no issuer-style dated catalyst.</li><li><b>獲利面板資料缺口:</b><ul class="gap-sublist"><li>1D: P&amp;L differs from realized + unrealized_delta by -91.14 (cash/FX drift or missing marks)</li><li>1D: residual -91.14 = fx_drift -91.14 + cash_drift 0.00</li><li>7D: P&amp;L differs from realized + unrealized_delta by -450.01 (cash/FX drift or missing marks)</li><li>7D: residual -450.01 = fx_drift -450.01 + cash_drift 0.00</li><li>MTD: P&amp;L differs from realized + unrealized_delta by -281.15 (cash/FX drift or missing marks)</li><li>MTD: residual -281.15 = fx_drift -281.15 + cash_drift 0.00</li><li>1M: P&amp;L differs from realized + unrealized_delta by 1296.55 (cash/FX drift or missing marks)</li><li>1M: residual 1296.55 = fx_drift 1296.55 + cash_drift 0.00</li><li>YTD: P&amp;L differs from realized + unrealized_delta by -1652.06 (cash/FX drift or missing marks)</li><li>YTD: residual -1652.06 = fx_drift -1618.38 + cash_drift -33.68</li><li>1Y: P&amp;L differs from realized + unrealized_delta by 1841.40 (cash/FX drift or missing marks)</li><li>1Y: residual 1841.40 = fx_drift 1879.52 + cash_drift -38.12</li><li class="gap-overflow">+2 more</li></ul></li><li class="reviewer-summary"><b>審稿總覽:</b> 審稿摘要：主要行動只做 BTC 軌道修正，與高現金、低 hype 容忍度一致。最大殘餘風險是 AI 主題高度相關，報告已標示但尚未提供對沖；若 05-05 AMD 與 05-20 NVDA 同時失望，需回到 Phase B 重估半導體總曝險。</li></ul>
+    <ul class="gap-list"><li><b>獲利面板資料缺口:</b><ul class="gap-sublist"><li>1D: P&amp;L differs from realized + unrealized_delta by -70.36 (cash/FX drift or missing marks)</li><li>1D: residual -70.36 = fx_drift -70.36 + cash_drift -0.00</li><li>7D: P&amp;L differs from realized + unrealized_delta by -820.52 (cash/FX drift or missing marks)</li><li>7D: residual -820.52 = fx_drift -820.52 + cash_drift 0.00</li><li>MTD: P&amp;L differs from realized + unrealized_delta by -260.38 (cash/FX drift or missing marks)</li><li>MTD: residual -260.38 = fx_drift -260.38 + cash_drift 0.00</li><li>1M: P&amp;L differs from realized + unrealized_delta by 1317.33 (cash/FX drift or missing marks)</li><li>1M: residual 1317.33 = fx_drift 1317.33 + cash_drift -0.00</li><li>YTD: P&amp;L differs from realized + unrealized_delta by -1631.29 (cash/FX drift or missing marks)</li><li>YTD: residual -1631.29 = fx_drift -1598.64 + cash_drift -32.65</li><li>1Y: P&amp;L differs from realized + unrealized_delta by 1861.70 (cash/FX drift or missing marks)</li><li>1Y: residual 1861.70 = fx_drift 1898.79 + cash_drift -37.09</li><li class="gap-overflow">+2 more</li></ul></li><li class="reviewer-summary"><b>審稿總覽:</b> 審稿備註：BTC 減碼建議與「低 hype」一致，但 kill 價與 ETF 流量連動需在用戶執行時再對齊實際券商成交與費用。</li></ul>
     
   </section>
   <footer class="footer">

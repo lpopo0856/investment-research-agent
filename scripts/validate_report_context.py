@@ -52,6 +52,73 @@ REQUIRED_REVIEW_SECTIONS = {
 }
 VALID_PSYCHOLOGY_TONES = {"pos", "neu", "warn", "neg"}
 VALID_PSYCHOLOGY_PRIORITIES = {"high", "medium", "low"}
+QUALITY_SCHEMA_HORIZON_V1 = "horizon_v1"
+VALID_RESEARCH_HORIZONS = {"short_term", "mid_term", "long_term_core", "unknown"}
+VALID_EXPECTED_RESEARCH_HORIZONS = VALID_RESEARCH_HORIZONS | {"mixed_requires_audit"}
+VALID_RESEARCH_DEPTHS = {"tactical", "thesis", "strategic", "audit_only", "need_data"}
+TACTICAL_STATUSES = {"act_now", "wait", "exit", "need_data"}
+THESIS_STATUSES = {"strengthening", "intact", "weakening", "broken", "need_data"}
+STRATEGIC_STATUSES = {
+    "strategic_role_intact",
+    "allocation_risk_rising",
+    "thesis_changed",
+    "need_data",
+}
+VALID_DECISION_STATUSES = TACTICAL_STATUSES | THESIS_STATUSES | STRATEGIC_STATUSES
+VALID_EVIDENCE_CLASSES = {
+    "catalyst",
+    "technical",
+    "flow_positioning",
+    "expectation_delta",
+    "primary_source",
+    "industry_peer",
+    "valuation",
+    "macro_policy",
+    "allocation_role",
+    "audited_absence",
+}
+TACTICAL_EVIDENCE_CLASSES = {
+    "catalyst",
+    "technical",
+    "flow_positioning",
+    "expectation_delta",
+    "audited_absence",
+}
+THESIS_EVIDENCE_CLASSES = {
+    "primary_source",
+    "industry_peer",
+    "valuation",
+    "macro_policy",
+    "expectation_delta",
+    "audited_absence",
+}
+STRATEGIC_EVIDENCE_CLASSES = {
+    "allocation_role",
+    "primary_source",
+    "industry_peer",
+    "valuation",
+    "macro_policy",
+    "audited_absence",
+}
+VALID_SOURCE_QUALITY = {
+    "issuer",
+    "filing",
+    "exchange_or_regulator",
+    "transcript",
+    "market_data",
+    "analyst_or_consensus",
+    "reputable_media",
+    "official_macro",
+    "unavailable_audited",
+}
+VALID_EXCEPTION_REASONS = {
+    "no_material_news_after_audited_search",
+    "public_data_unavailable",
+    "not_material_to_position",
+    "covered_by_snapshot",
+    "cash_or_cash_equivalent",
+    "unknown_bucket_need_data",
+}
 PLACEHOLDER_RE = re.compile(
     r"(todo|tbd|placeholder|pending|pending agent|pending collection|pending input|"
     r"demo run audit|待補|占位|示範|流程示範|請補|請接|待 agent|agent 補入|"
@@ -100,6 +167,141 @@ def _cover_tickers(snapshot: Dict[str, Any]) -> List[str]:
             continue
         tickers.append(ticker.upper())
     return sorted(set(tickers))
+
+
+def _total_assets(snapshot: Dict[str, Any]) -> Optional[float]:
+    totals = snapshot.get("totals")
+    candidates: List[Any] = []
+    if isinstance(totals, dict):
+        for key in (
+            "total_assets",
+            "total_nav",
+            "nav",
+            "total_market_value",
+            "portfolio_value",
+            "net_asset_value",
+        ):
+            candidates.append(totals.get(key))
+    for key in (
+        "total_assets",
+        "total_nav",
+        "nav",
+        "total_market_value",
+        "portfolio_value",
+        "net_asset_value",
+    ):
+        candidates.append(snapshot.get(key))
+    for value in candidates:
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            continue
+        if number > 0:
+            return number
+    return None
+
+
+def _number(value: Any) -> Optional[float]:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _normalize_research_horizon(value: Any) -> str:
+    text = str(value or "").strip().lower().replace("_", " ")
+    if not text:
+        return "unknown"
+    if text.startswith("short term") or text.startswith("short-term"):
+        return "short_term"
+    if text.startswith("mid term") or text.startswith("mid-term") or text.startswith("medium term"):
+        return "mid_term"
+    if text.startswith("long term") or text.startswith("long-term") or text in {"core", "long"}:
+        return "long_term_core"
+    if "cash" in text or "money market" in text:
+        return "cash_or_cash_equivalent"
+    return "unknown"
+
+
+def _open_lot_horizons(aggregate: Dict[str, Any]) -> List[str]:
+    horizons: List[str] = []
+    for lot in _as_list(aggregate.get("lots")):
+        if not isinstance(lot, dict):
+            continue
+        qty = _number(lot.get("quantity", lot.get("shares", lot.get("remaining_quantity", 1))))
+        if qty is not None and qty <= 0:
+            continue
+        horizon = _normalize_research_horizon(lot.get("bucket"))
+        if horizon in VALID_RESEARCH_HORIZONS:
+            horizons.append(horizon)
+    return horizons
+
+
+def _derive_expected_horizons(snapshot: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    """Derive report-research horizon expectations from snapshot lots first.
+
+    This mirrors the PRD's parent-side `research_targets` derivation but keeps
+    it local to validation: lot buckets drive horizon; aggregate bucket is used
+    only when lots have no usable bucket. Portfolio math is not altered.
+    """
+    total_assets = _total_assets(snapshot)
+    by_ticker: Dict[str, Dict[str, Any]] = {}
+    for aggregate in _as_list(snapshot.get("aggregates")):
+        if not isinstance(aggregate, dict):
+            continue
+        ticker = str(aggregate.get("ticker") or "").strip().upper()
+        if not ticker:
+            continue
+        market = str(aggregate.get("market") or "").lower()
+        if aggregate.get("is_cash") or market == "cash":
+            continue
+
+        horizons = _open_lot_horizons(aggregate)
+        used_lots = bool(horizons)
+        if not horizons:
+            aggregate_horizon = _normalize_research_horizon(aggregate.get("bucket"))
+            if aggregate_horizon in VALID_RESEARCH_HORIZONS:
+                horizons = [aggregate_horizon]
+
+        horizon_set = set(horizons)
+        if "short_term" in horizon_set and len(horizon_set - {"short_term"}) == 0:
+            expected = "short_term"
+        elif "short_term" in horizon_set and (horizon_set - {"short_term"}):
+            expected = "mixed_requires_audit"
+        elif "mid_term" in horizon_set:
+            expected = "mid_term"
+        elif horizon_set == {"long_term_core"}:
+            expected = "long_term_core"
+        else:
+            expected = "unknown"
+
+        weight = _number(aggregate.get("weight_pct"))
+        if weight is None:
+            market_value = _number(
+                aggregate.get("market_value")
+                or aggregate.get("market_value_base")
+                or aggregate.get("value")
+                or aggregate.get("current_value")
+            )
+            if market_value is not None and total_assets:
+                weight = market_value / total_assets * 100.0
+        if weight is None:
+            materiality = "unknown"
+        elif weight >= 5.0:
+            materiality = "high"
+        elif weight >= 1.0:
+            materiality = "medium"
+        else:
+            materiality = "low"
+
+        by_ticker[ticker] = {
+            "expected_horizon": expected,
+            "horizons": sorted(horizon_set),
+            "used_lots": used_lots,
+            "position_weight": weight,
+            "materiality": materiality,
+        }
+    return by_ticker
 
 
 def _as_list(value: Any) -> List[Any]:
@@ -288,9 +490,153 @@ def _coverage_entry_counts(entry: Dict[str, Any], kind: str) -> Tuple[Optional[i
     return None, str(entry.get(f"{kind}_audit") or entry.get(f"{kind}_search") or "")
 
 
+def _validate_enum_value(where: str, value: Any, allowed: Set[str], errors: List[str]) -> None:
+    if value not in allowed:
+        errors.append(f"{where} must be one of {sorted(allowed)}, got {value!r}")
+
+
+def _validate_enum_list(where: str, value: Any, allowed: Set[str], errors: List[str]) -> List[str]:
+    if not isinstance(value, list) or not value:
+        errors.append(f"{where} must be a non-empty list")
+        return []
+    normalized: List[str] = []
+    for idx, item in enumerate(value):
+        if item not in allowed:
+            errors.append(f"{where}[{idx}] must be one of {sorted(allowed)}, got {item!r}")
+        elif isinstance(item, str):
+            normalized.append(item)
+    return normalized
+
+
+def _has_quality_audit(entry: Dict[str, Any]) -> bool:
+    audit = entry.get("quality_audit")
+    return _is_nonempty_str(audit) and not _has_placeholder(audit)
+
+
+def _decision_relevance_is_generic(value: str) -> bool:
+    normalized = re.sub(r"[\s._-]+", " ", value.strip().lower())
+    if "generic headline" in normalized or "headline only" in normalized:
+        return True
+    return normalized in {
+        "n/a",
+        "na",
+        "none",
+        "generic",
+        "generic news",
+        "generic headline",
+        "generic headlines",
+        "headline only",
+        "headlines only",
+        "news update",
+        "market news",
+    }
+
+
+def _validate_horizon_v1_entry(
+    ticker: str,
+    entry: Dict[str, Any],
+    expected: Dict[str, Any],
+    errors: List[str],
+) -> None:
+    where = f"research_coverage.tickers.{ticker}"
+    horizon = entry.get("horizon")
+    depth = entry.get("research_depth")
+    status = entry.get("decision_or_thesis_status")
+    exception = entry.get("exception_reason")
+
+    _validate_enum_value(f"{where}.horizon", horizon, VALID_RESEARCH_HORIZONS, errors)
+    _validate_enum_value(f"{where}.research_depth", depth, VALID_RESEARCH_DEPTHS, errors)
+    _validate_enum_value(f"{where}.decision_or_thesis_status", status, VALID_DECISION_STATUSES, errors)
+    if exception is not None:
+        _validate_enum_value(f"{where}.exception_reason", exception, VALID_EXCEPTION_REASONS, errors)
+    has_exception = exception in VALID_EXCEPTION_REASONS
+    has_quality_audit = _has_quality_audit(entry)
+    if has_exception and not has_quality_audit:
+        errors.append(f"{where}.quality_audit must be non-empty for exception_reason {exception!r}")
+    elif _is_nonempty_str(entry.get("quality_audit")) and _has_placeholder(entry.get("quality_audit")):
+        errors.append(f"{where}.quality_audit contains placeholder text")
+
+    relevance = entry.get("decision_relevance")
+    if not _is_nonempty_str(relevance):
+        errors.append(f"{where}.decision_relevance must be non-empty")
+    elif _has_placeholder(relevance) or _decision_relevance_is_generic(str(relevance)):
+        errors.append(f"{where}.decision_relevance contains placeholder/generic text")
+
+    evidence = _validate_enum_list(
+        f"{where}.evidence_classes",
+        entry.get("evidence_classes"),
+        VALID_EVIDENCE_CLASSES,
+        errors,
+    )
+    source_quality = _validate_enum_list(
+        f"{where}.source_quality",
+        entry.get("source_quality"),
+        VALID_SOURCE_QUALITY,
+        errors,
+    )
+    if has_exception and "unavailable_audited" in source_quality and not has_quality_audit:
+        errors.append(f"{where}.quality_audit must explain unavailable_audited source quality")
+
+    expected_horizon = expected.get("expected_horizon", "unknown")
+    if expected_horizon not in VALID_EXPECTED_RESEARCH_HORIZONS:
+        expected_horizon = "unknown"
+    if expected_horizon == "mixed_requires_audit":
+        if not has_quality_audit:
+            errors.append(
+                f"{where}.quality_audit must explain mixed bucket handling; "
+                "snapshot lots include short-term plus other horizons"
+            )
+    elif expected_horizon == "unknown":
+        if not has_quality_audit:
+            errors.append(f"{where}.quality_audit required because snapshot horizon is unknown")
+        if depth != "need_data" or status != "need_data":
+            errors.append(
+                f"{where} with unknown snapshot horizon must use research_depth='need_data' "
+                "and decision_or_thesis_status='need_data'"
+            )
+    elif horizon != expected_horizon and not has_quality_audit:
+        errors.append(
+            f"{where}.horizon {horizon!r} conflicts with snapshot-derived "
+            f"{expected_horizon!r}; provide quality_audit for an override"
+        )
+
+    if horizon == "short_term" and depth not in {"tactical", "need_data", "audit_only"}:
+        errors.append(f"{where}.research_depth must be tactical/need_data/audit_only for short_term horizon")
+    if horizon == "mid_term" and depth not in {"thesis", "need_data", "audit_only"}:
+        errors.append(f"{where}.research_depth must be thesis/need_data/audit_only for mid_term horizon")
+    if horizon == "long_term_core" and depth not in {"strategic", "thesis", "need_data", "audit_only"}:
+        errors.append(
+            f"{where}.research_depth must be strategic/thesis/need_data/audit_only for long_term_core horizon"
+        )
+
+    if depth == "tactical":
+        if status not in TACTICAL_STATUSES:
+            errors.append(f"{where}.decision_or_thesis_status must be tactical for tactical depth")
+        if len(evidence) < 2 and not has_exception:
+            errors.append(f"{where}.evidence_classes needs at least two tactical evidence classes")
+        if evidence and not (set(evidence) & TACTICAL_EVIDENCE_CLASSES) and not has_exception:
+            errors.append(f"{where}.evidence_classes lacks tactical evidence")
+    elif depth == "thesis":
+        if status not in THESIS_STATUSES:
+            errors.append(f"{where}.decision_or_thesis_status must be thesis-style for thesis depth")
+        if not (set(evidence) & THESIS_EVIDENCE_CLASSES) and not has_exception:
+            errors.append(f"{where}.evidence_classes needs higher-angle thesis evidence")
+    elif depth == "strategic":
+        if status not in STRATEGIC_STATUSES:
+            errors.append(f"{where}.decision_or_thesis_status must be strategic for strategic depth")
+        if not (set(evidence) & STRATEGIC_EVIDENCE_CLASSES) and not has_exception:
+            errors.append(f"{where}.evidence_classes needs strategic evidence")
+    elif depth in {"need_data", "audit_only"}:
+        if not has_quality_audit:
+            errors.append(f"{where}.quality_audit required for {depth} depth")
+        if depth == "need_data" and status != "need_data":
+            errors.append(f"{where}.decision_or_thesis_status must be need_data for need_data depth")
+
+
 def _validate_research_coverage(
     context: Dict[str, Any],
     cover_tickers: Sequence[str],
+    snapshot: Optional[Dict[str, Any]],
     errors: List[str],
 ) -> None:
     if not cover_tickers:
@@ -303,7 +649,14 @@ def _validate_research_coverage(
     if not isinstance(tickers_node, dict):
         errors.append("research_coverage.tickers must be an object keyed by ticker")
         return
+    quality_schema = coverage.get("quality_schema")
+    if quality_schema is not None and quality_schema != QUALITY_SCHEMA_HORIZON_V1:
+        errors.append(
+            "research_coverage.quality_schema must be "
+            f"{QUALITY_SCHEMA_HORIZON_V1!r} when present, got {quality_schema!r}"
+        )
     coverage_by_ticker = {str(k).upper(): v for k, v in tickers_node.items()}
+    expected_by_ticker = _derive_expected_horizons(snapshot or {}) if quality_schema == QUALITY_SCHEMA_HORIZON_V1 else {}
     news = _as_list(context.get("news"))
     events = _as_list(context.get("events"))
     data_gaps = context.get("data_gaps")
@@ -349,6 +702,8 @@ def _validate_research_coverage(
                 f"`event_search:{ticker}:...`, or a data_gaps entry tagged "
                 f"`event_search:{ticker}`"
             )
+        if quality_schema == QUALITY_SCHEMA_HORIZON_V1:
+            _validate_horizon_v1_entry(ticker, entry, expected_by_ticker.get(ticker, {}), errors)
 
 
 def _validate_reviewer_pass(context: Dict[str, Any], errors: List[str]) -> None:
@@ -679,7 +1034,7 @@ def validate_report_context(context: Dict[str, Any], snapshot: Dict[str, Any]) -
     _validate_strategy_readout(context, errors)
     _validate_data_gaps(context, errors)
     _validate_theme_sector(context, cover_tickers, errors)
-    _validate_research_coverage(context, cover_tickers, errors)
+    _validate_research_coverage(context, cover_tickers, snapshot, errors)
     _validate_adjustments(context, errors)
     _validate_high_opps(context, errors)
     _validate_actions(context, errors)

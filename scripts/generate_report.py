@@ -1036,6 +1036,7 @@ body{
    squeezes the price / weight / value columns. Action wraps onto multiple lines
    instead of monopolising the row. Numeric columns stay tabular and tight. */
 .tbl-wrap table.holdings-tbl{table-layout:fixed;min-width:880px}
+.holdings-cards{display:none}
 .tbl-wrap table.holdings-tbl td.col-action,
 .tbl-wrap table.holdings-tbl th.col-action{
   white-space:normal;
@@ -1075,21 +1076,35 @@ tbody tr:last-child td{border-bottom:0}
 tbody tr:hover{background:var(--surface-2)}
 td.num,th.num{text-align:right}
 
-/* Symbol cell — ticker only, hover-activated popover trigger */
+/* Ticker text. Only `.sym-trigger` is interactive; static ticker labels use
+   `.sym-label` so non-hover/non-tap table cells do not falsely advertise detail. */
+.sym-label,
 .sym-trigger{
   display:inline-block;
   color:var(--ink);
   font-weight:680;letter-spacing:-.005em;
   font-size: clamp(13px, 0.35vw + 12px, 14.5px);
-  cursor:help;
   text-decoration:none;
   outline:0;
 }
-.sym-trigger:hover,.sym-trigger:focus-visible{
-  text-decoration:underline dotted;text-underline-offset:3px;outline:0;
+.sym-label{cursor:default}
+.sym-trigger{
+  cursor:help;
+}
+.sym-trigger .sym-text{
+  text-decoration-line:underline;
+  text-decoration-style:dotted;
+  text-decoration-thickness:1px;
+  text-decoration-color:var(--muted);
+  text-underline-offset:3px;
+}
+.sym-trigger:hover,.sym-trigger:focus-visible{outline:0}
+.sym-trigger:hover .sym-text,.sym-trigger:focus-visible .sym-text{
+  text-decoration-color:currentColor;outline:0;
 }
 
-/* Price cell — static latest-price snapshot, hover-activated popover trigger */
+/* Price cell — static latest-price snapshot, hover-/tap-activated popover trigger.
+   The dotted underline is always visible only on the interactive price number. */
 .price-cell{position:relative}
 .price-trigger{
   display:inline-flex;flex-direction:column;align-items:flex-end;gap:2px;
@@ -1098,7 +1113,14 @@ td.num,th.num{text-align:right}
   color:inherit;outline:0;
 }
 .price-trigger:hover,.price-trigger:focus-visible{outline:0}
-.price-trigger:hover .price-num,.price-trigger:focus-visible .price-num{text-decoration:underline dotted;text-underline-offset:3px}
+.price-trigger .price-num{
+  text-decoration-line:underline;
+  text-decoration-style:dotted;
+  text-decoration-thickness:1px;
+  text-decoration-color:var(--muted);
+  text-underline-offset:3px;
+}
+.price-trigger:hover .price-num,.price-trigger:focus-visible .price-num{text-decoration-color:currentColor}
 .price-num{
   font-size: clamp(15px, 0.6vw + 13px, 17px);
   font-weight:600;color:var(--ink);
@@ -1763,8 +1785,8 @@ img, svg, table { max-width: 100%; }
      loss/gain lot lists, recent activity). These have 2–8 simple columns
      and DO NOT need the canonical 760-/880-px min-width.
      Forcing min-width:0 + tight typography lets them render without
-     horizontal-scroll bleed at ≤430px viewports. The holdings table is
-     the ONLY table that legitimately needs horizontal scroll on phone. */
+     horizontal-scroll bleed at ≤430px viewports. Holdings uses a phone-only
+     card list instead of requiring horizontal table scroll. */
   .tbl-wrap table.periods-tbl,
   .tbl-wrap table.dim-tbl,
   .tbl-wrap table.adj-tbl,
@@ -1832,19 +1854,79 @@ img, svg, table { max-width: 100%; }
   }
   .tbl-wrap.scroll-y td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
 
-  /* Holdings table is the ONLY one that genuinely needs horizontal scroll
-     on phone (7 fixed columns + free-form action narrative). Keep nowrap
-     on the first column so the holding row never wraps. */
+  /* Tablet keeps table ergonomics; phone hides the holdings table in favor of
+     `.holdings-cards`, so these nowrap rules only matter before the phone card
+     display switch applies. */
   .tbl-wrap table.holdings-tbl td:first-child,
   .tbl-wrap table.holdings-tbl th:first-child{white-space:nowrap}
 
-  /* Drop the right-edge fade mask for tables that fit. Only the
-     holdings-tbl and adj-tbl keep the mask as a swipe affordance. */
+  /* Drop the right-edge fade mask for tables that fit. Phone holdings cards do
+     not need a swipe affordance; adjustment tables may still overflow if very
+     long action labels are supplied. */
   .tbl-wrap:has(table.periods-tbl),
   .tbl-wrap.scroll-y{
     -webkit-mask-image:none!important;
             mask-image:none!important;
   }
+
+  /* Holdings cards — phone replaces the wide 7-column holdings table with
+     one holding per card. Cards reuse the exact Symbol/Price trigger HTML,
+     so the existing fixed bottom-sheet popover rules still apply on touch. */
+  .holdings-table-wrap{display:none}
+  .holdings-cards{
+    display:grid;
+    gap:12px;
+    margin-top:2px;
+    width:100%;
+  }
+  .holding-card{
+    min-width:0;
+    border-top:1px solid var(--ink);
+    border-bottom:1px solid var(--hairline-2);
+    padding:12px 0 13px;
+    background:transparent;
+  }
+  .holding-card-head{
+    display:grid;
+    grid-template-columns:minmax(0,1fr) auto;
+    gap:8px 12px;
+    align-items:start;
+    margin-bottom:10px;
+  }
+  .holding-card-symbol{min-width:0}
+  .holding-card-category{justify-self:end;text-align:right;min-width:0}
+  .holding-card-category .tag{margin-left:4px}
+  .holding-card-grid{
+    display:grid;
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:9px 14px;
+    margin:0;
+  }
+  .holding-card-grid>div{min-width:0}
+  .holding-card-grid dt{
+    margin:0 0 2px;
+    color:var(--muted);
+    font-size:10px;
+    line-height:1.2;
+    letter-spacing:.12em;
+    text-transform:uppercase;
+    font-weight:700;
+  }
+  .holding-card-grid dd{
+    margin:0;
+    color:var(--ink-soft);
+    font-size:13px;
+    line-height:1.42;
+    overflow-wrap:anywhere;
+  }
+  .holding-card-grid .num,
+  .holding-card-grid dd{font-variant-numeric:tabular-nums lining-nums}
+  .holding-card-price .price-trigger{align-items:flex-start;text-align:left}
+  .holding-card-price .price-sub{font-size:11px}
+  .holding-card-pnl.pos-txt dd{color:var(--pos);font-weight:600}
+  .holding-card-pnl.neg-txt dd{color:var(--neg);font-weight:600}
+  .holding-card-action{grid-column:1/-1}
+  .holding-card-action dd{line-height:1.5;word-break:break-word}
 
   /* Tag chip — tighter padding so wrapping is rare */
   .tag{margin-left:3px;padding:1px 5px}
@@ -1887,7 +1969,8 @@ img, svg, table { max-width: 100%; }
   /* Donut — slightly smaller so it doesn't dominate */
   .donut-wrap svg{width:148px;height:148px}
 
-  /* Holdings table — relax the min-width floor a touch so the swipe is shorter */
+  /* Phone holdings use cards, so the hidden table's min-width no longer drives
+     normal reading. Other non-card tables keep a compact floor. */
   .tbl-wrap table.holdings-tbl{min-width:760px}
   .tbl-wrap table{min-width:600px;font-size:12px}
   th,td{padding:7px 6px}
@@ -2792,7 +2875,7 @@ def render_trade_quality(context: Dict[str, Any]) -> str:
       <tr>
         <td>{_esc(str(item.get("date") or ""))}</td>
         <td><span class="adj-action {action.lower()}">{_esc(action_label)}</span></td>
-        <td><span class="sym-trigger" tabindex="0" role="button">{_esc(str(item.get("ticker") or ""))}</span></td>
+        <td><span class="sym-label">{_esc(str(item.get("ticker") or ""))}</span></td>
         <td class="num">{_esc(qty_str)}</td>
         <td class="num">{_esc(price_str)}</td>
         <td class="num">{realized_html}</td>
@@ -3263,24 +3346,37 @@ def _build_holdings_action_map(context: Dict[str, Any]) -> Dict[str, str]:
     return out
 
 
-def render_holdings_table(
+@dataclass(frozen=True)
+class _HoldingRowModel:
+    """One prepared holdings row consumed by both desktop table and phone cards."""
+
+    ticker: str
+    symbol_trigger_html: str
+    category_html: str
+    price_trigger_html: str
+    weight_html: str
+    value_html: str
+    pnl_html: str
+    pnl_class_attr: str
+    action_html: str
+
+
+def _build_holdings_row_models(
     aggs: Dict[str, TickerAggregate],
     total_assets: float,
     prices: Dict[str, Any],
     today: _dt.date,
     context: Optional[Dict[str, Any]] = None,
-) -> str:
-    """Render the holdings table — emits one row per ticker, no truncation.
+) -> List[_HoldingRowModel]:
+    """Prepare holdings display fields once for table + mobile cards.
 
-    The wrap intentionally does NOT use `.scroll-y` because cells contain popovers
-    that must escape the wrap on desktop. Section height grows naturally with the
-    number of holdings; the user accepts this trade-off in exchange for popover
-    interactivity.
+    This helper is deliberately presentation-only: it preserves the existing
+    sorting, cash handling, formatting helpers, and Symbol/Price popover trigger
+    markup while preventing desktop/mobile render paths from drifting.
     """
-    rows: List[str] = []
-    sorted_aggs = sorted(aggs.values(), key=lambda a: -(a.market_value or 0))
+    rows: List[_HoldingRowModel] = []
     action_by_ticker = _build_holdings_action_map(context or {})
-    for agg in sorted_aggs:
+    for agg in sorted(aggs.values(), key=lambda a: -(a.market_value or 0)):
         weight_pct = (agg.market_value / total_assets * 100.0) if (agg.market_value and total_assets) else None
         weight_html = f"{weight_pct:.1f}%" if weight_pct is not None else f'<span class="na">{_ui("common.na")}</span>'
         value_html = _fmt_money(agg.market_value)
@@ -3288,30 +3384,81 @@ def render_holdings_table(
             pnl_td_class, pnl_html = "", _ui("common.dash")
         else:
             pnl_td_class, pnl_html = _fmt_signed_parts(agg.pnl_amount, agg.pnl_pct)
-        pnl_td_class_attr = f" {pnl_td_class}" if pnl_td_class else ""
         price_html, price_sub_html = _price_cell_pieces(agg, prices)
-        sym_pop = _symbol_popover(agg, today)
-        price_pop = _price_popover(agg, prices)
         action_text = action_by_ticker.get(agg.ticker)
-        action = _esc(action_text) if action_text else _ui("common.dash")
-        rows.append(f"""\
+        rows.append(_HoldingRowModel(
+            ticker=agg.ticker,
+            symbol_trigger_html=(
+                f'<div class="sym-trigger" tabindex="0" role="button">'
+                f'<span class="sym-text">{_esc(agg.ticker)}</span>'
+                f'{_symbol_popover(agg, today)}</div>'
+            ),
+            category_html=_category_chip(agg),
+            price_trigger_html=(
+                f'<div class="price-trigger" tabindex="0" role="button">'
+                f'{price_html}{price_sub_html}{_price_popover(agg, prices)}</div>'
+            ),
+            weight_html=weight_html,
+            value_html=value_html,
+            pnl_html=pnl_html,
+            pnl_class_attr=f" {pnl_td_class}" if pnl_td_class else "",
+            action_html=_esc(action_text) if action_text else _ui("common.dash"),
+        ))
+    return rows
+
+
+def _holding_card_field(label: str, value_html: str, *, class_name: str = "") -> str:
+    cls = f' class="{class_name}"' if class_name else ""
+    return f'<div{cls}><dt>{_esc(label)}</dt><dd>{value_html}</dd></div>'
+
+
+def render_holdings_table(
+    aggs: Dict[str, TickerAggregate],
+    total_assets: float,
+    prices: Dict[str, Any],
+    today: _dt.date,
+    context: Optional[Dict[str, Any]] = None,
+) -> str:
+    """Render holdings for desktop/tablet table and phone card layouts."""
+    row_models = _build_holdings_row_models(aggs, total_assets, prices, today, context)
+    rows = [f"""\
           <tr>
-            <td><div class="sym-trigger" tabindex="0" role="button">{_esc(agg.ticker)}{sym_pop}</div></td>
-            <td>{_category_chip(agg)}</td>
-            <td class="num price-cell"><div class="price-trigger" tabindex="0" role="button">{price_html}{price_sub_html}{price_pop}</div></td>
-            <td class="num">{weight_html}</td>
-            <td class="num">{value_html}</td>
-            <td class="num{pnl_td_class_attr}">{pnl_html}</td>
-            <td class="col-action">{action}</td>
-          </tr>""")
+            <td>{row.symbol_trigger_html}</td>
+            <td>{row.category_html}</td>
+            <td class="num price-cell">{row.price_trigger_html}</td>
+            <td class="num">{row.weight_html}</td>
+            <td class="num">{row.value_html}</td>
+            <td class="num{row.pnl_class_attr}">{row.pnl_html}</td>
+            <td class="col-action">{row.action_html}</td>
+          </tr>""" for row in row_models]
     body = "\n".join(rows)
+
+    cards = []
+    for row in row_models:
+        card_fields = "".join([
+            _holding_card_field(_ui("holdings.latest_price"), row.price_trigger_html, class_name="holding-card-price"),
+            _holding_card_field(_ui("holdings.weight"), row.weight_html, class_name="holding-card-weight"),
+            _holding_card_field(_ui("holdings.value"), row.value_html, class_name="holding-card-value"),
+            _holding_card_field(_ui("holdings.pnl"), row.pnl_html, class_name=f"holding-card-pnl{row.pnl_class_attr}"),
+            _holding_card_field(_ui("holdings.action"), row.action_html, class_name="holding-card-action"),
+        ])
+        cards.append(f"""\
+      <article class="holding-card" aria-label="{_esc(row.ticker)}">
+        <div class="holding-card-head">
+          <div class="holding-card-symbol">{row.symbol_trigger_html}</div>
+          <div class="holding-card-category">{row.category_html}</div>
+        </div>
+        <dl class="holding-card-grid">{card_fields}</dl>
+      </article>""")
+    cards_html = "\n".join(cards)
+
     return f"""\
   <section class="section">
     <div class="section-head">
       <h2>{_esc(_ui("holdings.title"))}</h2>
-      <span class="sub">{_esc(_ui("holdings.subtitle", count=len(sorted_aggs)))}</span>
+      <span class="sub">{_esc(_ui("holdings.subtitle", count=len(row_models)))}</span>
     </div>
-    <div class="tbl-wrap">
+    <div class="tbl-wrap holdings-table-wrap">
       <table class="holdings-tbl">
         <colgroup>
           <col style="width:7%">
@@ -3337,6 +3484,9 @@ def render_holdings_table(
 {body}
         </tbody>
       </table>
+    </div>
+    <div class="holdings-cards" aria-label="{_esc(_ui("holdings.title"))}">
+{cards_html}
     </div>
   </section>"""
 
@@ -3990,7 +4140,7 @@ def render_adjustments(
                 )
         rows.append(f"""\
           <tr>
-            <td><span class="sym-trigger" tabindex="0" role="button">{_esc(ticker or _ui("common.dash"))}</span></td>
+            <td><span class="sym-label">{_esc(ticker or _ui("common.dash"))}</span></td>
             <td class="num">{current_pct:.1f}%</td>
             <td><span class="adj-action {_esc(a.get('action', 'hold'))}">{_esc(a.get('action_label', ''))}</span></td>
             <td class="why">{why_cell}</td>

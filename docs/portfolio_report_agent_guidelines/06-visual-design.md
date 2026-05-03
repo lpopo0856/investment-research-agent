@@ -78,9 +78,9 @@ HTML requires `<meta name="viewport" content="width=device-width, initial-scale=
 |---|---|---|
 | Desktop | ≥881px | Default multi-col grids; no table horizontal scroll; body 14.5-15.5px; table 13-13.5px. |
 | Tablet | 601-880px | KPI 2 cols; `cols-2/3` 1 col; donut+bars stack; heatmap 2 cols; body 14-14.5px; table 13px; tighter bar labels. |
-| Phone | ≤600px | KPI 1 col; heatmap 1 col; holdings table inside `.tbl-wrap` horizontal scroll; Symbol sticky first col `position:sticky; left:0; z-index:1; background:var(--surface); box-shadow:1px 0 0 var(--hairline)`; header first cell override `z-index:calc(var(--table-header-z) + 1); background:var(--paper)`; body 14px, table 12.5px, sublines 11px; action labels 64px. |
+| Phone | ≤600px | KPI 1 col; heatmap 1 col; holdings use `.holdings-cards` (one holding per card) and `.holdings-table-wrap` is hidden; no normal-reading horizontal scroll at 360/390/430px; each card shows Symbol, Category, Price, Weight, Value, P&L, Action; Symbol/Price controls reuse `div[tabindex="0"][role="button"]` triggers and bottom-sheet popovers; body 14px, table 12.5px, sublines 11px; action labels 64px. |
 
-Table wrapper: always `<div class="tbl-wrap"><table>…</table></div>`. Desktop `.tbl-wrap` must not set overflow. Tablet/phone enable `overflow-x:auto` + `-webkit-overflow-scrolling:touch`, negative side margin equal page padding, inner table `min-width` ≥760px tablet / ≥680px phone. Reset column border-left/right on phone. Touch targets ≥30px. Test at 360px width; verify sticky first col and bottom-sheet popovers in iOS Safari + Chrome Mobile.
+Table wrapper: default table sections use `<div class="tbl-wrap"><table>…</table></div>`. Desktop `.tbl-wrap` must not set overflow. Tablet may enable `overflow-x:auto` + `-webkit-overflow-scrolling:touch`, negative side margin equal page padding, and inner table `min-width` ≥760px when a table genuinely needs swipe. Holdings are the exception on phone: render `<div class="tbl-wrap holdings-table-wrap"><table class="holdings-tbl">…</table></div>` plus sibling `.holdings-cards`; at ≤600px hide `.holdings-table-wrap` and show `.holdings-cards`. Touch targets ≥30px. Test at 360/390/430px; verify no document horizontal overflow, holdings cards, and bottom-sheet popovers in iOS Safari + Chrome Mobile.
 
 ### 14.8 Anti-patterns
 

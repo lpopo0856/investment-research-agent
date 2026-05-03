@@ -227,9 +227,9 @@ HTML is sole deliverable; no companion Markdown/files.
 
 ### 10.2 Holdings table columns
 
-Visible cells stay short; details live in Symbol/Price popovers.
+Visible cells stay short; details live in Symbol/Price popovers. Desktop/tablet renders these as the seven holdings table columns; phone (≤600px) renders the same seven fields as one holding per card with no normal-reading horizontal scroll. Both table and cards must be produced from one shared holdings row view-model/helper so formatting and data cannot drift.
 
-| # | Column | Rule |
+| # | Field / Column | Rule |
 |---|---|---|
 | 1 | Symbol | Ticker only, weight 680, monospace-friendly. No company/since/lot subline; those live in Symbol popover. |
 | 2 | Category | Asset class + one translated tag chip (`High vol`, `Long`, `Mid`, `Short`, `Rich val`, `Overheated`, `High risk`, `Cash`, etc.). |
@@ -239,7 +239,7 @@ Visible cells stay short; details live in Symbol/Price popovers.
 | 6 | P&L | `±<base-prefix>X / ±Y%`; cash `—`; missing cost `n/a`; lot detail in Price popover. |
 | 7 | Action | Recommendation with verb, price band, trigger. |
 
-Removed columns: `Held`, `Move`. Hold period appears in Symbol popover and §10.3.
+Removed columns: `Held`, `Move`. Hold period appears in Symbol popover and §10.3. Phone cards preserve the seven fields above; they may use stacked/card layout and progressive disclosure for secondary detail, but must not remove any field from the generated HTML.
 
 ### 10.3 Holding period & pacing block
 
@@ -334,15 +334,35 @@ Self-check: sectors sum exactly 100% cash/FX excluded; every non-cash/non-FX tic
 
 Renderer only formats `context["news"]` / `context["events"]`; `scripts/fetch_prices.py` is prices only. Agent must also write `context["research_coverage"]`. Empty news/events without search audit is violation and pre-render validation failure.
 
-**Subagent isolation (HARD; per `docs/context_drop_protocol.md` and `docs/temp_researcher_contract.md`).** §10.5 + §10.6 research is the largest token sink in the pipeline (typically 30k–80k tokens of WebSearch/WebFetch results across the cover universe). It **must** be delegated to a temp-researcher per the brand-agnostic contract — using whatever isolation primitive the runtime provides (Claude Code subagent, Codex fresh session, Gemini CLI subagent, or equivalent). It must not run in the parent agent's context. The parent's brief includes: cover-universe ticker list (from `transactions.db.open_lots` minus cash/cash-equivalents, plus extras from §10.6/§10.9), this §10.5 + §10.6 spec text, and the path `$REPORT_RUN_DIR/report_context.json`. The temp-researcher runs the WebSearch / WebFetch / source-fetching workflow below in its own context, writes `context["news"]`, `context["events"]`, and `context["research_coverage"]` directly into the file, validates the JSON, and returns only `{result_file: <path>, summary: ≤200 words, audit: {bytes, sha256, record_count, sources_count, gaps}}` per the contract's §4 return shape. **The parent agent must not paste the temp-researcher's findings or search snippets back into its own response** — that defeats the protocol. The parent reads from `report_context.json` lazily (via `jq`) only when Phase B authoring needs a specific field. The `MEMORY.md` rule "agent owns live WebSearch/WebFetch for §10.5 — empty section without audit trail = workflow violation" is satisfied because the audit (sources, URLs, search reasoning) lives in `context["research_coverage"]` and the per-news/per-event records — exactly as before, just produced inside the isolated context.
+**Subagent isolation (HARD; per `docs/context_drop_protocol.md` and `docs/temp_researcher_contract.md`).** §10.5 + §10.6 research is the largest token sink in the pipeline (typically 30k–80k tokens of WebSearch/WebFetch results across the cover universe). It **must** be delegated to a temp-researcher per the brand-agnostic contract — using whatever isolation primitive the runtime provides (Claude Code subagent, Codex fresh session, Gemini CLI subagent, or equivalent). It must not run in the parent agent's context. The parent's brief includes: cover-universe ticker list (from `transactions.db.open_lots` minus cash/cash-equivalents, plus extras from §10.6/§10.9), a compact `research_targets` map derived from `report_snapshot.json`, this §10.5 + §10.6 spec text, and the path `$REPORT_RUN_DIR/report_context.json`. The temp-researcher runs the WebSearch / WebFetch / source-fetching workflow below in its own context, writes `context["news"]`, `context["events"]`, and `context["research_coverage"]` directly into the file, validates the JSON, and returns only `{result_file: <path>, summary: ≤200 words, audit: {bytes, sha256, record_count, sources_count, gaps}}` per the contract's §4 return shape. **The parent agent must not paste the temp-researcher's findings or search snippets back into its own response** — that defeats the protocol. The parent reads from `report_context.json` lazily (via `jq`) only when Phase B authoring needs a specific field. The `MEMORY.md` rule "agent owns live WebSearch/WebFetch for §10.5 — empty section without audit trail = workflow violation" is satisfied because the audit (sources, URLs, search reasoning) lives in `context["research_coverage"]` and the per-news/per-event records — exactly as before, just produced inside the isolated context.
+
+**Decision-grade horizon standard (`horizon_v1`).** Canonical new report runs write `research_coverage.quality_schema = "horizon_v1"` and per-ticker quality metadata; no-schema contexts are legacy/debug only. Research depth is lots-first: inspect `snapshot.aggregates[].lots[].bucket` before aggregate `bucket`; any open Short Term lot makes the ticker `short_term` or `mixed_requires_audit` in the parent input. Aggregate bucket is fallback only when lots are absent/non-material. Materiality from aggregate weight: `high >=5pp NAV`, `medium >=1pp and <5pp`, `low <1pp`. Low-materiality short-term names may be tactical-light, but still need `act_now` / `wait` / `exit` / `need_data`.
+
+Parent-to-Phase-A input shape:
+
+```jsonc
+"research_targets": {
+  "NVDA": {
+    "expected_horizon": "short_term", // short_term | mid_term | long_term_core | mixed_requires_audit | unknown
+    "bucket_breakdown": {"Short Term": 0.62, "Long Term": 0.38},
+    "position_weight": 7.4,
+    "materiality": "high",
+    "mixed_bucket": true
+  }
+}
+```
+
+Phase ownership: parent derives `research_targets` from the snapshot and passes it; Phase A/temp-researcher owns live `news`, `events`, and compact `research_coverage` evidence; Phase B owns final sizing, R:R, kill, portfolio fit, action text, and any price/technical integration from snapshot/prices. Phase A may cite technical/flow only when directly sourced; `covered_by_snapshot` may avoid duplicate price math but never replaces live news/event search audit.
 
 Workflow (executed inside the temp-researcher's isolated context):
 
 1. Cover universe = every `transactions.db.open_lots` position except cash/pure cash-equivalents, de-duped, plus extra tickers surfaced in §10.6/§10.9.
 2. Per ticker run ≥1 WebSearch: `"<ticker> <company name>" earnings OR guidance OR downgrade OR upgrade OR catalyst <YYYY-MM>` using current and previous report month. TW also query 繁中: `"<code> <公司名>" 法說 OR 營收 OR 財報 OR 重大訊息`. Fetch/read promising URLs; no SERP-only items.
-3. Collect 1-3 material 14-calendar-day items per ticker; older only if thesis-relevant/follow-up. Material = earnings/guidance/M&A/regulator/customer/product/analyst action/capital raise/lawsuit/supply-chain. Skip routine target nudges, recap-only, sponsored. Zero material → audit `news_search:<ticker>:no_material_within_14d` or extended-window reason.
+3. Collect 1-3 material 14-calendar-day items per ticker; older only if thesis-relevant/follow-up. Material = earnings/guidance/M&A/regulator/customer/product/analyst action/capital raise/lawsuit/supply-chain. Skip routine target nudges, recap-only, sponsored, and generic headline summaries that do not change action, thesis status, catalyst probability, kill/stop, or data-gap state. Zero material → audit `news_search:<ticker>:no_material_within_14d` or extended-window reason.
 4. Per ticker identify 30-day dated catalysts from issuer IR, exchange filing/calendar, Yahoo, Nasdaq, MarketWatch, TWSE/TPEx. Verify dates on issuer/exchange/official source; unverifiable → `date:TBD` + tried source in data gaps.
 5. Macro events (FOMC/CPI/PCE/NFP/BoJ/ECB/NBS) from official central bank/statistics calendars only.
+
+Source hierarchy: issuer filings/releases/IR, exchange/regulator, transcripts, official macro/market data, analyst-or-consensus data, then reputable media. Reputable media can support context but should not be the sole anchor when an issuer/regulator primary source exists. Escape hatches must be audited: `no_material_news_after_audited_search`, `public_data_unavailable`, `not_material_to_position`, `covered_by_snapshot`, `cash_or_cash_equivalent`, or `unknown_bucket_need_data`.
 
 Records:
 
@@ -353,20 +373,29 @@ Records:
 ```jsonc
 "research_coverage": {
   "as_of": "YYYY-MM-DD",
+  "quality_schema": "horizon_v1",
   "tickers": {
     "NVDA": {
       "news": {"count": 1, "audit": "read issuer/Reuters; 1 material item"},
-      "events": {"count": 0, "audit": "event_search:NVDA:no_dated_catalyst_within_30d after IR/Nasdaq/Yahoo"}
+      "events": {"count": 0, "audit": "event_search:NVDA:no_dated_catalyst_within_30d after IR/Nasdaq/Yahoo"},
+      "horizon": "short_term",
+      "research_depth": "tactical",
+      "decision_or_thesis_status": "wait",
+      "decision_relevance": "earnings in 9d; no estimate-revision or price/flow confirmation",
+      "evidence_classes": ["catalyst", "technical", "expectation_delta"],
+      "source_quality": ["issuer", "market_data", "analyst_or_consensus"],
+      "quality_audit": "short-term lot from snapshot; no public flow data found",
+      "exception_reason": null
     }
   }
 }
 ```
 
-Every cover-universe ticker must appear under `research_coverage.tickers`. Count may be zero only when the matching audit string explains the exhausted search.
+Every cover-universe ticker must appear under `research_coverage.tickers`. Count may be zero only when the matching audit string explains the exhausted search. `horizon ∈ {short_term, mid_term, long_term_core, unknown}`; `research_depth ∈ {tactical, thesis, strategic, audit_only, need_data}`; tactical status ∈ `{act_now, wait, exit, need_data}`; thesis/strategic status ∈ `{strengthening, intact, weakening, broken, strategic_role_intact, allocation_risk_rising, thesis_changed, need_data}`. Evidence classes: `catalyst`, `technical`, `flow_positioning`, `expectation_delta`, `primary_source`, `industry_peer`, `valuation`, `macro_policy`, `allocation_role`, `audited_absence`. Source quality: `issuer`, `filing`, `exchange_or_regulator`, `transcript`, `market_data`, `analyst_or_consensus`, `reputable_media`, `official_macro`, `unavailable_audited`.
 
 Prioritise into §10.6/§10.8/§10.9/§10.10 by materiality, not weight. Materiality drivers: regulator/legal/going-concern, guidance cut/preannouncement, M&A/take-private/spin, major customer win/loss, approval/recall, dilution, debt maturity/covenant, insider anomaly, halt, peer datapoint. Weight is tie-breaker only.
 
-Render gate: every cover-universe ticker has ≥1 news item or explicit `news_search` audit, and ≥1 30-day dated catalyst or explicit `event_search:<ticker>:no_dated_catalyst_within_30d`, represented in `research_coverage`. No model-memory catalyst dates. If search missing, `scripts/validate_report_context.py` fails before render. Every holding must either get evidence-backed §10.9/§10.10 recommendation, explicit `hold — no material news in search window` + audit, or `Need data`.
+Render gate: every cover-universe ticker has ≥1 news item or explicit `news_search` audit, and ≥1 30-day dated catalyst or explicit `event_search:<ticker>:no_dated_catalyst_within_30d`, represented in `research_coverage`. No model-memory catalyst dates. If search missing, `scripts/validate_report_context.py` fails before render. Every holding must either get evidence-backed §10.9/§10.10 recommendation, explicit `hold — no material news in search window` + audit, or `Need data`. Short-term coverage must support an immediate tactical state; mid/long coverage must support thesis/strategic status. Generic headline-only support returns to Phase A/Phase B.
 
 #### 10.5.1 Final reply audit
 
