@@ -24,7 +24,7 @@ The demo runbook (`demo/README.md`) shows the full canonical command set.
 
 ## Language
 
-- traditional chinese
+- english
 
 ## Investment Style And Strategy
 
@@ -65,20 +65,3 @@ the demo run must do the same live web research as a production run.
 The demo ledger funds in both USD and TWD with FX_CONVERT bridges; USD
 is chosen as the report base so the masthead and aggregates match the
 golden-path report we ship as a reference.
-
-## Market Data API Keys (optional fallback)
-
-Demo runs intentionally do **not** carry API keys — the fallback chain
-(yfinance → Stooq → Binance → CoinGecko → ECB / Frankfurter) is enough
-for the synthetic universe. Leave these blank; `parse_settings_keys`
-treats empty values as "not configured" and the chain skips keyed APIs
-silently.
-
-- TWELVE_DATA_API_KEY:
-- FINNHUB_API_KEY:
-- COINGECKO_DEMO_API_KEY:
-- ALPHA_VANTAGE_API_KEY:
-- FMP_API_KEY:
-- TIINGO_API_KEY:
-- POLYGON_API_KEY:
-- JQUANTS_REFRESH_TOKEN:

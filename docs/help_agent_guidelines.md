@@ -104,35 +104,21 @@ rows.
   with kill criteria. No writes. Contract: `AGENTS.md` (Output structure
   + sourcing rules).
 
-### D. Generate a portfolio report (heavy)
+### D. Generate a report (choose type + scope)
 
-- **Ask like:** "Produce today's portfolio health check." / "Run my
-  pre-market report." / "Generate the daily HTML report."
-- **Agent does:** runs the full Gather → Think → Review → Render
-  pipeline (`fetch_prices` → `fetch_history` → `transactions.py
-  snapshot` → editorial `report_context.json` → `validate_report_context.py`
-  → `generate_report.py`). Intermediate JSON lives under `/tmp` in a per-run
-  `$REPORT_RUN_DIR` and is deleted after success; output: a standalone HTML
-  under `reports/` only.
+- **Ask like:** "Generate my daily report." / "Generate my portfolio report." / "Run a consolidated all-accounts daily report."
+- **Agent does:** first separates content type from account scope. If the user asks to generate a report without choosing `daily_report` or `portfolio_report`, the agent stops and asks which type they want before running the pipeline. `daily_report` keeps daily decision/editorial sections but removes Profit Panel, Performance Attribution, Discipline Check, Holding Period/Pacing, and P&L Ranking. `portfolio_report` keeps the longer math/position view but removes immediate-attention/news/events/actions/trading-psychology sections and the holdings Action column. Scope is either one account or `--all-accounts`; total is not a report type. The pipeline runs `fetch_prices` → `fetch_history` → `transactions.py snapshot` → only the required editorial gather → `validate_report_context.py --report-type ...` → `generate_report.py --report-type ...`. Intermediate JSON lives under `/tmp` in `$REPORT_RUN_DIR` and is deleted after success.
   In auto / unattended environments, the agent should obtain explicit
   consent before sending tickers to external market-data sources.
   Contract: `docs/portfolio_report_agent_guidelines.md` and every
   numbered file under `docs/portfolio_report_agent_guidelines/`.
 
-### E. Generate a total report across all accounts (conditional — show only when ≥ 2 accounts exist)
+### E. Total-account scope note (conditional — show only when ≥ 2 accounts exist)
 
-- **Ask like:** "Produce today's total report." / "Generate a portfolio report
-  across all my accounts." / "Run a consolidated all-accounts health check."
-- **Agent does:** runs the same Gather → Render pipeline as item D, but with
-  `--all-accounts` on every step. Math-only output (positions, cash per
-  currency, P&L numeric, allocation, holding period); editorial sections
-  (news, events, alerts, adjustments, actions, psychology, theme/sector)
-  are excluded. Default language `en` (restricted to `en` / `zh-Hant` /
-  `zh-Hans`); default base currency `USD`. Output lands under
-  `accounts/_total/reports/<dated>_portfolio_report.html`. Contract:
-  `docs/portfolio_report_agent_guidelines.md` §N.
+- **Ask like:** "Run this across all accounts" or "total account daily report."
+- **Agent does:** applies `--all-accounts` to the selected `daily_report` or `portfolio_report`. Output lands under `accounts/_total/reports/<dated>_total_account_<report_type>.html`. Total scope suppresses strategy-dependent/editorial sections; it does not create a third report type.
 
-Hide this item when only one account exists.
+Hide this note when only one account exists.
 
 ### F. Switch account (conditional — show only when ≥ 2 accounts exist)
 

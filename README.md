@@ -79,6 +79,7 @@ Each account owns its own settings, transaction ledger, and reports under `accou
 python scripts/transactions.py account list          # list all accounts, mark active
 python scripts/transactions.py account use <name>    # switch active account
 python scripts/transactions.py account create <name> # scaffold a new account
+python scripts/transactions.py account detect        # print layout state before migration
 ```
 
 ## Privacy

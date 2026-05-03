@@ -1,0 +1,2477 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>投資組合健康檢查</title>
+<style>
+/* =========================================================
+   Portfolio Research Note — sample redesign
+   Editorial × research-desk look. Self-contained, no CDN.
+   Reference implementation for portfolio_report_agent_guidelines.md
+   ========================================================= */
+
+:root{
+  /* Surface */
+  --paper:        #f7f5ef;
+  --surface:      #ffffff;
+  --surface-2:    #fbfaf6;
+  --hairline:     #e7e3d8;
+  --hairline-2:   #d8d3c6;
+
+  /* Ink */
+  --ink:          #15191f;
+  --ink-soft:     #2c333d;
+  --muted:        #6b7280;
+  --muted-2:      #8a8f99;
+
+  /* Semantic */
+  --pos:          #15703d;
+  --neg:          #b42318;
+  --warn:         #b15309;
+  --info:         #1d4690;
+  --accent:       #1f2937;
+  --accent-warm:  #8a5a1c;
+
+  /* Layering */
+  --table-header-z: 70;
+  --popover-host-z: 40;
+  --popover-z:      50;
+}
+
+*{box-sizing:border-box}
+html{background:var(--paper);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+body{
+  margin:0;
+  color:var(--ink);
+  background:var(--paper);
+  font-family:
+    "SF Pro Text", -apple-system, BlinkMacSystemFont,
+    "Segoe UI Variable Text", "Segoe UI",
+    "PingFang TC", "Microsoft JhengHei UI", "Microsoft JhengHei",
+    "Noto Sans CJK TC", system-ui, sans-serif;
+  font-feature-settings: "ss01", "cv11", "tnum" 1, "lnum" 1;
+  font-size: clamp(14px, 0.85vw + 11.6px, 15.5px);
+  line-height:1.62;
+  letter-spacing:.005em;
+}
+.num, td.num, th.num,
+.kpi .v, .bar-value, table td, .stat{
+  font-variant-numeric: tabular-nums lining-nums;
+  font-feature-settings: "tnum" 1, "lnum" 1;
+}
+
+.wrap{
+  max-width:1180px;
+  margin:0 auto;
+  padding:56px 40px 80px;
+}
+
+/* ---------- Masthead ---------- */
+.masthead{
+  border-top:3px solid var(--ink);
+  border-bottom:1px solid var(--hairline-2);
+  padding:18px 0 22px;
+  margin-bottom:34px;
+}
+.eyebrow{
+  font-size: clamp(10px, 0.15vw + 9.5px, 11.5px);
+  letter-spacing:.22em;
+  text-transform:uppercase;
+  color:var(--muted);
+  font-weight:700;
+}
+.masthead h1{
+  margin:8px 0 10px;
+  font-family:
+    "SF Pro Display", -apple-system, BlinkMacSystemFont,
+    "Segoe UI Variable Display", "Segoe UI",
+    "PingFang TC", "Microsoft JhengHei UI", system-ui, sans-serif;
+  font-weight:680;
+  font-size: clamp(22px, 3vw + 10px, 36px);
+  line-height:1.18;
+  letter-spacing:-.012em;
+  color:var(--ink);
+}
+.dek{
+  max-width:780px;
+  color:var(--ink-soft);
+  font-size: clamp(13.5px, 0.4vw + 12px, 15px);
+  line-height:1.55;
+}
+.masthead-meta{
+  margin-top:14px;
+  display:flex;
+  flex-wrap:wrap;
+  gap:10px 24px;
+  font-size: clamp(11.5px, 0.2vw + 10.8px, 12.5px);
+  color:var(--muted);
+}
+.masthead-meta b{color:var(--ink-soft);font-weight:650}
+
+/* ---------- Section ---------- */
+.section{margin-top:38px}
+.section-head{
+  display:flex;
+  align-items:baseline;
+  justify-content:space-between;
+  gap:16px;
+  border-bottom:1px solid var(--hairline);
+  padding-bottom:8px;
+  margin-bottom:18px;
+}
+.section-head h2{
+  margin:0;
+  font-family:
+    "SF Pro Display", -apple-system, BlinkMacSystemFont,
+    "Segoe UI Variable Display","PingFang TC","Microsoft JhengHei UI",
+    system-ui, sans-serif;
+  font-weight:650;
+  font-size: clamp(15px, 0.6vw + 13px, 19px);
+  letter-spacing:-.005em;
+}
+.section-head .sub{color:var(--muted);font-size:12.5px}
+
+/* ---------- Warning callout ---------- */
+.callout{
+  position:relative;
+  padding:18px 22px 18px 26px;
+  background:var(--surface-2);
+  border:1px solid var(--hairline);
+  border-left:3px solid var(--neg);
+  border-radius:4px;
+}
+.callout .ctitle{
+  display:flex;align-items:center;gap:10px;
+  font-weight:700;color:#7a1414;font-size:13px;
+  letter-spacing:.04em;
+  margin-bottom:8px;
+}
+.badge{
+  background:#fee4e2;color:#7a1414;
+  font-size:10.5px;font-weight:800;letter-spacing:.06em;
+  padding:2px 7px;border-radius:3px;
+}
+.callout ul{
+  margin:0;padding-left:18px;
+  columns:2;column-gap:34px;
+  color:var(--ink-soft);font-size:13.5px;line-height:1.55;
+}
+.callout li{break-inside:avoid;margin:0 0 6px}
+
+/* ---------- KPI strip ---------- */
+.kpis{
+  display:grid;
+  grid-template-columns:repeat(4, minmax(0,1fr));
+  border-top:1px solid var(--hairline);
+  border-bottom:1px solid var(--hairline);
+}
+.kpi{padding:18px 22px 18px 0;border-right:1px solid var(--hairline)}
+.kpi:last-child{border-right:0;padding-right:0}
+.kpi:not(:first-child){padding-left:22px}
+.kpi .k{
+  font-size: clamp(10px, 0.15vw + 9.5px, 11.5px);
+  letter-spacing:.18em;color:var(--muted);font-weight:700;
+}
+.kpi .v{
+  margin-top:8px;
+  font-family:
+    "SF Pro Display", -apple-system, BlinkMacSystemFont,
+    "Segoe UI Variable Display", system-ui, sans-serif;
+  font-size: clamp(22px, 1.5vw + 16px, 30px);
+  font-weight:620;letter-spacing:-.015em;color:var(--ink);line-height:1.1;
+}
+.kpi .delta{margin-top:6px;font-size: clamp(11.5px, 0.2vw + 10.8px, 12.5px);color:var(--muted)}
+.kpi .delta.pos{color:var(--pos);font-weight:600}
+.kpi .delta.neg{color:var(--neg);font-weight:600}
+.kpi .delta.warn{color:var(--warn);font-weight:600}
+
+/* ---------- Two-col grid ---------- */
+.cols-2{display:grid;grid-template-columns:1.05fr .95fr;gap:34px}
+
+/* ---------- Prose ---------- */
+.prose p{margin:0 0 12px;color:var(--ink-soft);font-size: clamp(13.5px, 0.35vw + 12.4px, 14.5px);line-height:1.7}
+.prose p:last-child{margin-bottom:0}
+/* Secondary emphasis — used in tables, footnotes, NA cells; inherits surrounding font-size */
+.muted{color:var(--muted);}
+.prose p.muted{color:var(--muted);}
+
+/* ---------- Bars ---------- */
+.bars{display:grid;gap:9px}
+.bar-row{
+  display:grid;
+  grid-template-columns:96px minmax(80px,1fr) 84px;
+  align-items:center;
+  gap:14px;
+}
+.bar-label{font-size:13px;font-weight:600;color:var(--ink-soft);letter-spacing:-.005em}
+.bar-track{height:6px;background:#ebe7da;border-radius:2px;overflow:hidden}
+.bar{height:100%;background:var(--ink);border-radius:2px}
+.bar.pos{background:var(--pos)}
+.bar.neg{background:var(--neg)}
+.bar.warn{background:var(--warn)}
+.bar.info{background:var(--info)}
+.bar-value{text-align:right;font-size:13px;color:var(--ink-soft);font-weight:600}
+
+/* ---------- Donut ---------- */
+.donut-wrap{display:grid;grid-template-columns:180px 1fr;gap:22px;align-items:center}
+.donut-wrap svg{display:block;width:180px;height:180px}
+.legend{display:flex;flex-direction:column;gap:6px;font-size:13px}
+.legend .row{
+  display:grid;grid-template-columns:14px 1fr auto;gap:10px;align-items:center;
+  padding:6px 0;border-bottom:1px dotted var(--hairline);
+}
+.legend .row:last-child{border-bottom:0}
+.legend .sw{width:10px;height:10px;border-radius:2px}
+.legend .pct{color:var(--ink);font-weight:650;font-variant-numeric:tabular-nums}
+
+/* ---------- Holdings table ---------- */
+.tbl-wrap{
+  border-top:1px solid var(--ink);
+  border-bottom:1px solid var(--ink);
+  margin:0 -20px;padding:0 20px;
+  /* No overflow on desktop — table fits within container and popovers escape freely.
+     Browsers coerce overflow-y to auto when overflow-x is auto, which would clip popovers,
+     so overflow-x:auto is enabled only at the tablet/phone breakpoints (where popovers
+     also switch to fixed bottom-sheet, escaping the wrap entirely). */
+}
+/* Scrollable variant — opt-in for tables that have NO popovers (events, sources).
+   The holdings table must NOT use this modifier because overflow:auto would clip
+   its desktop popovers. Sticky header still works inside the scroll container. */
+.tbl-wrap.scroll-y{
+  max-height: clamp(360px, 60vh, 640px);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+/* Holdings table — fixed column widths so the long, free-form Action cell never
+   squeezes the price / weight / value columns. Action wraps onto multiple lines
+   instead of monopolising the row. Numeric columns stay tabular and tight. */
+.tbl-wrap table.holdings-tbl{table-layout:fixed;min-width:880px}
+.holdings-cards{display:none}
+.tbl-wrap table.holdings-tbl td.col-action,
+.tbl-wrap table.holdings-tbl th.col-action{
+  white-space:normal;
+  overflow-wrap:anywhere;
+  word-break:break-word;
+  line-height:1.5;
+}
+/* Signed P&L cells — never break on the slash separator (e.g. "+$11,792 / +29.1%").
+   The signed amount + percentage is read as one atomic value; mid-token wrapping
+   is harder to scan than a wider column. */
+.tbl-wrap table.holdings-tbl td.num.pos-txt,
+.tbl-wrap table.holdings-tbl td.num.neg-txt{
+  white-space:nowrap;
+}
+.tbl-wrap table{min-width:760px}
+table{
+  width:100%;border-collapse:collapse;
+  font-size: clamp(12.5px, 0.3vw + 11.6px, 13.5px);
+  color:var(--ink-soft);
+}
+thead th{
+  position:sticky;top:0;background:var(--paper);
+  z-index:var(--table-header-z);
+  text-align:left;
+  padding:10px 12px;
+  font-size: clamp(10px, 0.15vw + 9.5px, 11.5px);
+  letter-spacing:.12em;font-weight:700;color:var(--muted);
+  border-bottom:1px solid var(--hairline-2);
+  box-shadow:0 1px 0 var(--hairline-2);
+}
+tbody td{
+  padding:11px 12px;
+  border-bottom:1px solid var(--hairline);
+  vertical-align:top;
+}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:hover{background:var(--surface-2)}
+td.num,th.num{text-align:right}
+
+/* Ticker text. Only `.sym-trigger` is interactive; static ticker labels use
+   `.sym-label` so non-hover/non-tap table cells do not falsely advertise detail. */
+.sym-label,
+.sym-trigger{
+  display:inline-block;
+  color:var(--ink);
+  font-weight:680;letter-spacing:-.005em;
+  font-size: clamp(13px, 0.35vw + 12px, 14.5px);
+  text-decoration:none;
+  outline:0;
+}
+.sym-label{cursor:default}
+.sym-trigger{
+  cursor:help;
+}
+.sym-trigger .sym-text{
+  text-decoration-line:underline;
+  text-decoration-style:dotted;
+  text-decoration-thickness:1px;
+  text-decoration-color:var(--muted);
+  text-underline-offset:3px;
+}
+.sym-trigger:hover,.sym-trigger:focus-visible{outline:0}
+.sym-trigger:hover .sym-text,.sym-trigger:focus-visible .sym-text{
+  text-decoration-color:currentColor;outline:0;
+}
+
+/* Price cell — static latest-price snapshot, hover-/tap-activated popover trigger.
+   The dotted underline is always visible only on the interactive price number. */
+.price-cell{position:relative}
+.price-trigger{
+  display:inline-flex;flex-direction:column;align-items:flex-end;gap:2px;
+  cursor:help;text-align:right;
+  width:100%;
+  color:inherit;outline:0;
+}
+.price-trigger:hover,.price-trigger:focus-visible{outline:0}
+.price-trigger .price-num{
+  text-decoration-line:underline;
+  text-decoration-style:dotted;
+  text-decoration-thickness:1px;
+  text-decoration-color:var(--muted);
+  text-underline-offset:3px;
+}
+.price-trigger:hover .price-num,.price-trigger:focus-visible .price-num{text-decoration-color:currentColor}
+.price-num{
+  font-size: clamp(15px, 0.6vw + 13px, 17px);
+  font-weight:600;color:var(--ink);
+  font-variant-numeric:tabular-nums lining-nums;
+}
+.price-sub{
+  font-size:11.5px;color:var(--muted);
+  font-variant-numeric:tabular-nums;
+  display:inline-flex;align-items:center;gap:6px;
+}
+.price-sub.pos{color:var(--pos);font-weight:600}
+.price-sub.neg{color:var(--neg);font-weight:600}
+
+/* P&L colors */
+.pos-txt{color:var(--pos);font-weight:600}
+.neg-txt{color:var(--neg);font-weight:600}
+.na{color:var(--muted-2);text-align:right;font-weight:500}
+
+/* Tag chips */
+.tag{
+  display:inline-block;
+  font-size: clamp(10px, 0.15vw + 9.5px, 11px);
+  font-weight:700;letter-spacing:.04em;
+  color:var(--muted);
+  padding:2px 6px;border:1px solid var(--hairline-2);border-radius:3px;
+  background:var(--surface-2);margin-left:4px;
+}
+.tag.pos  {color:var(--pos);     border-color:#bce3c8;background:#f0faf3}
+.tag.neg  {color:var(--neg);     border-color:#f3c5c0;background:#fdf3f2}
+.tag.warn {color:var(--warn);    border-color:#ecd1a6;background:#fbf5e8}
+
+/* ---------- Popover (Symbol & Price) — hover-based, light-styled ---------- */
+/* Triggers must establish positioning context for the absolute popover */
+.sym-trigger,.price-trigger{position:relative}
+
+.pop{
+  position:absolute;
+  z-index:var(--popover-z);
+  /* Anchor: just below the trigger, slight indent so it does not crowd the cell edge */
+  top:calc(100% + 8px);
+  left:0;
+
+  /* Light surface — paper-tinted, no reverse colors */
+  background:var(--surface);
+  color:var(--ink);
+  border:1px solid var(--hairline-2);
+  border-radius:4px;
+  padding:12px 14px;
+
+  /* Subtle elevation only — popovers are the single allowed exception to the no-shadow rule */
+  box-shadow:0 6px 20px rgba(15,25,31,.10), 0 1px 2px rgba(0,0,0,.04);
+
+  /* Sizing */
+  width:max-content;
+  min-width:min(300px, calc(100vw - 64px));
+  max-width:min(560px, calc(100vw - 64px));
+
+  /* Typography (matches body palette, not reversed) */
+  font-size: clamp(12px, 0.25vw + 11.4px, 13px);
+  line-height:1.55;
+  text-align:left;
+  overflow-wrap:normal;
+
+  /* Hidden by default with fade transition */
+  opacity:0;
+  visibility:hidden;
+  transform:translateY(-4px);
+  transition:opacity .18s ease, transform .18s ease, visibility 0s linear .18s;
+  pointer-events:none;
+}
+
+/* Edge handling: cells in the right half of the table anchor the popover to the right */
+.tbl-wrap td:nth-last-child(-n+3) .pop{left:auto;right:0}
+
+/* Raise the active table cell so descendant popovers are not trapped below sticky cells. */
+tbody td:has(.sym-trigger:is(:hover,:focus-within)),
+tbody td:has(.price-trigger:is(:hover,:focus-within)){
+  position:relative;
+  z-index:var(--popover-host-z);
+}
+
+/* Show on hover OR keyboard focus (descendant popover stays open while hovering its content) */
+.sym-trigger:hover > .pop,
+.sym-trigger:focus-visible > .pop,
+.sym-trigger:focus-within > .pop,
+.price-trigger:hover > .pop,
+.price-trigger:focus-visible > .pop,
+.price-trigger:focus-within > .pop{
+  opacity:1;
+  visibility:visible;
+  transform:translateY(0);
+  transition:opacity .18s ease, transform .18s ease, visibility 0s;
+  pointer-events:auto;
+}
+
+/* Internal layout — light theme tokens throughout */
+.pop h4{margin:0 0 6px;font-size:13px;font-weight:680;color:var(--ink);letter-spacing:0}
+.pop .pop-sub{font-size:11.5px;color:var(--muted);margin-bottom:8px}
+.pop table{
+  width:100%;font-size:11.5px;color:var(--ink-soft);min-width:0;border:0;
+  table-layout:auto;
+}
+.pop table th,.pop table td{white-space:nowrap;overflow-wrap:normal}
+.pop thead th{
+  position:static;background:transparent;color:var(--muted);
+  z-index:auto;box-shadow:none;
+  font-size:10px;letter-spacing:.08em;
+  padding:4px 6px;border-bottom:1px solid var(--hairline);text-transform:none;
+}
+.pop tbody td{
+  padding:5px 6px;border-bottom:1px dotted var(--hairline);color:var(--ink-soft);
+  vertical-align:top;font-variant-numeric:tabular-nums lining-nums;
+}
+.pop tbody tr:last-child td{border-bottom:0}
+.pop tfoot.summary td,.pop .summary td{
+  border-top:1px solid var(--hairline-2);padding-top:7px;font-weight:680;color:var(--ink);
+}
+.pop .pop-row{display:flex;justify-content:space-between;gap:14px;padding:4px 0;border-bottom:1px dotted var(--hairline)}
+.pop .pop-row:last-child{border-bottom:0}
+.pop .pop-row .k{color:var(--muted);flex:0 0 auto}
+.pop .pop-row .v{
+  color:var(--ink);
+  font-weight:600;
+  flex:1 1 auto;
+  min-width:0;
+  text-align:right;
+  overflow-wrap:break-word;
+}
+.pop .pop-pos{color:var(--pos);font-weight:600}
+.pop .pop-neg{color:var(--neg);font-weight:600}
+
+/* Tablet & touch-only: switch to fixed bottom-sheet so popovers escape the table's
+   overflow context (which only activates on these breakpoints).
+   Tablet still has hover, so we keep hover-open behavior; the slide-from-bottom
+   animation makes the position-fixed transition feel intentional rather than jarring. */
+@media (max-width:880px), (hover:none){
+  .pop{
+    position:fixed;
+    left:max(12px, env(safe-area-inset-left));
+    right:max(12px, env(safe-area-inset-right));
+    bottom:max(12px, env(safe-area-inset-bottom));
+    top:auto;
+    width:auto;max-width:none;
+    max-height:calc(100vh - 32px);
+    max-height:min(72vh, calc(100dvh - 32px));
+    overflow:auto;
+    overscroll-behavior:contain;
+    -webkit-overflow-scrolling:touch;
+    transform:translateY(20px);
+    box-shadow:0 10px 30px rgba(15,25,31,.18), 0 2px 6px rgba(0,0,0,.08);
+  }
+  .pop table{table-layout:fixed}
+  .pop table th,.pop table td{white-space:normal;overflow-wrap:anywhere}
+  .sym-trigger:hover > .pop,
+  .sym-trigger:focus-within > .pop,
+  .price-trigger:hover > .pop,
+  .price-trigger:focus-within > .pop{
+    opacity:1;visibility:visible;transform:translateY(0);pointer-events:auto;
+    transition:opacity .22s ease, transform .22s ease, visibility 0s;
+  }
+}
+
+/* Touch-only override: suppress hover-show — only tap (focus-within) opens the sheet */
+@media (hover:none){
+  .sym-trigger:hover > .pop,
+  .price-trigger:hover > .pop{opacity:0;visibility:hidden;transform:translateY(20px);pointer-events:none}
+  .sym-trigger:focus-within > .pop,
+  .price-trigger:focus-within > .pop{
+    opacity:1;visibility:visible;transform:translateY(0);pointer-events:auto;
+  }
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce){
+  .pop{transition:opacity .01s linear, visibility 0s !important;transform:none !important}
+}
+
+/* ---------- Holding period & pacing ---------- */
+.period-strip{
+  display:flex;width:100%;height:10px;
+  border-radius:2px;overflow:hidden;
+  border:1px solid var(--hairline);
+  background:var(--surface-2);
+}
+.period-strip span{display:block;height:100%;font-size:0;line-height:0;color:transparent}
+.period-legend{
+  display:flex;flex-wrap:wrap;gap:8px 18px;
+  margin-top:10px;font-size:12.5px;color:var(--ink-soft);
+}
+.period-legend span{display:inline-flex;align-items:center;gap:7px}
+.period-legend i{display:inline-block;width:10px;height:10px;border-radius:2px}
+.bucket-note{
+  margin-top:14px;padding:11px 14px;
+  background:var(--surface-2);border-left:3px solid var(--warn);border-radius:2px;
+  font-size: clamp(13.5px, 0.35vw + 12.4px, 14.5px);
+  color:var(--ink-soft);line-height:1.7;
+}
+.bucket-note + .bucket-note{margin-top:8px}
+.bucket-note b{color:var(--ink)}
+
+/* ---------- Risk grid ---------- */
+.risk-grid{
+  display:grid;grid-template-columns:repeat(5, minmax(0,1fr));
+  gap:1px;background:var(--hairline-2);
+  border:1px solid var(--hairline-2);
+}
+.risk{
+  background:var(--surface);
+  padding:14px 14px 12px;
+  display:flex;flex-direction:column;gap:4px;
+  min-height:96px;
+  position:relative;
+}
+.risk:before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--muted-2)}
+.risk.r-low:before {background:#9bb6d6}
+.risk.r-mid:before {background:var(--warn)}
+.risk.r-high:before{background:var(--neg)}
+.risk .t{font-weight:700;color:var(--ink);font-size:14px;overflow-wrap:anywhere}
+.risk .s{font-size:11px;color:var(--muted);letter-spacing:.04em;overflow-wrap:anywhere;word-break:break-word;line-height:1.45}
+.risk .m{font-size:12.5px;color:var(--ink-soft);font-variant-numeric:tabular-nums;margin-top:auto;overflow-wrap:anywhere}
+
+/* ---------- Action list ---------- */
+.actions{margin:0;padding:0;list-style:none}
+.actions li{
+  display:grid;grid-template-columns:84px 1fr;gap:14px;
+  padding:11px 0;border-bottom:1px dotted var(--hairline);
+  font-size: clamp(13px, 0.3vw + 12px, 14px);color:var(--ink-soft);
+}
+.actions li:last-child{border-bottom:0}
+.actions .lbl{
+  font-size: clamp(10px, 0.15vw + 9.5px, 11px);
+  font-weight:700;letter-spacing:.1em;
+  color:var(--muted);padding-top:2px;
+}
+.actions .lbl.do {color:#7a1414}
+.actions .lbl.may{color:var(--info)}
+.actions .lbl.no {color:var(--muted)}
+.actions .lbl.fix{color:var(--accent-warm)}
+
+/* ---------- News list ---------- */
+.news{display:flex;flex-direction:column;gap:0}
+.news .item{
+  display:grid;grid-template-columns:72px 1fr auto;
+  gap:16px;
+  padding:14px 0;
+  border-bottom:1px solid var(--hairline);
+  align-items:start;
+}
+.news .item:last-child{border-bottom:0}
+.news .meta{font-size:11.5px;color:var(--muted);letter-spacing:.04em;line-height:1.4}
+.news .meta .tk{font-weight:700;color:var(--ink);display:block;margin-bottom:2px;font-size:13px}
+.news .body .head{font-weight:600;color:var(--ink);font-size: clamp(13px, 0.3vw + 12px, 14px);margin-bottom:4px;line-height:1.4}
+.news .body .src{font-size:11.5px;color:var(--muted)}
+.news .body .src a{color:var(--info);text-decoration:none}
+.news .body .src a:hover{text-decoration:underline}
+.news .impact{
+  align-self:start;
+  font-size:10.5px;font-weight:700;letter-spacing:.06em;
+  padding:2px 7px;border-radius:3px;
+  border:1px solid var(--hairline-2);
+  color:var(--muted);background:var(--surface-2);
+  white-space:nowrap;
+}
+.news .impact.pos{color:var(--pos);border-color:#bce3c8;background:#f0faf3}
+.news .impact.neg{color:var(--neg);border-color:#f3c5c0;background:#fdf3f2}
+.news .impact.neu{color:var(--ink-soft);border-color:var(--hairline-2);background:var(--surface-2)}
+
+/* ---------- Forward event timeline ---------- */
+.timeline{
+  position:relative;
+  height:78px;
+  margin:14px 0 18px;
+}
+.timeline .axis{
+  position:absolute;left:0;right:0;top:30px;height:1px;background:var(--hairline-2);
+}
+.timeline .tick{
+  position:absolute;top:30px;
+  width:1px;height:6px;background:var(--hairline-2);
+}
+.timeline .tick-label{
+  position:absolute;top:38px;
+  font-size:10px;color:var(--muted);
+  letter-spacing:.08em;text-transform:uppercase;font-weight:700;
+  transform:translateX(-50%);
+  white-space:nowrap;
+}
+.timeline .pin{
+  position:absolute;top:18px;
+  width:14px;height:14px;border-radius:50%;
+  background:var(--accent);
+  border:3px solid var(--paper);
+  transform:translateX(-50%);
+}
+.timeline .pin.warn{background:var(--warn)}
+.timeline .pin.neg {background:var(--neg)}
+.timeline .pin.info{background:var(--info)}
+.timeline .pin.pos {background:var(--pos)}
+.timeline .pin-label{
+  position:absolute;top:0;
+  font-size:11px;color:var(--ink);font-weight:650;
+  transform:translateX(-50%);
+  white-space:nowrap;
+}
+
+/* ---------- Two-column high-risk vs high-opportunity ---------- */
+.opp-list{display:flex;flex-direction:column;gap:0}
+.opp-list .item{
+  display:grid;
+  /* Use fr units for both why and trig so a long trig string can't squeeze why
+     to nothing. minmax(0,_) prevents the column from refusing to shrink below
+     its longest unbreakable token. */
+  grid-template-columns:64px minmax(0,1.4fr) minmax(0,1fr);
+  gap:14px;
+  padding:11px 0;border-bottom:1px solid var(--hairline);
+  align-items:start;
+}
+.opp-list .item:last-child{border-bottom:0}
+.opp-list .tk{font-weight:680;color:var(--ink);font-size:13.5px;overflow-wrap:anywhere}
+.opp-list .why{font-size:13px;color:var(--ink-soft);line-height:1.5;overflow-wrap:anywhere;word-break:break-word;min-width:0}
+.opp-list .trig{
+  font-size:11.5px;color:var(--info);font-weight:600;
+  font-variant-numeric:tabular-nums;
+  /* Wrap long trigger sentences instead of forcing the row wider — keeps the
+     why column readable when triggers are paragraph-length. */
+  white-space:normal;line-height:1.5;
+  overflow-wrap:anywhere;word-break:break-word;min-width:0;
+}
+
+/* ---------- Recommended adjustments ---------- */
+.adj-tbl thead th{font-size:10.5px}
+.adj-tbl{table-layout:fixed}
+.adj-tbl .why{
+  color:var(--ink-soft);font-size:12.5px;line-height:1.5;
+  overflow-wrap:anywhere;word-break:break-word;
+}
+.adj-tbl .trig{
+  font-size:11.5px;color:var(--info);font-weight:600;
+  font-variant-numeric:tabular-nums;
+  /* Allow wrap so a long trigger sentence doesn't squeeze adjacent columns. */
+  white-space:normal;line-height:1.5;
+  overflow-wrap:anywhere;word-break:break-word;
+}
+.adj-action{
+  display:inline-block;font-weight:700;font-size:11.5px;letter-spacing:.04em;
+  padding:2px 7px;border-radius:3px;
+  border:1px solid var(--hairline-2);background:var(--surface-2);
+  color:var(--muted);
+}
+.adj-action.trim{color:var(--neg);border-color:#f3c5c0;background:#fdf3f2}
+.adj-action.add {color:var(--pos);border-color:#bce3c8;background:#f0faf3}
+.adj-action.hold{color:var(--ink-soft)}
+.adj-action.exit{color:#fff;background:var(--neg);border-color:var(--neg)}
+.adj-action.watch{color:var(--warn);border-color:#ecd1a6;background:#fbf5e8}
+
+/* ---------- Sources & data-gaps audit ---------- */
+.src-tbl thead th{font-size:10.5px}
+.src-tbl .freshness{
+  font-size:11px;letter-spacing:.04em;font-weight:700;
+  padding:1px 6px;border-radius:2px;border:1px solid var(--hairline-2);
+  color:var(--muted);background:var(--surface-2);
+  white-space:nowrap;
+}
+.src-tbl .freshness.fresh{color:var(--pos);border-color:#bce3c8;background:#f0faf3}
+.src-tbl .freshness.delayed{color:var(--warn);border-color:#ecd1a6;background:#fbf5e8}
+.src-tbl .freshness.stale{color:var(--neg);border-color:#f3c5c0;background:#fdf3f2}
+.gap-list{margin:14px 0 0;padding:0;list-style:none}
+.gap-list li{
+  padding:8px 0;border-bottom:1px dotted var(--hairline);
+  font-size: clamp(13.5px, 0.35vw + 12.4px, 14.5px);
+  color:var(--ink-soft);line-height:1.7;
+  overflow-wrap:anywhere;word-break:break-word;
+}
+.gap-list li:last-child{border-bottom:0}
+.gap-list li b{color:var(--ink);font-weight:680}
+.gap-list li code{
+  background:var(--surface-2);padding:1px 5px;border-radius:2px;
+  font-size:.92em;color:var(--ink);
+}
+.gap-list .gap-sublist{
+  margin:6px 0 0;padding:0 0 0 18px;list-style:disc;
+}
+.gap-list .gap-sublist li{
+  padding:3px 0;border-bottom:0;line-height:1.55;
+}
+.gap-list .gap-sublist li.gap-overflow{color:var(--ink-soft);font-style:italic}
+
+/* ---------- Cash vs risk-asset bar (single horizontal split) ---------- */
+.cash-bar{
+  display:flex;width:100%;height:14px;
+  border-radius:2px;overflow:hidden;
+  border:1px solid var(--hairline);
+  background:var(--surface-2);
+}
+.cash-bar .seg{height:100%;display:block}
+.cash-bar .seg.risk{background:var(--ink)}
+.cash-bar .seg.cash{background:var(--accent-warm)}
+.cash-legend{
+  display:flex;flex-wrap:wrap;gap:6px 18px;
+  margin-top:8px;font-size:12.5px;color:var(--ink-soft);
+}
+.cash-legend span{display:inline-flex;align-items:center;gap:7px}
+.cash-legend i{display:inline-block;width:10px;height:10px;border-radius:2px}
+
+/* ---------- Footer ---------- */
+.footer{
+  margin-top:48px;padding-top:18px;border-top:1px solid var(--hairline-2);
+  font-size: clamp(11px, 0.15vw + 10.6px, 12px);
+  color:var(--muted);line-height:1.6;
+}
+
+/* ---------- Tablet (≤ 880px) ---------- */
+@media (max-width:880px){
+  .wrap{padding:32px 20px 56px}
+  .kpis{grid-template-columns:repeat(2,1fr)}
+  .kpi{border-right:0;border-bottom:1px solid var(--hairline);padding:14px 0}
+  .kpi:nth-child(2n){border-left:1px solid var(--hairline);padding-left:18px}
+  .kpi:nth-child(2n+1){padding-right:18px}
+  .cols-2{grid-template-columns:1fr}
+  .donut-wrap{grid-template-columns:1fr;justify-items:center;text-align:center}
+  .callout ul{columns:1}
+  .risk-grid{grid-template-columns:repeat(2,1fr)}
+  .bar-row{grid-template-columns:72px 1fr 70px;gap:10px}
+  /* Now safe to enable horizontal scroll — popover switches to fixed bottom-sheet
+     at the same breakpoint and no longer relies on the wrap's positioning context. */
+  .tbl-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+}
+
+/* ---------- Phone (≤ 600px) — HARD font floors ---------- */
+@media (max-width:600px){
+  body{font-size:14px}                              /* floor */
+  .wrap{padding:24px 16px 48px}
+  .masthead{padding:14px 0 18px;margin-bottom:24px}
+  .masthead-meta{gap:6px 14px}
+  .section{margin-top:28px}
+  .kpis{grid-template-columns:1fr}
+  .kpi{padding:12px 0;border-right:0;border-left:0!important;padding-left:0!important;padding-right:0!important;border-bottom:1px solid var(--hairline)}
+  .kpi:last-child{border-bottom:0}
+  .kpi .v{font-size:24px}                           /* floor */
+  .tbl-wrap{margin:0 -16px;padding:0 16px}
+  .tbl-wrap table{min-width:680px;font-size:12.5px} /* floor */
+  th,td{padding:9px 8px}
+  td:first-child,th:first-child{
+    position:sticky;left:0;z-index:1;
+    background:var(--surface);
+    box-shadow:1px 0 0 var(--hairline);
+  }
+  thead th:first-child{z-index:calc(var(--table-header-z) + 1);background:var(--paper)}
+  tr:hover td:first-child{background:var(--surface-2)}
+  .price-num{font-size:15px}                        /* floor */
+  .period-strip{height:14px}
+  .period-legend{font-size:11.5px;gap:6px 14px}
+  .risk-grid{grid-template-columns:1fr}
+  .risk{min-height:auto}
+  .actions li{grid-template-columns:64px 1fr;gap:10px}
+  .footer{font-size:11.5px}
+  .pop{font-size:12px}                              /* floor */
+}
+
+.reviewer-note-block { margin-top: 12px; padding: 10px 12px; border-left: 3px solid #94a3b8; background: rgba(148, 163, 184, 0.08); border-radius: 4px; }
+.reviewer-note-block ul { margin: 0; padding-left: 0; list-style: none; }
+.reviewer-note-block li { font-style: italic; color: #475569; font-size: 0.9em; line-height: 1.5; padding: 2px 0; }
+.reviewer-note-block li b { font-style: normal; color: #334155; margin-right: 4px; }
+.reviewer-note-inline { margin-top: 8px; padding: 6px 8px; border-left: 2px solid #94a3b8; background: rgba(148, 163, 184, 0.08); border-radius: 3px; font-style: italic; color: #475569; font-size: 0.88em; line-height: 1.45; }
+.reviewer-note-inline b { font-style: normal; color: #334155; margin-right: 4px; }
+li.reviewer-note, li.reviewer-summary { font-style: italic; color: #475569; }
+li.reviewer-note b, li.reviewer-summary b { font-style: normal; color: #334155; }
+li.reviewer-summary { margin-top: 8px; padding-top: 8px; border-top: 1px dashed #cbd5e1; }
+/* §10.1.7 trading psychology — same typographic scale as .prose / body (§14.9 tokens) */
+.psych-headline { margin-bottom: 14px; }
+.psych-headline p {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: clamp(13.5px, 0.35vw + 12.4px, 14.5px);
+  line-height: 1.7;
+  font-weight: 650;
+}
+.psych-list { margin: 0; padding-left: 0; list-style: none; }
+.psych-list li {
+  margin: 0 0 10px 0;
+  padding: 0;
+  color: var(--ink-soft);
+  font-size: clamp(13.5px, 0.35vw + 12.4px, 14.5px);
+  line-height: 1.7;
+}
+.psych-list li:last-child { margin-bottom: 0; }
+.psych-list .psych-li-main { display: inline; }
+.psych-evidence {
+  margin-top: 6px;
+  font-size: clamp(11.5px, 0.2vw + 10.8px, 12.5px);
+  color: var(--muted);
+  letter-spacing: 0.04em;
+  line-height: 1.45;
+}
+.psych-ev-prefix { font-style: italic; margin-right: 4px; }
+.psych-suggestion {
+  margin-top: 6px;
+  color: var(--ink-soft);
+  font-size: clamp(13.5px, 0.35vw + 12.4px, 14.5px);
+  line-height: 1.65;
+}
+.psych-suggestion-label { font-weight: 650; margin-right: 6px; }
+.psych-strengths-wrap { margin-top: 18px; }
+.tag.info { color: var(--info); border-color: #b8c9e8; background: #f4f7fd; }
+.tag.neu { color: var(--muted); border-color: var(--hairline-2); background: var(--surface-2); }
+/* §10.1.5a report accuracy — one KPI uses full width (avoid 4-col grid squeezing) */
+.kpis.kpis-solo { grid-template-columns: minmax(0, 1fr); }
+.kpis.kpis-solo .kpi { padding-left: 0; }
+
+/* ============================================================
+   Responsive overlay (RWA) — owned by generate_report.py.
+   Tightens phone rendering so the report reads cleanly on
+   iPhone-class viewports (375–414px) and small phones (≤360px).
+   Overrides the canonical desktop chrome where the original
+   rules were too desktop-centric.
+   ============================================================ */
+
+/* Universal: never let a rogue inline width/height push the page wider
+   than the viewport. The wrap already caps at 1180px on desktop; on phones
+   the safe-area + side padding governs. */
+img, svg, table { max-width: 100%; }
+.wrap { overflow-x: hidden; }
+
+/* Horizontal-scroll affordance for tables on tablet/phone — a soft
+   right-edge fade tells the reader "there is more content to swipe to". */
+@media (max-width:880px){
+  .tbl-wrap{
+    -webkit-mask-image:linear-gradient(to right, #000 calc(100% - 18px), transparent 100%);
+            mask-image:linear-gradient(to right, #000 calc(100% - 18px), transparent 100%);
+  }
+  .tbl-wrap.scroll-y{
+    -webkit-mask-image:none; mask-image:none;
+  }
+}
+
+/* ---------- Phone (≤ 600px) ---------- */
+@media (max-width:600px){
+  /* Tighter side padding so 16px content edges feel intentional.
+     Restores balanced ink/paper ratio at narrow widths. */
+  .wrap{padding:20px 14px 40px}
+
+  /* Section spacing tighter on phone — desktop's 38px feels cavernous */
+  .section{margin-top:24px}
+  .section-head{padding-bottom:6px;margin-bottom:14px;gap:10px}
+  .section-head .sub{font-size:11.5px}
+
+  /* Masthead — h1 floor, meta wraps neatly */
+  .masthead{padding:12px 0 14px;margin-bottom:20px}
+  .masthead h1{font-size:clamp(20px, 5vw, 26px);line-height:1.22}
+  .dek{font-size:13.5px;line-height:1.55}
+
+  /* Callout — single column, less padding */
+  .callout{padding:14px 14px 14px 18px}
+  .callout ul{columns:1;padding-left:18px;font-size:13px}
+
+  /* Bar rows — tighter label column so values fit */
+  .bar-row{grid-template-columns:minmax(64px,28%) minmax(0,1fr) minmax(48px,18%);gap:8px}
+  .bar-label{font-size:12.5px}
+  .bar-value{font-size:12.5px}
+
+  /* Two-col grids inside subsections — also collapse to 1 column on phone
+     even when child widgets supply align-items:start. */
+  .cols-2{grid-template-columns:1fr;gap:18px}
+  .subsection .cols-2{gap:14px}
+
+  /* News list — stack vertically: ticker/date row, then headline, then impact tag.
+     The desktop 72px / 1fr / auto grid is too cramped for narrow widths. */
+  .news .item{
+    grid-template-columns:1fr auto;
+    grid-template-areas: "meta impact" "body body";
+    gap:6px 10px;
+    padding:12px 0;
+  }
+  .news .meta{grid-area:meta}
+  .news .body{grid-area:body}
+  .news .impact{grid-area:impact;justify-self:end;align-self:start}
+  .news .meta .tk{display:inline;margin-right:8px}
+  .news .body .head{font-size:13.5px;line-height:1.45;margin-bottom:3px}
+
+  /* Opportunity / risk list — stack so trigger sentences are not crushed
+     into 1fr-wide columns. */
+  .opp-list .item{
+    grid-template-columns:1fr;
+    gap:6px;
+    padding:12px 0;
+  }
+  .opp-list .tk{font-size:13.5px}
+  .opp-list .why{font-size:13px}
+  .opp-list .trig{font-size:12px}
+
+  /* Adjustments table — keep the table semantics but allow narrower min-width
+     than the holdings table (no popovers, simpler columns). */
+  .adj-tbl{min-width:560px}
+
+  /* Recommended-actions list — preserve the label column layout but
+     tighter (already at 64px from base 600px rule). */
+  .actions li{padding:10px 0}
+
+  /* Holding period legend — wrap with smaller gaps */
+  .period-legend{gap:4px 12px;font-size:11px}
+  .period-legend i{width:9px;height:9px}
+
+  /* Cash bar legend wraps cleanly */
+  .cash-legend{gap:4px 12px;font-size:11.5px}
+
+  /* Timeline — pin labels often collide on narrow screens. Drop them to
+     a smaller font and add ellipsis so they stack legibly. */
+  .timeline{height:88px;margin:14px 0 10px}
+  .timeline .pin-label{font-size:10px;max-width:88px;white-space:normal;overflow:hidden;text-overflow:ellipsis}
+  .timeline .tick-label{font-size:9.5px}
+
+  /* Risk grid — single column already at base; ensure rows have airy padding */
+  .risk{padding:12px 12px 10px;min-height:auto}
+  .risk .t{font-size:13.5px}
+  .risk .m{font-size:12px}
+
+  /* Trading-psychology lists — tighter spacing */
+  .psych-list li{margin-bottom:8px;font-size:13.5px;line-height:1.65}
+
+  /* Reviewer note blocks — smaller padding so they don't dwarf 1-line notes */
+  .reviewer-note-block{padding:8px 10px}
+
+  /* KPI strips — collapse to 2-up grid on phone instead of the canonical
+     1-column stack. The 4-cell strips (dashboard, perf-attribution, trade-
+     quality, discipline-check, holding-period) drop from ~480px tall to
+     ~240px. The 2-cell profit-panel strip stays as one row. The single-cell
+     `.kpis-solo` variant (report accuracy) keeps full width.
+     Each cell gets tighter typography so 7-character $ values still fit.
+     The dashboard's 4th KPI hosts a full-width cash-bar legend; the
+     `:has(.cash-bar)` rule promotes it back to span both columns. */
+  .kpis:not(.kpis-solo){grid-template-columns:repeat(2,minmax(0,1fr))}
+  .kpis:not(.kpis-solo) .kpi{
+    padding:10px 12px 10px 0!important;
+    border-right:1px solid var(--hairline)!important;
+    border-left:0!important;
+    border-bottom:1px solid var(--hairline)!important;
+  }
+  .kpis:not(.kpis-solo) .kpi:nth-child(2n){
+    padding-right:0!important;padding-left:12px!important;border-right:0!important;
+  }
+  .kpis:not(.kpis-solo) .kpi:nth-last-child(-n+2){border-bottom:0!important}
+  .kpis:not(.kpis-solo) .kpi .v{font-size:20px;line-height:1.18}
+  .kpis:not(.kpis-solo) .kpi .k{font-size:9.5px;letter-spacing:.14em}
+  .kpis:not(.kpis-solo) .kpi .delta{font-size:10.5px;margin-top:4px;line-height:1.4}
+  .kpis:not(.kpis-solo) .kpi:has(.cash-bar){
+    grid-column:1/-1;
+    padding:12px 0!important;
+    border-right:0!important;
+    border-bottom:0!important;
+  }
+
+  /* Compact tables that should FIT inside the phone viewport — `.periods-tbl`
+     (profit panel, per-market analytics, residual P&L), `.dim-tbl` (report-
+     accuracy detail), `.adj-tbl` (recommended adjustments), `.src-tbl`
+     (sources & gaps), and all `.tbl-wrap.scroll-y` tables (top-weight list,
+     loss/gain lot lists, recent activity). These have 2–8 simple columns
+     and DO NOT need the canonical 760-/880-px min-width.
+     Forcing min-width:0 + tight typography lets them render without
+     horizontal-scroll bleed at ≤430px viewports. Holdings uses a phone-only
+     card list instead of requiring horizontal table scroll. */
+  .tbl-wrap table.periods-tbl,
+  .tbl-wrap table.dim-tbl,
+  .tbl-wrap table.adj-tbl,
+  .tbl-wrap table.src-tbl,
+  .tbl-wrap.scroll-y table{
+    min-width:0!important;
+    font-size:11px;
+    table-layout:auto;
+  }
+  .tbl-wrap table.periods-tbl th,
+  .tbl-wrap table.periods-tbl td,
+  .tbl-wrap table.dim-tbl th,
+  .tbl-wrap table.dim-tbl td,
+  .tbl-wrap table.adj-tbl th,
+  .tbl-wrap table.adj-tbl td,
+  .tbl-wrap table.src-tbl th,
+  .tbl-wrap table.src-tbl td,
+  .tbl-wrap.scroll-y th,
+  .tbl-wrap.scroll-y td{
+    padding:6px 4px;
+    line-height:1.4;
+  }
+  .tbl-wrap table.periods-tbl th,
+  .tbl-wrap table.dim-tbl th,
+  .tbl-wrap table.adj-tbl th,
+  .tbl-wrap table.src-tbl th,
+  .tbl-wrap.scroll-y th{
+    font-size:9.5px;
+    letter-spacing:.04em;
+    padding:7px 4px;
+  }
+  /* Adjustments + sources tables — long-text columns (理由/觸發/備註) wrap;
+     short ticker/action/state cells stay tight. Drop colgroup-driven
+     desktop col widths in favor of natural sizing on phone. */
+  .tbl-wrap table.adj-tbl,
+  .tbl-wrap table.src-tbl{table-layout:auto!important}
+  .tbl-wrap table.adj-tbl colgroup col,
+  .tbl-wrap table.src-tbl colgroup col{width:auto!important}
+  .tbl-wrap table.adj-tbl td,
+  .tbl-wrap table.src-tbl td{
+    overflow-wrap:anywhere;
+    word-break:break-word;
+    line-height:1.45;
+  }
+  /* Period tables: first column ("1日", "近1月", "歷年") stays nowrap so
+     period rows never wrap. The boundary date in `<span class="muted">
+     (自 2026-05-01)</span>` is informative but not essential — hiding it
+     on phone shrinks the period column from ~125px to ~40px and the whole
+     table fits within 430px viewport instead of horizontally scrolling. */
+  .tbl-wrap table.periods-tbl td:first-child{
+    white-space:nowrap;
+    font-size:10.5px;
+    color:var(--ink-soft);
+    font-variant-numeric:tabular-nums;
+  }
+  .tbl-wrap table.periods-tbl td:first-child > .muted{display:none}
+  /* Dimension tables (report accuracy): first column has multi-character
+     Chinese labels ("獲利面板 — 邊界估價") that benefit from wrapping. */
+  .tbl-wrap table.dim-tbl td:first-child{
+    font-size:10.5px;
+    color:var(--ink-soft);
+    line-height:1.4;
+    overflow-wrap:anywhere;
+    word-break:break-word;
+  }
+  .tbl-wrap.scroll-y td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
+
+  /* Tablet keeps table ergonomics; phone hides the holdings table in favor of
+     `.holdings-cards`, so these nowrap rules only matter before the phone card
+     display switch applies. */
+  .tbl-wrap table.holdings-tbl td:first-child,
+  .tbl-wrap table.holdings-tbl th:first-child{white-space:nowrap}
+
+  /* Drop the right-edge fade mask for tables that fit. Phone holdings cards do
+     not need a swipe affordance; adjustment tables may still overflow if very
+     long action labels are supplied. */
+  .tbl-wrap:has(table.periods-tbl),
+  .tbl-wrap.scroll-y{
+    -webkit-mask-image:none!important;
+            mask-image:none!important;
+  }
+
+  /* Holdings cards — phone replaces the wide 7-column holdings table with
+     one holding per card. Cards reuse the exact Symbol/Price trigger HTML,
+     so the existing fixed bottom-sheet popover rules still apply on touch. */
+  .holdings-table-wrap{display:none}
+  .holdings-cards{
+    display:grid;
+    gap:12px;
+    margin-top:2px;
+    width:100%;
+  }
+  .holding-card{
+    min-width:0;
+    border-top:1px solid var(--ink);
+    border-bottom:1px solid var(--hairline-2);
+    padding:12px 0 13px;
+    background:transparent;
+  }
+  .holding-card-head{
+    display:grid;
+    grid-template-columns:minmax(0,1fr) auto;
+    gap:8px 12px;
+    align-items:start;
+    margin-bottom:10px;
+  }
+  .holding-card-symbol{min-width:0}
+  .holding-card-category{justify-self:end;text-align:right;min-width:0}
+  .holding-card-category .tag{margin-left:4px}
+  .holding-card-grid{
+    display:grid;
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:9px 14px;
+    margin:0;
+  }
+  .holding-card-grid>div{min-width:0}
+  .holding-card-grid dt{
+    margin:0 0 2px;
+    color:var(--muted);
+    font-size:10px;
+    line-height:1.2;
+    letter-spacing:.12em;
+    text-transform:uppercase;
+    font-weight:700;
+  }
+  .holding-card-grid dd{
+    margin:0;
+    color:var(--ink-soft);
+    font-size:13px;
+    line-height:1.42;
+    overflow-wrap:anywhere;
+  }
+  .holding-card-grid .num,
+  .holding-card-grid dd{font-variant-numeric:tabular-nums lining-nums}
+  .holding-card-price .price-trigger{align-items:flex-start;text-align:left}
+  .holding-card-price .price-sub{font-size:11px}
+  .holding-card-pnl.pos-txt dd{color:var(--pos);font-weight:600}
+  .holding-card-pnl.neg-txt dd{color:var(--neg);font-weight:600}
+  .holding-card-action{grid-column:1/-1}
+  .holding-card-action dd{line-height:1.5;word-break:break-word}
+
+  /* Tag chip — tighter padding so wrapping is rare */
+  .tag{margin-left:3px;padding:1px 5px}
+
+  /* Sources/freshness chip — keep on one line via shrink */
+  .src-tbl .freshness{font-size:10.5px;padding:1px 5px}
+
+  /* Footer — tighter padding */
+  .footer{margin-top:32px;padding-top:14px}
+}
+
+/* ---------- Small phone (≤ 420px) ---------- */
+@media (max-width:420px){
+  .wrap{padding:18px 12px 36px}
+  .masthead{padding:10px 0 12px;margin-bottom:18px}
+  .masthead h1{font-size:21px;line-height:1.22}
+  .masthead-meta{font-size:11px;gap:4px 12px}
+
+  .kpi .v{font-size:22px}
+  .kpi .k{font-size:10px;letter-spacing:.16em}
+
+  /* Bar rows — 1-col fall-through: label and value share top row, bar full width */
+  .bar-row{
+    grid-template-columns:1fr auto;
+    grid-template-areas: "label value" "track track";
+    row-gap:4px;column-gap:8px;
+  }
+  .bar-label{grid-area:label;font-size:12px}
+  .bar-track{grid-area:track;height:5px}
+  .bar-value{grid-area:value;font-size:12px}
+
+  /* Section heads — allow sub to drop under title */
+  .section-head{flex-wrap:wrap;align-items:flex-end}
+  .section-head .sub{flex-basis:100%;font-size:11px}
+
+  /* Callout — even tighter */
+  .callout{padding:12px 12px 12px 14px;border-left-width:2px}
+  .callout ul{font-size:12.5px;padding-left:16px}
+
+  /* Donut — slightly smaller so it doesn't dominate */
+  .donut-wrap svg{width:148px;height:148px}
+
+  /* Phone holdings use cards, so the hidden table's min-width no longer drives
+     normal reading. Other non-card tables keep a compact floor. */
+  .tbl-wrap table.holdings-tbl{min-width:760px}
+  .tbl-wrap table{min-width:600px;font-size:12px}
+  th,td{padding:7px 6px}
+  thead th{font-size:10px;letter-spacing:.08em}
+
+  /* News & opp-list — already vertical from 600px breakpoint */
+  .news .body .head{font-size:13px}
+
+  /* Adj table — narrow min-width OK, fixed col widths recompute */
+  .adj-tbl{min-width:520px}
+  .adj-action{font-size:10.5px;padding:1px 5px}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="masthead">
+    <div class="eyebrow">投資研究筆記 · 繁體中文</div>
+    <h1>投資組合健康檢查</h1>
+    <p class="dek"></p>
+    <div class="masthead-meta">
+      <span><b>產生時間</b>　2026-05-04 00:16</span>
+      <span><b>基準匯率</b>　USD/TWD 31.629326 @ Sun, 03 May 2026 00:02:31 +0000</span>
+      <span><b>下個事件</b>　n/a</span>
+    </div>
+  </header>
+  <section class="section">
+    <div class="section-head">
+      <h2>投資組合儀表板</h2>
+      <span class="sub">總體 KPI · USD 基準</span>
+    </div>
+    <div class="kpis">
+      <div class="kpi"><div class="k">總資產</div><div class="v">$1,570,082</div><div class="delta">含現金、加密、股票</div></div>
+      <div class="kpi"><div class="k">投資部位</div><div class="v">$660,929</div><div class="delta">42.1% 風險資產</div></div>
+      <div class="kpi"><div class="k">現金與類現金</div><div class="v">$909,153</div><div class="delta">57.9% 防守彈藥</div></div>
+      <div class="kpi"><div class="k">已知損益</div><div class="v">$235,040</div><div class="delta">僅統計已知成本部位</div><div class="delta pos">+$235,040</div></div>
+    </div>
+
+    <div style="margin-top:22px">
+      <div class="cash-bar" aria-label="現金與風險資產比例">
+        <span class="seg risk" style="width:42.1%"></span>
+        <span class="seg cash" style="width:57.9%"></span>
+      </div>
+      <div class="cash-legend">
+        <span><i style="background:var(--ink)"></i>風險資產 42.1% · $660,929</span>
+        <span><i style="background:var(--accent-warm)"></i>現金與類現金 57.9% · $909,153</span>
+      </div>
+    </div>
+  </section>
+  <section class="section">
+    <div class="section-head">
+      <h2>獲利面板</h2>
+      <span class="sub">區間損益 · USD 基準 · 已實現 ＋ 未實現 ＋ 排除淨流入</span>
+    </div>
+    <div class="kpis">
+      <div class="kpi"><div class="k">歷年已實現損益</div>
+        <div class="v pos-txt">+$13,954</div></div>
+      <div class="kpi"><div class="k">目前未實現損益</div>
+        <div class="v pos-txt">+$235,040</div></div>
+    </div>
+    <div class="tbl-wrap" style="margin-top:14px">
+      <table class="periods-tbl">
+        <thead>
+          <tr>
+            <th>區間</th>
+            <th class="num">損益</th>
+            <th class="num">報酬率</th>
+            <th class="num">基準</th>
+            <th class="num">超額報酬</th>
+            <th class="num">已實現</th>
+            <th class="num">未實現變動</th>
+            <th class="num">淨流入</th>
+          </tr>
+        </thead>
+        <tbody>
+      <tr>
+        <td>1日 <span class="muted">(自 2026-05-03)</span></td>
+        <td class="num pos-txt">+$1,056</td>
+        <td class="num pos-txt">+0.07%</td>
+        <td class="num pos-txt">+0.00% <span class="muted">(VT)</span></td>
+        <td class="num pos-txt">+0.07%</td>
+        <td class="num pos-txt">+$0</td>
+        <td class="num pos-txt">+$1,127</td>
+        <td class="num pos-txt">+$0</td>
+      </tr>
+      <tr>
+        <td>7日 <span class="muted">(自 2026-04-27)</span></td>
+        <td class="num pos-txt">+$6,179</td>
+        <td class="num pos-txt">+0.40%</td>
+        <td class="num pos-txt">+0.75% <span class="muted">(VT)</span></td>
+        <td class="num neg-txt">−0.35%</td>
+        <td class="num pos-txt">+$0</td>
+        <td class="num pos-txt">+$6,931</td>
+        <td class="num pos-txt">+$0</td>
+      </tr>
+      <tr>
+        <td>本月 <span class="muted">(自 2026-04-30)</span></td>
+        <td class="num pos-txt">+$8,391</td>
+        <td class="num pos-txt">+0.54%</td>
+        <td class="num pos-txt">+0.16% <span class="muted">(VT)</span></td>
+        <td class="num pos-txt">+0.38%</td>
+        <td class="num pos-txt">+$0</td>
+        <td class="num pos-txt">+$8,651</td>
+        <td class="num pos-txt">+$0</td>
+      </tr>
+      <tr>
+        <td>近1月 <span class="muted">(自 2026-04-04)</span></td>
+        <td class="num pos-txt">+$124,271</td>
+        <td class="num pos-txt">+8.60%</td>
+        <td class="num pos-txt">+8.66% <span class="muted">(VT)</span></td>
+        <td class="num neg-txt">−0.07%</td>
+        <td class="num pos-txt">+$0</td>
+        <td class="num pos-txt">+$122,954</td>
+        <td class="num pos-txt">+$0</td>
+      </tr>
+      <tr>
+        <td>今年 <span class="muted">(自 2025-12-31)</span></td>
+        <td class="num pos-txt">+$66,080</td>
+        <td class="num pos-txt">+4.39%</td>
+        <td class="num pos-txt">+7.36% <span class="muted">(VT)</span></td>
+        <td class="num neg-txt">−2.96%</td>
+        <td class="num pos-txt">+$4,161</td>
+        <td class="num pos-txt">+$63,550</td>
+        <td class="num pos-txt">+$0</td>
+      </tr>
+      <tr>
+        <td>近1年 <span class="muted">(自 2025-05-04)</span></td>
+        <td class="num pos-txt">+$168,099</td>
+        <td class="num pos-txt">+11.99%</td>
+        <td class="num pos-txt">+27.20% <span class="muted">(VT)</span></td>
+        <td class="num neg-txt">−15.21%</td>
+        <td class="num pos-txt">+$8,177</td>
+        <td class="num pos-txt">+$163,768</td>
+        <td class="num pos-txt">+$0</td>
+      </tr>
+      <tr>
+        <td>歷年 <span class="muted">(自 2024-01-04)</span></td>
+        <td class="num pos-txt">+$248,693</td>
+        <td class="num pos-txt">+37.64%</td>
+        <td class="num "><span class="na">n/a</span></td>
+        <td class="num "><span class="na">n/a</span></td>
+        <td class="num pos-txt">+$13,954</td>
+        <td class="num pos-txt">+$235,040</td>
+        <td class="num pos-txt">+$1,321,389</td>
+      </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+  <section class="section" id="report-accuracy">
+    <div class="section-head">
+      <h2>報告資料品質</h2>
+      <span class="sub">依報價、獲利面板稽核與管線錯誤計算之確定性分數 — 非績效評價</span>
+    </div>
+    <div class="kpis kpis-solo">
+      <div class="kpi">
+        <div class="k">綜合分數</div>
+        <div class="v">94.7</div>
+        <div class="delta"><span class="tag pos">可信度高</span></div>
+      </div>
+    </div>
+    <div class="tbl-wrap" style="margin-top:14px">
+      <table class="dim-tbl">
+        <thead><tr>
+          <th>面向</th>
+          <th class="num">分數（0–100）</th>
+          <th>診斷摘要</th>
+        </tr></thead>
+        <tbody>
+<tr><td>報價覆蓋（目前持倉）</td><td class="num">100.0</td><td>8/8 檔有最新價 · fresh 8 · delayed 0 · stale/n/a 0</td></tr>
+<tr><td>報價新鮮度</td><td class="num">100.0</td><td>8/8 檔有最新價 · fresh 8 · delayed 0 · stale/n/a 0</td></tr>
+<tr><td>獲利面板 — 邊界估價</td><td class="num">95.5</td><td>稽核筆數 — 無歷史收盤: 3、無收盤且無現價: 0、缺價: 0、未實現排除: 0、以最新價回填邊界: 0、無 FX 歷史: 0</td></tr>
+<tr><td>獲利面板 — 損益勾稽</td><td class="num">77.3</td><td>最大 |損益−(已實現+未實現Δ)| ≈ 3,846.00 · 最大相對 0.1217</td></tr>
+<tr><td>分析管線</td><td class="num">100.0</td><td>硬錯誤數: 0</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="prose" style="margin-top:14px"><p class="muted">分數會懲罰歷史收盤缺口、總損益與拆解勾稽落差、報價過舊，以及快照管線錯誤；不代表投資好壞。</p></div>
+    
+  </section>
+  <section class="section">
+    <div class="section-head">
+      <h2>績效歸因</h2>
+      <span class="sub">依市場別獲利面板（欄位與上方獲利面板相同）· USD 基準</span>
+    </div>
+    <div class="kpis">
+      <div class="kpi"><div class="k">期末 NAV</div><div class="v">$1,570,082</div><div class="delta">目前重播估值</div></div>
+      <div class="kpi"><div class="k">MWR 年化</div><div class="v">+8.91%</div><div class="delta">資金加權，含入出金時點</div></div>
+      <div class="kpi"><div class="k">最大貢獻</div><div class="v">AMD $67,534</div><div class="delta">已實現 + 目前未實現</div></div>
+      <div class="kpi"><div class="k">最大拖累</div><div class="v">SMR −$1,483</div><div class="delta">已實現 + 目前未實現</div></div>
+    </div>
+    <div class="subsection" style="margin-top:20px">
+      <h3 class="eyebrow">美股</h3>
+      <div class="tbl-wrap" style="margin-top:8px">
+        <table class="periods-tbl">
+        <thead>
+          <tr>
+            <th>區間</th>
+            <th class="num">損益</th>
+            <th class="num">報酬率</th>
+            <th class="num">基準</th>
+            <th class="num">超額報酬</th>
+            <th class="num">已實現</th>
+            <th class="num">未實現變動</th>
+            <th class="num">淨流入</th>
+          </tr>
+        </thead>
+          <tbody>
+      <tr>
+        <td>1日 <span class="muted">(自 2026-05-03)</span></td>
+        <td class="num neg-txt">−$0</td>
+        <td class="num pos-txt">+0.00%</td>
+        <td class="num pos-txt">+0.00% <span class="muted">(VTI)</span></td>
+        <td class="num pos-txt">+0.00%</td>
+        <td class="num pos-txt">+$0</td>
+        <td class="num neg-txt">−$0</td>
+        <td class="num muted"><span class="muted">—</span></td>
+      </tr>
+      <tr>
+        <td>7日 <span class="muted">(自 2026-04-27)</span></td>
+        <td class="num pos-txt">+$9,494</td>
+        <td class="num pos-txt">+2.40%</td>
+        <td class="num pos-txt">+0.78% <span class="muted">(VTI)</span></td>
+        <td class="num pos-txt">+1.61%</td>
+        <td class="num pos-txt">+$0</td>
+        <td class="num pos-txt">+$9,494</td>
+        <td class="num muted"><span class="muted">—</span></td>
+      </tr>
+      <tr>
+        <td>本月 <span class="muted">(自 2026-04-30)</span></td>
+        <td class="num pos-txt">+$3,737</td>
+        <td class="num pos-txt">+0.93%</td>
+        <td class="num pos-txt">+0.31% <span class="muted">(VTI)</span></td>
+        <td class="num pos-txt">+0.62%</td>
+        <td class="num pos-txt">+$0</td>
+        <td class="num pos-txt">+$3,737</td>
+        <td class="num muted"><span class="muted">—</span></td>
+      </tr>
+      <tr>
+        <td>近1月 <span class="muted">(自 2026-04-04)</span></td>
+        <td class="num pos-txt">+$85,143</td>
+        <td class="num pos-txt">+26.57%</td>
+        <td class="num pos-txt">+9.74% <span class="muted">(VTI)</span></td>
+        <td class="num pos-txt">+16.83%</td>
+        <td class="num pos-txt">+$0</td>
+        <td class="num pos-txt">+$85,143</td>
+        <td class="num muted"><span class="muted">—</span></td>
+      </tr>
+      <tr>
+        <td>今年 <span class="muted">(自 2025-12-31)</span></td>
+        <td class="num pos-txt">+$55,539</td>
+        <td class="num pos-txt">+16.52%</td>
+        <td class="num pos-txt">+5.97% <span class="muted">(VTI)</span></td>
+        <td class="num pos-txt">+10.55%</td>
+        <td class="num neg-txt">−$1,752</td>
+        <td class="num pos-txt">+$57,291</td>
+        <td class="num muted"><span class="muted">—</span></td>
+      </tr>
+      <tr>
+        <td>近1年 <span class="muted">(自 2025-05-04)</span></td>
+        <td class="num pos-txt">+$153,028</td>
+        <td class="num pos-txt">+70.34%</td>
+        <td class="num pos-txt">+27.44% <span class="muted">(VTI)</span></td>
+        <td class="num pos-txt">+42.91%</td>
+        <td class="num neg-txt">−$796</td>
+        <td class="num pos-txt">+$153,823</td>
+        <td class="num muted"><span class="muted">—</span></td>
+      </tr>
+      <tr>
+        <td>歷年 <span class="muted">(自 2024-01-04)</span></td>
+        <td class="num pos-txt">+$167,547</td>
+        <td class="num "><span class="na">n/a</span></td>
+        <td class="num "><span class="na">n/a</span></td>
+        <td class="num "><span class="na">n/a</span></td>
+        <td class="num pos-txt">+$3,762</td>
+        <td class="num pos-txt">+$163,784</td>
+        <td class="num muted"><span class="muted">—</span></td>
+      </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="subsection" style="margin-top:20px">
+      <h3 class="eyebrow">台股</h3>
+      <div class="tbl-wrap" style="margin-top:8px">
+        <table class="periods-tbl">
+        <thead>
+          <tr>
+            <th>區間</th>
+            <th class="num">損益</th>
+            <th class="num">報酬率</th>
+            <th class="num">基準</th>
+            <th class="num">超額報酬</th>
+            <th class="num">已實現</th>
+            <th class="num">未實現變動</th>
+            <th class="num">淨流入</th>
+          </tr>
+        </thead>
+          <tbody>
+      <tr>
+        <td>1日 <span class="muted">(自 2026-05-03)</span></td>
+        <td class="num neg-txt">−$26</td>
+        <td class="num neg-txt">−0.03%</td>
+        <td class="num pos-txt">+0.00% <span class="muted">(0050.TW)</span></td>
+        <td class="num neg-txt">−0.03%</td>
+        <td class="num pos-txt">+$0</td>
+        <td class="num neg-txt">−$26</td>
+        <td class="num muted"><span class="muted">—</span></td>
+      </tr>
+      <tr>
+        <td>7日 <span class="muted">(自 2026-04-27)</span></td>
+        <td class="num neg-txt">−$5,319</td>
+        <td class="num neg-txt">−6.05%</td>
+        <td class="num neg-txt">−2.69% <span class="muted">(0050.TW)</span></td>
+        <td class="num neg-txt">−3.37%</td>
+        <td class="num pos-txt">+$0</td>
+        <td class="num neg-txt">−$5,319</td>
+        <td class="num muted"><span class="muted">—</span></td>
+      </tr>
+      <tr>
+        <td>本月 <span class="muted">(自 2026-04-30)</span></td>
+        <td class="num neg-txt">−$96</td>
+        <td class="num neg-txt">−0.12%</td>
+        <td class="num pos-txt">+0.00% <span class="muted">(0050.TW)</span></td>
+        <td class="num neg-txt">−0.12%</td>
+        <td class="num pos-txt">+$0</td>
+        <td class="num neg-txt">−$96</td>
+        <td class="num muted"><span class="muted">—</span></td>
+      </tr>
+      <tr>
+        <td>近1月 <span class="muted">(自 2026-04-04)</span></td>
+        <td class="num pos-txt">+$12,900</td>
+        <td class="num pos-txt">+18.66%</td>
+        <td class="num pos-txt">+22.38% <span class="muted">(0050.TW)</span></td>
+        <td class="num neg-txt">−3.72%</td>
+        <td class="num pos-txt">+$0</td>
+        <td class="num pos-txt">+$12,900</td>
+        <td class="num muted"><span class="muted">—</span></td>
+      </tr>
+      <tr>
+        <td>今年 <span class="muted">(自 2025-12-31)</span></td>
+        <td class="num pos-txt">+$24,927</td>
+        <td class="num pos-txt">+46.96%</td>
+        <td class="num pos-txt">+37.96% <span class="muted">(0050.TW)</span></td>
+        <td class="num pos-txt">+9.00%</td>
+        <td class="num pos-txt">+$0</td>
+        <td class="num pos-txt">+$24,927</td>
+        <td class="num muted"><span class="muted">—</span></td>
+      </tr>
+      <tr>
+        <td>近1年 <span class="muted">(自 2025-05-04)</span></td>
+        <td class="num pos-txt">+$48,453</td>
+        <td class="num pos-txt">+146.36%</td>
+        <td class="num pos-txt">+108.65% <span class="muted">(0050.TW)</span></td>
+        <td class="num pos-txt">+37.71%</td>
+        <td class="num pos-txt">+$3,060</td>
+        <td class="num pos-txt">+$45,393</td>
+        <td class="num muted"><span class="muted">—</span></td>
+      </tr>
+      <tr>
+        <td>歷年 <span class="muted">(自 2024-01-04)</span></td>
+        <td class="num pos-txt">+$58,994</td>
+        <td class="num "><span class="na">n/a</span></td>
+        <td class="num "><span class="na">n/a</span></td>
+        <td class="num "><span class="na">n/a</span></td>
+        <td class="num pos-txt">+$8,830</td>
+        <td class="num pos-txt">+$50,164</td>
+        <td class="num muted"><span class="muted">—</span></td>
+      </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="subsection" style="margin-top:20px">
+      <h3 class="eyebrow">加密資產</h3>
+      <div class="tbl-wrap" style="margin-top:8px">
+        <table class="periods-tbl">
+        <thead>
+          <tr>
+            <th>區間</th>
+            <th class="num">損益</th>
+            <th class="num">報酬率</th>
+            <th class="num">基準</th>
+            <th class="num">超額報酬</th>
+            <th class="num">已實現</th>
+            <th class="num">未實現變動</th>
+            <th class="num">淨流入</th>
+          </tr>
+        </thead>
+          <tbody>
+      <tr>
+        <td>1日 <span class="muted">(自 2026-05-03)</span></td>
+        <td class="num pos-txt">+$1,152</td>
+        <td class="num pos-txt">+0.67%</td>
+        <td class="num "><span class="na">n/a</span></td>
+        <td class="num "><span class="na">n/a</span></td>
+        <td class="num pos-txt">+$0</td>
+        <td class="num pos-txt">+$1,152</td>
+        <td class="num muted"><span class="muted">—</span></td>
+      </tr>
+      <tr>
+        <td>7日 <span class="muted">(自 2026-04-27)</span></td>
+        <td class="num pos-txt">+$2,756</td>
+        <td class="num pos-txt">+1.62%</td>
+        <td class="num "><span class="na">n/a</span></td>
+        <td class="num "><span class="na">n/a</span></td>
+        <td class="num pos-txt">+$0</td>
+        <td class="num pos-txt">+$2,756</td>
+        <td class="num muted"><span class="muted">—</span></td>
+      </tr>
+      <tr>
+        <td>本月 <span class="muted">(自 2026-04-30)</span></td>
+        <td class="num pos-txt">+$5,010</td>
+        <td class="num pos-txt">+2.98%</td>
+        <td class="num "><span class="na">n/a</span></td>
+        <td class="num "><span class="na">n/a</span></td>
+        <td class="num pos-txt">+$0</td>
+        <td class="num pos-txt">+$5,010</td>
+        <td class="num muted"><span class="muted">—</span></td>
+      </tr>
+      <tr>
+        <td>近1月 <span class="muted">(自 2026-04-04)</span></td>
+        <td class="num pos-txt">+$24,912</td>
+        <td class="num pos-txt">+16.83%</td>
+        <td class="num "><span class="na">n/a</span></td>
+        <td class="num "><span class="na">n/a</span></td>
+        <td class="num pos-txt">+$0</td>
+        <td class="num pos-txt">+$24,912</td>
+        <td class="num muted"><span class="muted">—</span></td>
+      </tr>
+      <tr>
+        <td>今年 <span class="muted">(自 2025-12-31)</span></td>
+        <td class="num neg-txt">−$12,755</td>
+        <td class="num neg-txt">−5.39%</td>
+        <td class="num "><span class="na">n/a</span></td>
+        <td class="num "><span class="na">n/a</span></td>
+        <td class="num pos-txt">+$5,913</td>
+        <td class="num neg-txt">−$18,668</td>
+        <td class="num muted"><span class="muted">—</span></td>
+      </tr>
+      <tr>
+        <td>近1年 <span class="muted">(自 2025-05-04)</span></td>
+        <td class="num neg-txt">−$29,535</td>
+        <td class="num neg-txt">−13.62%</td>
+        <td class="num "><span class="na">n/a</span></td>
+        <td class="num "><span class="na">n/a</span></td>
+        <td class="num pos-txt">+$5,913</td>
+        <td class="num neg-txt">−$35,448</td>
+        <td class="num muted"><span class="muted">—</span></td>
+      </tr>
+      <tr>
+        <td>歷年 <span class="muted">(自 2024-01-04)</span></td>
+        <td class="num pos-txt">+$22,453</td>
+        <td class="num "><span class="na">n/a</span></td>
+        <td class="num "><span class="na">n/a</span></td>
+        <td class="num "><span class="na">n/a</span></td>
+        <td class="num pos-txt">+$1,361</td>
+        <td class="num pos-txt">+$21,092</td>
+        <td class="num muted"><span class="muted">—</span></td>
+      </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="subsection" style="margin-top:20px">
+      <h3 class="eyebrow">未歸因損益（組合 − 各市場加總）</h3>
+      <div class="tbl-wrap" style="margin-top:8px">
+        <table class="periods-tbl">
+          <thead>
+            <tr>
+              <th>區間</th>
+              <th class="num">殘差損益</th>
+            </tr>
+          </thead>
+          <tbody>
+      <tr><td>1日 <span class="muted">(自 2026-05-03)</span></td><td class="num neg-txt">−$70</td></tr>
+      <tr><td>7日 <span class="muted">(自 2026-04-27)</span></td><td class="num neg-txt">−$752</td></tr>
+      <tr><td>本月 <span class="muted">(自 2026-04-30)</span></td><td class="num neg-txt">−$260</td></tr>
+      <tr><td>近1月 <span class="muted">(自 2026-04-04)</span></td><td class="num pos-txt">+$1,317</td></tr>
+      <tr><td>今年 <span class="muted">(自 2025-12-31)</span></td><td class="num neg-txt">−$1,631</td></tr>
+      <tr><td>近1年 <span class="muted">(自 2025-05-04)</span></td><td class="num neg-txt">−$3,846</td></tr>
+      <tr><td>歷年 <span class="muted">(自 2024-01-04)</span></td><td class="num neg-txt">−$301</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div><div class="prose" style="margin-top:16px"><p>各市場淨流動未歸因（顯示 —）。報酬率分母為該市場期初持倉市值（僅部位、不含共用現金）；總表獲利面板則使用期初 NAV + 半額淨流動。入出金與全組合報酬率以總表獲利面板為準。</p></div>
+    <div class="cols-2" style="margin-top:22px">
+      <div><div class="eyebrow" style="margin-bottom:10px">最大貢獻</div><div class="bars"><div class="bar-row"><div class="bar-label">AMD</div><div class="bar-track"><div class="bar pos" style="width:100.0%"></div></div><div class="bar-value pos-txt">+$67,534</div></div><div class="bar-row"><div class="bar-label">2330.TW</div><div class="bar-track"><div class="bar pos" style="width:87.4%"></div></div><div class="bar-value pos-txt">+$58,994</div></div><div class="bar-row"><div class="bar-label">QQQ</div><div class="bar-track"><div class="bar pos" style="width:64.8%"></div></div><div class="bar-value pos-txt">+$43,776</div></div><div class="bar-row"><div class="bar-label">GOOGL</div><div class="bar-track"><div class="bar pos" style="width:49.0%"></div></div><div class="bar-value pos-txt">+$33,063</div></div><div class="bar-row"><div class="bar-label">BTC</div><div class="bar-track"><div class="bar pos" style="width:33.2%"></div></div><div class="bar-value pos-txt">+$22,453</div></div><div class="bar-row"><div class="bar-label">NVDA</div><div class="bar-track"><div class="bar pos" style="width:31.4%"></div></div><div class="bar-value pos-txt">+$21,200</div></div><div class="bar-row"><div class="bar-label">MSFT</div><div class="bar-track"><div class="bar pos" style="width:5.1%"></div></div><div class="bar-value pos-txt">+$3,455</div></div><div class="bar-row"><div class="bar-label">SMR</div><div class="bar-track"><div class="bar neg" style="width:2.2%"></div></div><div class="bar-value neg-txt">−$1,483</div></div></div></div>
+      <div><div class="eyebrow" style="margin-bottom:10px">最大拖累</div><div class="bars"><div class="bar-row"><div class="bar-label">SMR</div><div class="bar-track"><div class="bar neg" style="width:2.2%"></div></div><div class="bar-value neg-txt">−$1,483</div></div><div class="bar-row"><div class="bar-label">MSFT</div><div class="bar-track"><div class="bar pos" style="width:5.1%"></div></div><div class="bar-value pos-txt">+$3,455</div></div><div class="bar-row"><div class="bar-label">NVDA</div><div class="bar-track"><div class="bar pos" style="width:31.4%"></div></div><div class="bar-value pos-txt">+$21,200</div></div><div class="bar-row"><div class="bar-label">BTC</div><div class="bar-track"><div class="bar pos" style="width:33.2%"></div></div><div class="bar-value pos-txt">+$22,453</div></div><div class="bar-row"><div class="bar-label">GOOGL</div><div class="bar-track"><div class="bar pos" style="width:49.0%"></div></div><div class="bar-value pos-txt">+$33,063</div></div><div class="bar-row"><div class="bar-label">QQQ</div><div class="bar-track"><div class="bar pos" style="width:64.8%"></div></div><div class="bar-value pos-txt">+$43,776</div></div><div class="bar-row"><div class="bar-label">2330.TW</div><div class="bar-track"><div class="bar pos" style="width:87.4%"></div></div><div class="bar-value pos-txt">+$58,994</div></div><div class="bar-row"><div class="bar-label">AMD</div><div class="bar-track"><div class="bar pos" style="width:100.0%"></div></div><div class="bar-value pos-txt">+$67,534</div></div></div></div>
+    </div>
+  </section>
+  <section class="section">
+    <div class="section-head">
+      <h2>交易品質</h2>
+      <span class="sub">近期交易追蹤 · 賣出後是否少賺、買入後是否套牢</span>
+    </div>
+    <div class="kpis">
+      <div class="kpi"><div class="k">已平倉批次</div><div class="v">19</div><div class="delta">SELL_LOT 筆數</div></div>
+      <div class="kpi"><div class="k">勝率</div><div class="v">73.68%</div><div class="delta">以平倉批次計</div></div>
+      <div class="kpi"><div class="k">獲利因子</div><div class="v">1.59</div><div class="delta">總獲利 / 總虧損</div></div>
+      <div class="kpi"><div class="k">平均持有天數</div><div class="v">165.7</div><div class="delta">以平倉批次計</div></div>
+    </div>
+    <div class="tbl-wrap scroll-y" style="margin-top:18px">
+      <table>
+        <thead><tr>
+          <th>日期</th>
+          <th>行動</th>
+          <th>標的</th>
+          <th class="num">數量</th>
+          <th class="num">價格</th>
+          <th class="num">已實現</th>
+          <th class="num">+30日</th>
+          <th class="num">+90日</th>
+        </tr></thead>
+        <tbody>      <tr>
+        <td>2026-04-01</td>
+        <td><span class="adj-action buy">買入</span></td>
+        <td><span class="sym-label">GOOGL</span></td>
+        <td class="num">25</td>
+        <td class="num">153.85</td>
+        <td class="num"><span class="muted">—</span></td>
+        <td class="num pos-txt">+150.69%</td>
+        <td class="num"><span class="muted">n/a</span></td>
+      </tr>
+      <tr>
+        <td>2026-03-18</td>
+        <td><span class="adj-action sell">賣出</span></td>
+        <td><span class="sym-label">NVDA</span></td>
+        <td class="num">30</td>
+        <td class="num">117.60</td>
+        <td class="num">−$1,838</td>
+        <td class="num pos-txt">+71.50%</td>
+        <td class="num"><span class="muted">n/a</span></td>
+      </tr>
+      <tr>
+        <td>2026-03-03</td>
+        <td><span class="adj-action buy">買入</span></td>
+        <td><span class="sym-label">2330.TW</span></td>
+        <td class="num">150</td>
+        <td class="num">987.00</td>
+        <td class="num"><span class="muted">—</span></td>
+        <td class="num pos-txt">+83.38%</td>
+        <td class="num"><span class="muted">n/a</span></td>
+      </tr>
+      <tr>
+        <td>2026-02-03</td>
+        <td><span class="adj-action buy">買入</span></td>
+        <td><span class="sym-label">SMR</span></td>
+        <td class="num">280</td>
+        <td class="num">21.35</td>
+        <td class="num"><span class="muted">—</span></td>
+        <td class="num neg-txt">−42.95%</td>
+        <td class="num"><span class="muted">n/a</span></td>
+      </tr>
+      <tr>
+        <td>2026-01-24</td>
+        <td><span class="adj-action sell">賣出</span></td>
+        <td><span class="sym-label">BTC</span></td>
+        <td class="num">0.5</td>
+        <td class="num">101,850.00</td>
+        <td class="num">$5,915</td>
+        <td class="num neg-txt">−36.52%</td>
+        <td class="num neg-txt">−23.97%</td>
+      </tr>
+      <tr>
+        <td>2026-01-06</td>
+        <td><span class="adj-action buy">買入</span></td>
+        <td><span class="sym-label">MSFT</span></td>
+        <td class="num">18</td>
+        <td class="num">427.90</td>
+        <td class="num"><span class="muted">—</span></td>
+        <td class="num neg-txt">−8.00%</td>
+        <td class="num neg-txt">−12.86%</td>
+      </tr>
+      <tr>
+        <td>2025-12-08</td>
+        <td><span class="adj-action buy">買入</span></td>
+        <td><span class="sym-label">AMD</span></td>
+        <td class="num">80</td>
+        <td class="num">121.65</td>
+        <td class="num"><span class="muted">—</span></td>
+        <td class="num pos-txt">+72.64%</td>
+        <td class="num pos-txt">+66.61%</td>
+      </tr>
+      <tr>
+        <td>2025-11-22</td>
+        <td><span class="adj-action sell">賣出</span></td>
+        <td><span class="sym-label">GOOGL</span></td>
+        <td class="num">40</td>
+        <td class="num">177.95</td>
+        <td class="num">−$388</td>
+        <td class="num pos-txt">+74.08%</td>
+        <td class="num pos-txt">+77.00%</td>
+      </tr>
+      <tr>
+        <td>2025-11-04</td>
+        <td><span class="adj-action buy">買入</span></td>
+        <td><span class="sym-label">NVDA</span></td>
+        <td class="num">25</td>
+        <td class="num">191.85</td>
+        <td class="num"><span class="muted">—</span></td>
+        <td class="num neg-txt">−4.41%</td>
+        <td class="num neg-txt">−3.25%</td>
+      </tr>
+      <tr>
+        <td>2025-10-01</td>
+        <td><span class="adj-action buy">買入</span></td>
+        <td><span class="sym-label">QQQ</span></td>
+        <td class="num">40</td>
+        <td class="num">511.60</td>
+        <td class="num"><span class="muted">—</span></td>
+        <td class="num pos-txt">+22.96%</td>
+        <td class="num pos-txt">+21.08%</td>
+      </tr></tbody>
+      </table>
+    </div>
+  </section>
+  <section class="section">
+    <div class="section-head">
+      <h2>紀律檢查</h2>
+      <span class="sub">部位、資金部署、批次品質與資料缺口</span>
+    </div>
+    <div class="kpis">
+      <div class="kpi"><div class="k">入金 → 買入</div><div class="v">8.5</div><div class="delta">天</div></div>
+      <div class="kpi"><div class="k">賣出 → 買入</div><div class="v">14.6</div><div class="delta">天</div></div>
+      <div class="kpi"><div class="k">最大權重</div><div class="v">BTC 11.0%</div><div class="delta">目前持倉</div></div>
+      <div class="kpi"><div class="k">資料缺口</div><div class="v">0</div><div class="delta">資料缺口</div></div>
+    </div>
+    <div class="cols-2" style="margin-top:18px">
+      <div>
+        <div class="eyebrow" style="margin-bottom:10px">前大部位權重</div>
+        <div class="tbl-wrap scroll-y"><table><tbody><tr><td>BTC</td><td class="num">11.02%</td></tr><tr><td>QQQ</td><td class="num">8.16%</td></tr><tr><td>AMD</td><td class="num">6.89%</td></tr><tr><td>2330.TW</td><td class="num">5.25%</td></tr><tr><td>MSFT</td><td class="num">4.30%</td></tr><tr><td>GOOGL</td><td class="num">3.56%</td></tr><tr><td>NVDA</td><td class="num">2.15%</td></tr><tr><td>SMR</td><td class="num">0.77%</td></tr></tbody></table></div>
+      </div>
+      <div>
+        <div class="bucket-note"><b>近 30 日頻繁買入:</b><ul><li>n/a</li></ul></div>
+        <div class="bucket-note"><b>短線桶持有 &gt;1 年:</b><ul><li>SMR 2024-08-01 (641d)</li><li>SMR 2025-02-03 (455d)</li></ul></div>
+        <div class="bucket-note"><b>高成本加碼:</b><ul><li>QQQ 2025-10-01: +18.22% vs older avg</li><li>NVDA 2025-05-12: +65.95% vs older avg</li><li>2330.TW 2026-03-03: +21.39% vs older avg</li><li>BTC 2025-03-01: +23.22% vs older avg</li><li>SMR 2026-02-03: +92.54% vs older avg</li></ul></div>
+      </div>
+    </div>
+    <div class="cols-2" style="margin-top:18px">
+      <div class="tbl-wrap scroll-y"><table><thead><tr><th>最大浮虧批次</th><th>取得日</th><th class="num">損益</th><th class="num">%</th></tr></thead><tbody><tr><td>SMR</td><td>2026-02-03</td><td class="num">−$2,579</td><td class="num">−43.14%</td></tr><tr><td>SMR</td><td>2025-02-03</td><td class="num">−$755</td><td class="num">−14.39%</td></tr><tr><td>MSFT</td><td>2025-06-20</td><td class="num">−$744</td><td class="num">−5.65%</td></tr><tr><td>BTC</td><td>2025-03-01</td><td class="num">−$556</td><td class="num">−6.60%</td></tr><tr><td>MSFT</td><td>2026-01-06</td><td class="num">−$242</td><td class="num">−3.15%</td></tr><tr><td>MSFT</td><td>2024-05-03</td><td class="num">$238</td><td class="num">+1.67%</td></tr></tbody></table></div>
+      <div class="tbl-wrap scroll-y"><table><thead><tr><th>最大浮盈批次</th><th>取得日</th><th class="num">損益</th><th class="num">%</th></tr></thead><tbody><tr><td>QQQ</td><td>2024-01-16</td><td class="num">$29,582</td><td class="num">+57.65%</td></tr><tr><td>AMD</td><td>2025-04-08</td><td class="num">$26,039</td><td class="num">+151.16%</td></tr><tr><td>2330.TW</td><td>2024-02-14</td><td class="num">$22,392</td><td class="num">+197.15%</td></tr><tr><td>AMD</td><td>2024-02-02</td><td class="num">$19,139</td><td class="num">+143.81%</td></tr><tr><td>AMD</td><td>2025-12-08</td><td class="num">$19,111</td><td class="num">+196.37%</td></tr><tr><td>GOOGL</td><td>2024-02-21</td><td class="num">$17,139</td><td class="num">+173.83%</td></tr></tbody></table></div>
+    </div>
+  </section>
+  <section class="section">
+    <div class="section-head">
+      <h2>配置與持股權重</h2>
+      <span class="sub">USD 基準, 2026-05-04</span>
+    </div>
+    <div class="cols-2">
+      <div>
+        <div class="donut-wrap">
+          <svg viewBox="0 0 120 120" aria-label="資產配置">
+            <circle cx="60" cy="60" r="52" fill="#f0ece0"/>
+            <g transform="rotate(-90 60 60)" fill="none" stroke-width="20">
+              <circle cx="60" cy="60" r="42" stroke="#1f2937"
+                      stroke-dasharray="152.81 263.89" stroke-dashoffset="-0.00"/>
+              <circle cx="60" cy="60" r="42" stroke="#15703d"
+                      stroke-dasharray="68.17 263.89" stroke-dashoffset="-152.81"/>
+              <circle cx="60" cy="60" r="42" stroke="#8a5a1c"
+                      stroke-dasharray="29.07 263.89" stroke-dashoffset="-220.98"/>
+              <circle cx="60" cy="60" r="42" stroke="#1d4690"
+                      stroke-dasharray="13.84 263.89" stroke-dashoffset="-250.05"/>
+            </g>
+            <text x="60" y="56" text-anchor="middle"
+                  font-size="8" fill="#6b7280" letter-spacing=".15em">總計</text>
+            <text x="60" y="72" text-anchor="middle"
+                  font-size="14" font-weight="650" fill="#15191f">$1.6M</text>
+          </svg>
+          <div class="legend">
+            <div class="row"><span class="sw" style="background:#1f2937"></span><span>現金</span><span class="pct">57.9%</span></div>
+            <div class="row"><span class="sw" style="background:#15703d"></span><span>美股</span><span class="pct">25.8%</span></div>
+            <div class="row"><span class="sw" style="background:#8a5a1c"></span><span>加密資產</span><span class="pct">11.0%</span></div>
+            <div class="row"><span class="sw" style="background:#1d4690"></span><span>台股</span><span class="pct">5.2%</span></div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="bars">
+          <div class="bar-row"><div class="bar-label">USD</div><div class="bar-track"><div class="bar" style="width:100.0%"></div></div><div class="bar-value">51.3%</div></div>
+          <div class="bar-row"><div class="bar-label">BTC</div><div class="bar-track"><div class="bar" style="width:21.5%"></div></div><div class="bar-value">11.0%</div></div>
+          <div class="bar-row"><div class="bar-label">QQQ</div><div class="bar-track"><div class="bar" style="width:15.9%"></div></div><div class="bar-value">8.2%</div></div>
+          <div class="bar-row"><div class="bar-label">AMD</div><div class="bar-track"><div class="bar" style="width:13.4%"></div></div><div class="bar-value">6.9%</div></div>
+          <div class="bar-row"><div class="bar-label">TWD</div><div class="bar-track"><div class="bar" style="width:12.9%"></div></div><div class="bar-value">6.6%</div></div>
+          <div class="bar-row"><div class="bar-label">2330.TW</div><div class="bar-track"><div class="bar" style="width:10.2%"></div></div><div class="bar-value">5.2%</div></div>
+          <div class="bar-row"><div class="bar-label">MSFT</div><div class="bar-track"><div class="bar" style="width:8.4%"></div></div><div class="bar-value">4.3%</div></div>
+          <div class="bar-row"><div class="bar-label">GOOGL</div><div class="bar-track"><div class="bar" style="width:6.9%"></div></div><div class="bar-value">3.6%</div></div>
+          <div class="bar-row"><div class="bar-label">NVDA</div><div class="bar-track"><div class="bar" style="width:4.2%"></div></div><div class="bar-value">2.1%</div></div>
+          <div class="bar-row"><div class="bar-label">SMR</div><div class="bar-track"><div class="bar" style="width:1.5%"></div></div><div class="bar-value">0.8%</div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+  <section class="section">
+    <div class="section-head">
+      <h2>持股損益與權重</h2>
+      <span class="sub">前 10 大部位 · 價格為產出時靜態快照 · 滑鼠移到代號或價格可看細節</span>
+    </div>
+    <div class="tbl-wrap holdings-table-wrap">
+      <table class="holdings-tbl">
+        <colgroup>
+          <col style="width:9%">
+          <col style="width:14%">
+          <col style="width:16%">
+          <col style="width:9%">
+          <col style="width:18%">
+          <col style="width:34%">
+        </colgroup>
+        <thead>
+          <tr>
+            <th>代號</th>
+            <th>類別</th>
+            <th class="num">最新價</th>
+            <th class="num">比重</th>
+            <th class="num">市值</th>
+            <th class="num">損益</th>
+            
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><div class="sym-trigger" tabindex="0" role="button"><span class="sym-text">USD</span><div class="pop pop-sym" role="tooltip">
+                <h4>USD · 現金部位</h4>
+                <div class="pop-sub">現金</div>
+                <div class="pop-row"><span class="k">建倉時間</span><span class="v">n/a · n/a</span></div>
+                <div class="pop-row"><span class="k">批次數</span><span class="v">1 批</span></div>
+              </div></div></td>
+            <td>現金<span class="tag">現金</span></td>
+            <td class="num price-cell"><div class="price-trigger" tabindex="0" role="button"><span class="na">—</span></div></td>
+            <td class="num">51.3%</td>
+            <td class="num">$805,082</td>
+            <td class="num">—</td>
+          </tr>
+          <tr>
+            <td><div class="sym-trigger" tabindex="0" role="button"><span class="sym-text">BTC</span><div class="pop pop-sym" role="tooltip">
+                <h4>BTC · 中線（1 年以上）</h4>
+                <div class="pop-sub">加密資產</div>
+                <div class="pop-row"><span class="k">建倉時間</span><span class="v">2024-03 · 2y 1m</span></div>
+                <div class="pop-row"><span class="k">批次數</span><span class="v">3 批</span></div>
+              </div></div></td>
+            <td>加密資產<span class="tag">中線</span></td>
+            <td class="num price-cell"><div class="price-trigger" tabindex="0" role="button"><span class="price-num">$78,623.90</span><span class="price-sub pos">24h +0.10%</span><div class="pop pop-px" role="tooltip">
+                <h4>BTC · 每批損益</h4>
+                <div class="pop-sub">最新價 $78,623.90 · 來源：no_token:binance · 新鮮度：新鮮 · 市場基準：24 小時交易 · 幣別：USD · 交易所：Binance · 2026-05-03T16:14:58+00:00</div>
+                <table>
+                  <thead><tr><th>取得日</th><th class="num">成本</th><th class="num">數量</th><th class="num">損益</th></tr></thead>
+                  <tbody><tr><td>2024-03-18</td><td class="num">$67,240.00</td><td class="num">1.2</td><td class="num"><span class="pop-pos">+$13,661</span></td></tr><tr><td>2024-08-20</td><td class="num">$69,750.00</td><td class="num">0.9</td><td class="num"><span class="pop-pos">+$7,987</span></td></tr><tr><td>2025-03-01</td><td class="num">$84,180.00</td><td class="num">0.1</td><td class="num"><span class="pop-neg">−$556</span></td></tr></tbody>
+                  <tfoot class="summary"><tr><td>平均成本 $69,036.82 (USD)</td><td class="num">$151,881</td><td class="num">2.2</td><td class="num"><span class="pop-pos">+$21,092</span></td></tr></tfoot>
+                </table>
+              </div></div></td>
+            <td class="num">11.0%</td>
+            <td class="num">$172,973</td>
+            <td class="num pos-txt">+$21,092 / +13.9%</td>
+          </tr>
+          <tr>
+            <td><div class="sym-trigger" tabindex="0" role="button"><span class="sym-text">QQQ</span><div class="pop pop-sym" role="tooltip">
+                <h4>QQQ · 長線（不賣）</h4>
+                <div class="pop-sub">美股</div>
+                <div class="pop-row"><span class="k">建倉時間</span><span class="v">2024-01 · 2y 3m</span></div>
+                <div class="pop-row"><span class="k">批次數</span><span class="v">4 批</span></div>
+              </div></div></td>
+            <td>美股<span class="tag pos">長線</span></td>
+            <td class="num price-cell"><div class="price-trigger" tabindex="0" role="button"><span class="price-num">$674.15</span><span class="price-sub pos">較前收 +0.75%</span><div class="pop pop-px" role="tooltip">
+                <h4>QQQ · 每批損益</h4>
+                <div class="pop-sub">最新價 $674.15 · 來源：no_token:stooq · 新鮮度：新鮮 · 市場基準：未知 · 幣別：USD · 交易所：Stooq · 2026-05-01T22:00:19</div>
+                <table>
+                  <thead><tr><th>取得日</th><th class="num">成本</th><th class="num">數量</th><th class="num">損益</th></tr></thead>
+                  <tbody><tr><td>2024-01-16</td><td class="num">$427.63</td><td class="num">120</td><td class="num"><span class="pop-pos">+$29,582</span></td></tr><tr><td>2024-04-02</td><td class="num">$435.90</td><td class="num">20</td><td class="num"><span class="pop-pos">+$4,765</span></td></tr><tr><td>2024-11-05</td><td class="num">$487.90</td><td class="num">10</td><td class="num"><span class="pop-pos">+$1,862</span></td></tr><tr><td>2025-10-01</td><td class="num">$511.60</td><td class="num">40</td><td class="num"><span class="pop-pos">+$6,502</span></td></tr></tbody>
+                  <tfoot class="summary"><tr><td>平均成本 $449.35 (USD)</td><td class="num">$85,377</td><td class="num">190</td><td class="num"><span class="pop-pos">+$42,712</span></td></tr></tfoot>
+                </table>
+              </div></div></td>
+            <td class="num">8.2%</td>
+            <td class="num">$128,088</td>
+            <td class="num pos-txt">+$42,712 / +50.0%</td>
+          </tr>
+          <tr>
+            <td><div class="sym-trigger" tabindex="0" role="button"><span class="sym-text">AMD</span><div class="pop pop-sym" role="tooltip">
+                <h4>AMD · 中線（1 年以上）</h4>
+                <div class="pop-sub">美股</div>
+                <div class="pop-row"><span class="k">建倉時間</span><span class="v">2024-02 · 2y 3m</span></div>
+                <div class="pop-row"><span class="k">批次數</span><span class="v">4 批</span></div>
+              </div></div></td>
+            <td>美股<span class="tag">中線</span></td>
+            <td class="num price-cell"><div class="price-trigger" tabindex="0" role="button"><span class="price-num">$360.54</span><span class="price-sub pos">較前收 +2.46%</span><div class="pop pop-px" role="tooltip">
+                <h4>AMD · 每批損益</h4>
+                <div class="pop-sub">最新價 $360.54 · 來源：no_token:stooq · 新鮮度：新鮮 · 市場基準：未知 · 幣別：USD · 交易所：Stooq · 2026-05-01T22:00:18</div>
+                <table>
+                  <thead><tr><th>取得日</th><th class="num">成本</th><th class="num">數量</th><th class="num">損益</th></tr></thead>
+                  <tbody><tr><td>2024-02-02</td><td class="num">$147.88</td><td class="num">90</td><td class="num"><span class="pop-pos">+$19,139</span></td></tr><tr><td>2024-09-16</td><td class="num">$157.40</td><td class="num">10</td><td class="num"><span class="pop-pos">+$2,031</span></td></tr><tr><td>2025-04-08</td><td class="num">$143.55</td><td class="num">120</td><td class="num"><span class="pop-pos">+$26,039</span></td></tr><tr><td>2025-12-08</td><td class="num">$121.65</td><td class="num">80</td><td class="num"><span class="pop-pos">+$19,111</span></td></tr></tbody>
+                  <tfoot class="summary"><tr><td>平均成本 $139.47 (USD)</td><td class="num">$41,841</td><td class="num">300</td><td class="num"><span class="pop-pos">+$66,321</span></td></tr></tfoot>
+                </table>
+              </div></div></td>
+            <td class="num">6.9%</td>
+            <td class="num">$108,162</td>
+            <td class="num pos-txt">+$66,321 / +158.5%</td>
+          </tr>
+          <tr>
+            <td><div class="sym-trigger" tabindex="0" role="button"><span class="sym-text">TWD</span><div class="pop pop-sym" role="tooltip">
+                <h4>TWD · 現金部位</h4>
+                <div class="pop-sub">現金</div>
+                <div class="pop-row"><span class="k">建倉時間</span><span class="v">n/a · n/a</span></div>
+                <div class="pop-row"><span class="k">批次數</span><span class="v">1 批</span></div>
+              </div></div></td>
+            <td>現金<span class="tag">現金</span></td>
+            <td class="num price-cell"><div class="price-trigger" tabindex="0" role="button"><span class="na">—</span></div></td>
+            <td class="num">6.6%</td>
+            <td class="num">$104,071</td>
+            <td class="num">—</td>
+          </tr>
+          <tr>
+            <td><div class="sym-trigger" tabindex="0" role="button"><span class="sym-text">2330.TW</span><div class="pop pop-sym" role="tooltip">
+                <h4>2330.TW · 長線（不賣）</h4>
+                <div class="pop-sub">台股</div>
+                <div class="pop-row"><span class="k">建倉時間</span><span class="v">2024-02 · 2y 3m</span></div>
+                <div class="pop-row"><span class="k">批次數</span><span class="v">4 批</span></div>
+              </div></div></td>
+            <td>台股<span class="tag pos">長線</span></td>
+            <td class="num price-cell"><div class="price-trigger" tabindex="0" role="button"><span class="price-num">NT$2,135.00</span><span class="price-sub neg">較前收 −2.06%</span><div class="pop pop-px" role="tooltip">
+                <h4>2330.TW · 每批損益</h4>
+                <div class="pop-sub">最新價 NT$2,135.00 · 來源：no_token:twse_mis · 新鮮度：新鮮 · 市場基準：未知 · 幣別：TWD · 交易所：TWSE · 2026-05-03T16:14:53+00:00</div>
+                <table>
+                  <thead><tr><th>取得日</th><th class="num">成本</th><th class="num">數量</th><th class="num">損益</th></tr></thead>
+                  <tbody><tr><td>2024-02-14</td><td class="num">NT$718.50</td><td class="num">500</td><td class="num"><span class="pop-pos">+NT$708,250</span></td></tr><tr><td>2024-06-18</td><td class="num">NT$867.50</td><td class="num">350</td><td class="num"><span class="pop-pos">+NT$443,625</span></td></tr><tr><td>2025-03-14</td><td class="num">NT$941.50</td><td class="num">220</td><td class="num"><span class="pop-pos">+NT$262,570</span></td></tr><tr><td>2026-03-03</td><td class="num">NT$987.00</td><td class="num">150</td><td class="num"><span class="pop-pos">+NT$172,200</span></td></tr></tbody>
+                  <tfoot class="summary"><tr><td>平均成本 $26.38 (USD)</td><td class="num">$32,187</td><td class="num">1220</td><td class="num"><span class="pop-pos">+$50,164</span></td></tr></tfoot>
+                </table>
+              </div></div></td>
+            <td class="num">5.2%</td>
+            <td class="num">$82,351</td>
+            <td class="num pos-txt">+$50,164 / +155.9%</td>
+          </tr>
+          <tr>
+            <td><div class="sym-trigger" tabindex="0" role="button"><span class="sym-text">MSFT</span><div class="pop pop-sym" role="tooltip">
+                <h4>MSFT · 長線（不賣）</h4>
+                <div class="pop-sub">美股</div>
+                <div class="pop-row"><span class="k">建倉時間</span><span class="v">2024-01 · 2y 3m</span></div>
+                <div class="pop-row"><span class="k">批次數</span><span class="v">4 批</span></div>
+              </div></div></td>
+            <td>美股<span class="tag pos">長線</span></td>
+            <td class="num price-cell"><div class="price-trigger" tabindex="0" role="button"><span class="price-num">$414.44</span><span class="price-sub pos">較前收 +0.40%</span><div class="pop pop-px" role="tooltip">
+                <h4>MSFT · 每批損益</h4>
+                <div class="pop-sub">最新價 $414.44 · 來源：no_token:stooq · 新鮮度：新鮮 · 市場基準：未知 · 幣別：USD · 交易所：Stooq · 2026-05-01T22:00:22</div>
+                <table>
+                  <thead><tr><th>取得日</th><th class="num">成本</th><th class="num">數量</th><th class="num">損益</th></tr></thead>
+                  <tbody><tr><td>2024-01-19</td><td class="num">$377.42</td><td class="num">80</td><td class="num"><span class="pop-pos">+$2,962</span></td></tr><tr><td>2024-05-03</td><td class="num">$407.65</td><td class="num">35</td><td class="num"><span class="pop-pos">+$238</span></td></tr><tr><td>2025-06-20</td><td class="num">$439.25</td><td class="num">30</td><td class="num"><span class="pop-neg">−$744</span></td></tr><tr><td>2026-01-06</td><td class="num">$427.90</td><td class="num">18</td><td class="num"><span class="pop-neg">−$242</span></td></tr></tbody>
+                  <tfoot class="summary"><tr><td>平均成本 $400.87 (USD)</td><td class="num">$65,341</td><td class="num">163</td><td class="num"><span class="pop-pos">+$2,213</span></td></tr></tfoot>
+                </table>
+              </div></div></td>
+            <td class="num">4.3%</td>
+            <td class="num">$67,554</td>
+            <td class="num pos-txt">+$2,213 / +3.4%</td>
+          </tr>
+          <tr>
+            <td><div class="sym-trigger" tabindex="0" role="button"><span class="sym-text">GOOGL</span><div class="pop pop-sym" role="tooltip">
+                <h4>GOOGL · 中線（1 年以上）</h4>
+                <div class="pop-sub">美股</div>
+                <div class="pop-row"><span class="k">建倉時間</span><span class="v">2024-02 · 2y 2m</span></div>
+                <div class="pop-row"><span class="k">批次數</span><span class="v">5 批</span></div>
+              </div></div></td>
+            <td>美股<span class="tag">中線</span></td>
+            <td class="num price-cell"><div class="price-trigger" tabindex="0" role="button"><span class="price-num">$385.69</span><span class="price-sub pos">較前收 +1.06%</span><div class="pop pop-px" role="tooltip">
+                <h4>GOOGL · 每批損益</h4>
+                <div class="pop-sub">最新價 $385.69 · 來源：no_token:stooq · 新鮮度：新鮮 · 市場基準：未知 · 幣別：USD · 交易所：Stooq · 2026-05-01T22:00:19</div>
+                <table>
+                  <thead><tr><th>取得日</th><th class="num">成本</th><th class="num">數量</th><th class="num">損益</th></tr></thead>
+                  <tbody><tr><td>2024-02-21</td><td class="num">$140.85</td><td class="num">70</td><td class="num"><span class="pop-pos">+$17,139</span></td></tr><tr><td>2024-07-01</td><td class="num">$167.55</td><td class="num">5</td><td class="num"><span class="pop-pos">+$1,091</span></td></tr><tr><td>2025-01-08</td><td class="num">$187.65</td><td class="num">15</td><td class="num"><span class="pop-pos">+$2,971</span></td></tr><tr><td>2025-08-18</td><td class="num">$163.90</td><td class="num">30</td><td class="num"><span class="pop-pos">+$6,654</span></td></tr><tr><td>2026-04-01</td><td class="num">$153.85</td><td class="num">25</td><td class="num"><span class="pop-pos">+$5,796</span></td></tr></tbody>
+                  <tfoot class="summary"><tr><td>平均成本 $153.62 (USD)</td><td class="num">$22,275</td><td class="num">145</td><td class="num"><span class="pop-pos">+$33,650</span></td></tr></tfoot>
+                </table>
+              </div></div></td>
+            <td class="num">3.6%</td>
+            <td class="num">$55,925</td>
+            <td class="num pos-txt">+$33,650 / +151.1%</td>
+          </tr>
+          <tr>
+            <td><div class="sym-trigger" tabindex="0" role="button"><span class="sym-text">NVDA</span><div class="pop pop-sym" role="tooltip">
+                <h4>NVDA · 中線（1 年以上）</h4>
+                <div class="pop-sub">美股</div>
+                <div class="pop-row"><span class="k">建倉時間</span><span class="v">2024-01 · 2y 3m</span></div>
+                <div class="pop-row"><span class="k">批次數</span><span class="v">3 批</span></div>
+              </div></div></td>
+            <td>美股<span class="tag">中線</span></td>
+            <td class="num price-cell"><div class="price-trigger" tabindex="0" role="button"><span class="price-num">$198.45</span><span class="price-sub neg">較前收 −1.41%</span><div class="pop pop-px" role="tooltip">
+                <h4>NVDA · 每批損益</h4>
+                <div class="pop-sub">最新價 $198.45 · 來源：no_token:stooq · 新鮮度：新鮮 · 市場基準：未知 · 幣別：USD · 交易所：Stooq · 2026-05-01T22:00:19</div>
+                <table>
+                  <thead><tr><th>取得日</th><th class="num">成本</th><th class="num">數量</th><th class="num">損益</th></tr></thead>
+                  <tbody><tr><td>2024-01-26</td><td class="num">$56.12</td><td class="num">95</td><td class="num"><span class="pop-pos">+$13,521</span></td></tr><tr><td>2024-05-20</td><td class="num">$95.05</td><td class="num">45</td><td class="num"><span class="pop-pos">+$4,653</span></td></tr><tr><td>2025-05-12</td><td class="num">$113.90</td><td class="num">30</td><td class="num"><span class="pop-pos">+$2,536</span></td></tr></tbody>
+                  <tfoot class="summary"><tr><td>平均成本 $76.62 (USD)</td><td class="num">$13,026</td><td class="num">170</td><td class="num"><span class="pop-pos">+$20,711</span></td></tr></tfoot>
+                </table>
+              </div></div></td>
+            <td class="num">2.1%</td>
+            <td class="num">$33,736</td>
+            <td class="num pos-txt">+$20,711 / +159.0%</td>
+          </tr>
+          <tr>
+            <td><div class="sym-trigger" tabindex="0" role="button"><span class="sym-text">SMR</span><div class="pop pop-sym" role="tooltip">
+                <h4>SMR · 短線（12 個月）</h4>
+                <div class="pop-sub">美股</div>
+                <div class="pop-row"><span class="k">建倉時間</span><span class="v">2024-08 · 1y 9m</span></div>
+                <div class="pop-row"><span class="k">批次數</span><span class="v">3 批</span></div>
+              </div></div></td>
+            <td>美股<span class="tag warn">短線</span></td>
+            <td class="num price-cell"><div class="price-trigger" tabindex="0" role="button"><span class="price-num">$12.14</span><span class="price-sub neg">較前收 −0.74%</span><div class="pop pop-px" role="tooltip">
+                <h4>SMR · 每批損益</h4>
+                <div class="pop-sub">最新價 $12.14 · 來源：no_token:stooq · 新鮮度：新鮮 · 市場基準：未知 · 幣別：USD · 交易所：Stooq · 2026-05-01T22:00:46</div>
+                <table>
+                  <thead><tr><th>取得日</th><th class="num">成本</th><th class="num">數量</th><th class="num">損益</th></tr></thead>
+                  <tbody><tr><td>2024-08-01</td><td class="num">$7.82</td><td class="num">350</td><td class="num"><span class="pop-pos">+$1,512</span></td></tr><tr><td>2025-02-03</td><td class="num">$14.18</td><td class="num">370</td><td class="num"><span class="pop-neg">−$755</span></td></tr><tr><td>2026-02-03</td><td class="num">$21.35</td><td class="num">280</td><td class="num"><span class="pop-neg">−$2,579</span></td></tr></tbody>
+                  <tfoot class="summary"><tr><td>平均成本 $13.96 (USD)</td><td class="num">$13,962</td><td class="num">1000</td><td class="num"><span class="pop-neg">−$1,822</span></td></tr></tfoot>
+                </table>
+              </div></div></td>
+            <td class="num">0.8%</td>
+            <td class="num">$12,140</td>
+            <td class="num neg-txt">−$1,822 / −13.0%</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="holdings-cards" aria-label="持股損益與權重">
+      <article class="holding-card" aria-label="USD">
+        <div class="holding-card-head">
+          <div class="holding-card-symbol"><div class="sym-trigger" tabindex="0" role="button"><span class="sym-text">USD</span><div class="pop pop-sym" role="tooltip">
+                <h4>USD · 現金部位</h4>
+                <div class="pop-sub">現金</div>
+                <div class="pop-row"><span class="k">建倉時間</span><span class="v">n/a · n/a</span></div>
+                <div class="pop-row"><span class="k">批次數</span><span class="v">1 批</span></div>
+              </div></div></div>
+          <div class="holding-card-category">現金<span class="tag">現金</span></div>
+        </div>
+        <dl class="holding-card-grid"><div class="holding-card-price"><dt>最新價</dt><dd><div class="price-trigger" tabindex="0" role="button"><span class="na">—</span></div></dd></div><div class="holding-card-weight"><dt>比重</dt><dd>51.3%</dd></div><div class="holding-card-value"><dt>市值</dt><dd>$805,082</dd></div><div class="holding-card-pnl"><dt>損益</dt><dd>—</dd></div></dl>
+      </article>
+      <article class="holding-card" aria-label="BTC">
+        <div class="holding-card-head">
+          <div class="holding-card-symbol"><div class="sym-trigger" tabindex="0" role="button"><span class="sym-text">BTC</span><div class="pop pop-sym" role="tooltip">
+                <h4>BTC · 中線（1 年以上）</h4>
+                <div class="pop-sub">加密資產</div>
+                <div class="pop-row"><span class="k">建倉時間</span><span class="v">2024-03 · 2y 1m</span></div>
+                <div class="pop-row"><span class="k">批次數</span><span class="v">3 批</span></div>
+              </div></div></div>
+          <div class="holding-card-category">加密資產<span class="tag">中線</span></div>
+        </div>
+        <dl class="holding-card-grid"><div class="holding-card-price"><dt>最新價</dt><dd><div class="price-trigger" tabindex="0" role="button"><span class="price-num">$78,623.90</span><span class="price-sub pos">24h +0.10%</span><div class="pop pop-px" role="tooltip">
+                <h4>BTC · 每批損益</h4>
+                <div class="pop-sub">最新價 $78,623.90 · 來源：no_token:binance · 新鮮度：新鮮 · 市場基準：24 小時交易 · 幣別：USD · 交易所：Binance · 2026-05-03T16:14:58+00:00</div>
+                <table>
+                  <thead><tr><th>取得日</th><th class="num">成本</th><th class="num">數量</th><th class="num">損益</th></tr></thead>
+                  <tbody><tr><td>2024-03-18</td><td class="num">$67,240.00</td><td class="num">1.2</td><td class="num"><span class="pop-pos">+$13,661</span></td></tr><tr><td>2024-08-20</td><td class="num">$69,750.00</td><td class="num">0.9</td><td class="num"><span class="pop-pos">+$7,987</span></td></tr><tr><td>2025-03-01</td><td class="num">$84,180.00</td><td class="num">0.1</td><td class="num"><span class="pop-neg">−$556</span></td></tr></tbody>
+                  <tfoot class="summary"><tr><td>平均成本 $69,036.82 (USD)</td><td class="num">$151,881</td><td class="num">2.2</td><td class="num"><span class="pop-pos">+$21,092</span></td></tr></tfoot>
+                </table>
+              </div></div></dd></div><div class="holding-card-weight"><dt>比重</dt><dd>11.0%</dd></div><div class="holding-card-value"><dt>市值</dt><dd>$172,973</dd></div><div class="holding-card-pnl pos-txt"><dt>損益</dt><dd>+$21,092 / +13.9%</dd></div></dl>
+      </article>
+      <article class="holding-card" aria-label="QQQ">
+        <div class="holding-card-head">
+          <div class="holding-card-symbol"><div class="sym-trigger" tabindex="0" role="button"><span class="sym-text">QQQ</span><div class="pop pop-sym" role="tooltip">
+                <h4>QQQ · 長線（不賣）</h4>
+                <div class="pop-sub">美股</div>
+                <div class="pop-row"><span class="k">建倉時間</span><span class="v">2024-01 · 2y 3m</span></div>
+                <div class="pop-row"><span class="k">批次數</span><span class="v">4 批</span></div>
+              </div></div></div>
+          <div class="holding-card-category">美股<span class="tag pos">長線</span></div>
+        </div>
+        <dl class="holding-card-grid"><div class="holding-card-price"><dt>最新價</dt><dd><div class="price-trigger" tabindex="0" role="button"><span class="price-num">$674.15</span><span class="price-sub pos">較前收 +0.75%</span><div class="pop pop-px" role="tooltip">
+                <h4>QQQ · 每批損益</h4>
+                <div class="pop-sub">最新價 $674.15 · 來源：no_token:stooq · 新鮮度：新鮮 · 市場基準：未知 · 幣別：USD · 交易所：Stooq · 2026-05-01T22:00:19</div>
+                <table>
+                  <thead><tr><th>取得日</th><th class="num">成本</th><th class="num">數量</th><th class="num">損益</th></tr></thead>
+                  <tbody><tr><td>2024-01-16</td><td class="num">$427.63</td><td class="num">120</td><td class="num"><span class="pop-pos">+$29,582</span></td></tr><tr><td>2024-04-02</td><td class="num">$435.90</td><td class="num">20</td><td class="num"><span class="pop-pos">+$4,765</span></td></tr><tr><td>2024-11-05</td><td class="num">$487.90</td><td class="num">10</td><td class="num"><span class="pop-pos">+$1,862</span></td></tr><tr><td>2025-10-01</td><td class="num">$511.60</td><td class="num">40</td><td class="num"><span class="pop-pos">+$6,502</span></td></tr></tbody>
+                  <tfoot class="summary"><tr><td>平均成本 $449.35 (USD)</td><td class="num">$85,377</td><td class="num">190</td><td class="num"><span class="pop-pos">+$42,712</span></td></tr></tfoot>
+                </table>
+              </div></div></dd></div><div class="holding-card-weight"><dt>比重</dt><dd>8.2%</dd></div><div class="holding-card-value"><dt>市值</dt><dd>$128,088</dd></div><div class="holding-card-pnl pos-txt"><dt>損益</dt><dd>+$42,712 / +50.0%</dd></div></dl>
+      </article>
+      <article class="holding-card" aria-label="AMD">
+        <div class="holding-card-head">
+          <div class="holding-card-symbol"><div class="sym-trigger" tabindex="0" role="button"><span class="sym-text">AMD</span><div class="pop pop-sym" role="tooltip">
+                <h4>AMD · 中線（1 年以上）</h4>
+                <div class="pop-sub">美股</div>
+                <div class="pop-row"><span class="k">建倉時間</span><span class="v">2024-02 · 2y 3m</span></div>
+                <div class="pop-row"><span class="k">批次數</span><span class="v">4 批</span></div>
+              </div></div></div>
+          <div class="holding-card-category">美股<span class="tag">中線</span></div>
+        </div>
+        <dl class="holding-card-grid"><div class="holding-card-price"><dt>最新價</dt><dd><div class="price-trigger" tabindex="0" role="button"><span class="price-num">$360.54</span><span class="price-sub pos">較前收 +2.46%</span><div class="pop pop-px" role="tooltip">
+                <h4>AMD · 每批損益</h4>
+                <div class="pop-sub">最新價 $360.54 · 來源：no_token:stooq · 新鮮度：新鮮 · 市場基準：未知 · 幣別：USD · 交易所：Stooq · 2026-05-01T22:00:18</div>
+                <table>
+                  <thead><tr><th>取得日</th><th class="num">成本</th><th class="num">數量</th><th class="num">損益</th></tr></thead>
+                  <tbody><tr><td>2024-02-02</td><td class="num">$147.88</td><td class="num">90</td><td class="num"><span class="pop-pos">+$19,139</span></td></tr><tr><td>2024-09-16</td><td class="num">$157.40</td><td class="num">10</td><td class="num"><span class="pop-pos">+$2,031</span></td></tr><tr><td>2025-04-08</td><td class="num">$143.55</td><td class="num">120</td><td class="num"><span class="pop-pos">+$26,039</span></td></tr><tr><td>2025-12-08</td><td class="num">$121.65</td><td class="num">80</td><td class="num"><span class="pop-pos">+$19,111</span></td></tr></tbody>
+                  <tfoot class="summary"><tr><td>平均成本 $139.47 (USD)</td><td class="num">$41,841</td><td class="num">300</td><td class="num"><span class="pop-pos">+$66,321</span></td></tr></tfoot>
+                </table>
+              </div></div></dd></div><div class="holding-card-weight"><dt>比重</dt><dd>6.9%</dd></div><div class="holding-card-value"><dt>市值</dt><dd>$108,162</dd></div><div class="holding-card-pnl pos-txt"><dt>損益</dt><dd>+$66,321 / +158.5%</dd></div></dl>
+      </article>
+      <article class="holding-card" aria-label="TWD">
+        <div class="holding-card-head">
+          <div class="holding-card-symbol"><div class="sym-trigger" tabindex="0" role="button"><span class="sym-text">TWD</span><div class="pop pop-sym" role="tooltip">
+                <h4>TWD · 現金部位</h4>
+                <div class="pop-sub">現金</div>
+                <div class="pop-row"><span class="k">建倉時間</span><span class="v">n/a · n/a</span></div>
+                <div class="pop-row"><span class="k">批次數</span><span class="v">1 批</span></div>
+              </div></div></div>
+          <div class="holding-card-category">現金<span class="tag">現金</span></div>
+        </div>
+        <dl class="holding-card-grid"><div class="holding-card-price"><dt>最新價</dt><dd><div class="price-trigger" tabindex="0" role="button"><span class="na">—</span></div></dd></div><div class="holding-card-weight"><dt>比重</dt><dd>6.6%</dd></div><div class="holding-card-value"><dt>市值</dt><dd>$104,071</dd></div><div class="holding-card-pnl"><dt>損益</dt><dd>—</dd></div></dl>
+      </article>
+      <article class="holding-card" aria-label="2330.TW">
+        <div class="holding-card-head">
+          <div class="holding-card-symbol"><div class="sym-trigger" tabindex="0" role="button"><span class="sym-text">2330.TW</span><div class="pop pop-sym" role="tooltip">
+                <h4>2330.TW · 長線（不賣）</h4>
+                <div class="pop-sub">台股</div>
+                <div class="pop-row"><span class="k">建倉時間</span><span class="v">2024-02 · 2y 3m</span></div>
+                <div class="pop-row"><span class="k">批次數</span><span class="v">4 批</span></div>
+              </div></div></div>
+          <div class="holding-card-category">台股<span class="tag pos">長線</span></div>
+        </div>
+        <dl class="holding-card-grid"><div class="holding-card-price"><dt>最新價</dt><dd><div class="price-trigger" tabindex="0" role="button"><span class="price-num">NT$2,135.00</span><span class="price-sub neg">較前收 −2.06%</span><div class="pop pop-px" role="tooltip">
+                <h4>2330.TW · 每批損益</h4>
+                <div class="pop-sub">最新價 NT$2,135.00 · 來源：no_token:twse_mis · 新鮮度：新鮮 · 市場基準：未知 · 幣別：TWD · 交易所：TWSE · 2026-05-03T16:14:53+00:00</div>
+                <table>
+                  <thead><tr><th>取得日</th><th class="num">成本</th><th class="num">數量</th><th class="num">損益</th></tr></thead>
+                  <tbody><tr><td>2024-02-14</td><td class="num">NT$718.50</td><td class="num">500</td><td class="num"><span class="pop-pos">+NT$708,250</span></td></tr><tr><td>2024-06-18</td><td class="num">NT$867.50</td><td class="num">350</td><td class="num"><span class="pop-pos">+NT$443,625</span></td></tr><tr><td>2025-03-14</td><td class="num">NT$941.50</td><td class="num">220</td><td class="num"><span class="pop-pos">+NT$262,570</span></td></tr><tr><td>2026-03-03</td><td class="num">NT$987.00</td><td class="num">150</td><td class="num"><span class="pop-pos">+NT$172,200</span></td></tr></tbody>
+                  <tfoot class="summary"><tr><td>平均成本 $26.38 (USD)</td><td class="num">$32,187</td><td class="num">1220</td><td class="num"><span class="pop-pos">+$50,164</span></td></tr></tfoot>
+                </table>
+              </div></div></dd></div><div class="holding-card-weight"><dt>比重</dt><dd>5.2%</dd></div><div class="holding-card-value"><dt>市值</dt><dd>$82,351</dd></div><div class="holding-card-pnl pos-txt"><dt>損益</dt><dd>+$50,164 / +155.9%</dd></div></dl>
+      </article>
+      <article class="holding-card" aria-label="MSFT">
+        <div class="holding-card-head">
+          <div class="holding-card-symbol"><div class="sym-trigger" tabindex="0" role="button"><span class="sym-text">MSFT</span><div class="pop pop-sym" role="tooltip">
+                <h4>MSFT · 長線（不賣）</h4>
+                <div class="pop-sub">美股</div>
+                <div class="pop-row"><span class="k">建倉時間</span><span class="v">2024-01 · 2y 3m</span></div>
+                <div class="pop-row"><span class="k">批次數</span><span class="v">4 批</span></div>
+              </div></div></div>
+          <div class="holding-card-category">美股<span class="tag pos">長線</span></div>
+        </div>
+        <dl class="holding-card-grid"><div class="holding-card-price"><dt>最新價</dt><dd><div class="price-trigger" tabindex="0" role="button"><span class="price-num">$414.44</span><span class="price-sub pos">較前收 +0.40%</span><div class="pop pop-px" role="tooltip">
+                <h4>MSFT · 每批損益</h4>
+                <div class="pop-sub">最新價 $414.44 · 來源：no_token:stooq · 新鮮度：新鮮 · 市場基準：未知 · 幣別：USD · 交易所：Stooq · 2026-05-01T22:00:22</div>
+                <table>
+                  <thead><tr><th>取得日</th><th class="num">成本</th><th class="num">數量</th><th class="num">損益</th></tr></thead>
+                  <tbody><tr><td>2024-01-19</td><td class="num">$377.42</td><td class="num">80</td><td class="num"><span class="pop-pos">+$2,962</span></td></tr><tr><td>2024-05-03</td><td class="num">$407.65</td><td class="num">35</td><td class="num"><span class="pop-pos">+$238</span></td></tr><tr><td>2025-06-20</td><td class="num">$439.25</td><td class="num">30</td><td class="num"><span class="pop-neg">−$744</span></td></tr><tr><td>2026-01-06</td><td class="num">$427.90</td><td class="num">18</td><td class="num"><span class="pop-neg">−$242</span></td></tr></tbody>
+                  <tfoot class="summary"><tr><td>平均成本 $400.87 (USD)</td><td class="num">$65,341</td><td class="num">163</td><td class="num"><span class="pop-pos">+$2,213</span></td></tr></tfoot>
+                </table>
+              </div></div></dd></div><div class="holding-card-weight"><dt>比重</dt><dd>4.3%</dd></div><div class="holding-card-value"><dt>市值</dt><dd>$67,554</dd></div><div class="holding-card-pnl pos-txt"><dt>損益</dt><dd>+$2,213 / +3.4%</dd></div></dl>
+      </article>
+      <article class="holding-card" aria-label="GOOGL">
+        <div class="holding-card-head">
+          <div class="holding-card-symbol"><div class="sym-trigger" tabindex="0" role="button"><span class="sym-text">GOOGL</span><div class="pop pop-sym" role="tooltip">
+                <h4>GOOGL · 中線（1 年以上）</h4>
+                <div class="pop-sub">美股</div>
+                <div class="pop-row"><span class="k">建倉時間</span><span class="v">2024-02 · 2y 2m</span></div>
+                <div class="pop-row"><span class="k">批次數</span><span class="v">5 批</span></div>
+              </div></div></div>
+          <div class="holding-card-category">美股<span class="tag">中線</span></div>
+        </div>
+        <dl class="holding-card-grid"><div class="holding-card-price"><dt>最新價</dt><dd><div class="price-trigger" tabindex="0" role="button"><span class="price-num">$385.69</span><span class="price-sub pos">較前收 +1.06%</span><div class="pop pop-px" role="tooltip">
+                <h4>GOOGL · 每批損益</h4>
+                <div class="pop-sub">最新價 $385.69 · 來源：no_token:stooq · 新鮮度：新鮮 · 市場基準：未知 · 幣別：USD · 交易所：Stooq · 2026-05-01T22:00:19</div>
+                <table>
+                  <thead><tr><th>取得日</th><th class="num">成本</th><th class="num">數量</th><th class="num">損益</th></tr></thead>
+                  <tbody><tr><td>2024-02-21</td><td class="num">$140.85</td><td class="num">70</td><td class="num"><span class="pop-pos">+$17,139</span></td></tr><tr><td>2024-07-01</td><td class="num">$167.55</td><td class="num">5</td><td class="num"><span class="pop-pos">+$1,091</span></td></tr><tr><td>2025-01-08</td><td class="num">$187.65</td><td class="num">15</td><td class="num"><span class="pop-pos">+$2,971</span></td></tr><tr><td>2025-08-18</td><td class="num">$163.90</td><td class="num">30</td><td class="num"><span class="pop-pos">+$6,654</span></td></tr><tr><td>2026-04-01</td><td class="num">$153.85</td><td class="num">25</td><td class="num"><span class="pop-pos">+$5,796</span></td></tr></tbody>
+                  <tfoot class="summary"><tr><td>平均成本 $153.62 (USD)</td><td class="num">$22,275</td><td class="num">145</td><td class="num"><span class="pop-pos">+$33,650</span></td></tr></tfoot>
+                </table>
+              </div></div></dd></div><div class="holding-card-weight"><dt>比重</dt><dd>3.6%</dd></div><div class="holding-card-value"><dt>市值</dt><dd>$55,925</dd></div><div class="holding-card-pnl pos-txt"><dt>損益</dt><dd>+$33,650 / +151.1%</dd></div></dl>
+      </article>
+      <article class="holding-card" aria-label="NVDA">
+        <div class="holding-card-head">
+          <div class="holding-card-symbol"><div class="sym-trigger" tabindex="0" role="button"><span class="sym-text">NVDA</span><div class="pop pop-sym" role="tooltip">
+                <h4>NVDA · 中線（1 年以上）</h4>
+                <div class="pop-sub">美股</div>
+                <div class="pop-row"><span class="k">建倉時間</span><span class="v">2024-01 · 2y 3m</span></div>
+                <div class="pop-row"><span class="k">批次數</span><span class="v">3 批</span></div>
+              </div></div></div>
+          <div class="holding-card-category">美股<span class="tag">中線</span></div>
+        </div>
+        <dl class="holding-card-grid"><div class="holding-card-price"><dt>最新價</dt><dd><div class="price-trigger" tabindex="0" role="button"><span class="price-num">$198.45</span><span class="price-sub neg">較前收 −1.41%</span><div class="pop pop-px" role="tooltip">
+                <h4>NVDA · 每批損益</h4>
+                <div class="pop-sub">最新價 $198.45 · 來源：no_token:stooq · 新鮮度：新鮮 · 市場基準：未知 · 幣別：USD · 交易所：Stooq · 2026-05-01T22:00:19</div>
+                <table>
+                  <thead><tr><th>取得日</th><th class="num">成本</th><th class="num">數量</th><th class="num">損益</th></tr></thead>
+                  <tbody><tr><td>2024-01-26</td><td class="num">$56.12</td><td class="num">95</td><td class="num"><span class="pop-pos">+$13,521</span></td></tr><tr><td>2024-05-20</td><td class="num">$95.05</td><td class="num">45</td><td class="num"><span class="pop-pos">+$4,653</span></td></tr><tr><td>2025-05-12</td><td class="num">$113.90</td><td class="num">30</td><td class="num"><span class="pop-pos">+$2,536</span></td></tr></tbody>
+                  <tfoot class="summary"><tr><td>平均成本 $76.62 (USD)</td><td class="num">$13,026</td><td class="num">170</td><td class="num"><span class="pop-pos">+$20,711</span></td></tr></tfoot>
+                </table>
+              </div></div></dd></div><div class="holding-card-weight"><dt>比重</dt><dd>2.1%</dd></div><div class="holding-card-value"><dt>市值</dt><dd>$33,736</dd></div><div class="holding-card-pnl pos-txt"><dt>損益</dt><dd>+$20,711 / +159.0%</dd></div></dl>
+      </article>
+      <article class="holding-card" aria-label="SMR">
+        <div class="holding-card-head">
+          <div class="holding-card-symbol"><div class="sym-trigger" tabindex="0" role="button"><span class="sym-text">SMR</span><div class="pop pop-sym" role="tooltip">
+                <h4>SMR · 短線（12 個月）</h4>
+                <div class="pop-sub">美股</div>
+                <div class="pop-row"><span class="k">建倉時間</span><span class="v">2024-08 · 1y 9m</span></div>
+                <div class="pop-row"><span class="k">批次數</span><span class="v">3 批</span></div>
+              </div></div></div>
+          <div class="holding-card-category">美股<span class="tag warn">短線</span></div>
+        </div>
+        <dl class="holding-card-grid"><div class="holding-card-price"><dt>最新價</dt><dd><div class="price-trigger" tabindex="0" role="button"><span class="price-num">$12.14</span><span class="price-sub neg">較前收 −0.74%</span><div class="pop pop-px" role="tooltip">
+                <h4>SMR · 每批損益</h4>
+                <div class="pop-sub">最新價 $12.14 · 來源：no_token:stooq · 新鮮度：新鮮 · 市場基準：未知 · 幣別：USD · 交易所：Stooq · 2026-05-01T22:00:46</div>
+                <table>
+                  <thead><tr><th>取得日</th><th class="num">成本</th><th class="num">數量</th><th class="num">損益</th></tr></thead>
+                  <tbody><tr><td>2024-08-01</td><td class="num">$7.82</td><td class="num">350</td><td class="num"><span class="pop-pos">+$1,512</span></td></tr><tr><td>2025-02-03</td><td class="num">$14.18</td><td class="num">370</td><td class="num"><span class="pop-neg">−$755</span></td></tr><tr><td>2026-02-03</td><td class="num">$21.35</td><td class="num">280</td><td class="num"><span class="pop-neg">−$2,579</span></td></tr></tbody>
+                  <tfoot class="summary"><tr><td>平均成本 $13.96 (USD)</td><td class="num">$13,962</td><td class="num">1000</td><td class="num"><span class="pop-neg">−$1,822</span></td></tr></tfoot>
+                </table>
+              </div></div></dd></div><div class="holding-card-weight"><dt>比重</dt><dd>0.8%</dd></div><div class="holding-card-value"><dt>市值</dt><dd>$12,140</dd></div><div class="holding-card-pnl neg-txt"><dt>損益</dt><dd>−$1,822 / −13.0%</dd></div></dl>
+      </article>
+    </div>
+  </section>
+  <section class="section">
+    <div class="section-head">
+      <h2>持股損益排序</h2>
+      <span class="sub">已實現＋未實現損益（USD）</span>
+    </div>
+    <div class="bars"><div class="bar-row"><div class="bar-label">AMD</div><div class="bar-track"><div class="bar pos" style="width:100.0%"></div></div><div class="bar-value pos-txt">+$66,321</div></div><div class="bar-row"><div class="bar-label">2330.TW</div><div class="bar-track"><div class="bar pos" style="width:75.6%"></div></div><div class="bar-value pos-txt">+$50,164</div></div><div class="bar-row"><div class="bar-label">QQQ</div><div class="bar-track"><div class="bar pos" style="width:64.4%"></div></div><div class="bar-value pos-txt">+$42,712</div></div><div class="bar-row"><div class="bar-label">GOOGL</div><div class="bar-track"><div class="bar pos" style="width:50.7%"></div></div><div class="bar-value pos-txt">+$33,650</div></div><div class="bar-row"><div class="bar-label">BTC</div><div class="bar-track"><div class="bar pos" style="width:31.8%"></div></div><div class="bar-value pos-txt">+$21,092</div></div><div class="bar-row"><div class="bar-label">NVDA</div><div class="bar-track"><div class="bar pos" style="width:31.2%"></div></div><div class="bar-value pos-txt">+$20,711</div></div><div class="bar-row"><div class="bar-label">MSFT</div><div class="bar-track"><div class="bar pos" style="width:3.3%"></div></div><div class="bar-value pos-txt">+$2,213</div></div><div class="bar-row"><div class="bar-label">SMR</div><div class="bar-track"><div class="bar neg" style="width:2.7%"></div></div><div class="bar-value neg-txt">−$1,822</div></div></div>
+  </section>
+  <section class="section">
+    <div class="section-head">
+      <h2>持有期間與節奏</h2>
+      <span class="sub">成本加權，不含現金</span>
+    </div>
+    <div class="kpis">
+      <div class="kpi"><div class="k">平均持有</div><div class="v">1.7 年</div><div class="delta">成本加權</div></div>
+      <div class="kpi"><div class="k">最舊批次</div><div class="v">QQQ</div><div class="delta">2024-01-16 · 2y 3m</div></div>
+      <div class="kpi"><div class="k">最新批次</div><div class="v">GOOGL</div><div class="delta">2026-04-01 · 1m</div></div>
+      <div class="kpi"><div class="k">持有 &gt; 1 年</div><div class="v">82%</div><div class="delta">佔風險資產市值</div></div>
+    </div>
+
+    <div style="margin-top:18px">
+      <div class="period-strip" aria-label="持有期間分布">
+        <span style="width:0.0%;background:#b15309"  title="&lt; 1 月"></span>
+        <span style="width:9.0%;background:#8a5a1c" title="1–6 月"></span>
+        <span style="width:8.6%;background:#1d4690" title="6–12 月"></span>
+        <span style="width:82.4%;background:#1f2937" title="1–3 年"></span>
+        <span style="width:0.0%;background:#15703d" title="3 年以上"></span>
+      </div>
+      <div class="period-legend">
+        <span><i style="background:#b15309"></i>&lt; 1 月 · 0.0%</span>
+        <span><i style="background:#8a5a1c"></i>1–6 月 · 9.0%</span>
+        <span><i style="background:#1d4690"></i>6–12 月 · 8.6%</span>
+        <span><i style="background:#1f2937"></i>1–3 年 · 82.4%</span>
+        <span><i style="background:#15703d"></i>3 年以上 · 0.0%</span>
+      </div>
+    </div>
+  </section>
+  <section class="section">
+    <div class="section-head">
+      <h2>主題與行業暴險</h2>
+      <span class="sub">USD 基準 · 含 ETF 穿透分配</span>
+    </div>
+    <div class="cols-2"><div class="bars"><div class="bar-row"><div class="bar-label">數位資產</div><div class="bar-track"><div class="bar pos" style="width:26%"></div></div><div class="bar-value">26%</div></div><div class="bar-row"><div class="bar-label">美股核心／大盤與品質</div><div class="bar-track"><div class="bar pos" style="width:39%"></div></div><div class="bar-value">39%</div></div><div class="bar-row"><div class="bar-label">AI／高速運算與晶片設計</div><div class="bar-track"><div class="bar pos" style="width:22%"></div></div><div class="bar-value">22%</div></div><div class="bar-row"><div class="bar-label">台灣晶圓代工</div><div class="bar-track"><div class="bar pos" style="width:12%"></div></div><div class="bar-value">12%</div></div><div class="bar-row"><div class="bar-label">新核能／SMR 題材</div><div class="bar-track"><div class="bar neu" style="width:2%"></div></div><div class="bar-value">2%</div></div></div></div>
+  </section>
+  <section class="section">
+    <div class="section-head">
+      <h2>資料來源與缺口</h2>
+      <span class="sub">每筆價格的取得方式與新鮮度 · 待補資料逐項列出</span>
+    </div>
+    <div class="strategy-readout-wrap" style="margin-bottom:18px"><div class="eyebrow" style="margin-bottom:8px">投資策略筆記</div><div class="prose"><p>我以這份合成帳簿壓測報表管線：核心部位放在美股大型品質與那斯達克貝塔（QQQ、MSFT、GOOGL），中期桶用 NVDA／AMD 承接 AI 資本循環；台股 2330 代表代工曝險；BTC 是刻意保留的高波動袖位。部位縮減時我優先削最高成本批次，任何上檔敘事都要能落到 base／bull／bear 區間；資料缺口我寧可標出來也不硬寫結論。</p></div></div>
+    <div class="eyebrow" style="margin-bottom:10px">最新價來源稽核</div>
+    <div class="tbl-wrap scroll-y">
+      <table class="src-tbl">
+        <thead>
+          <tr><th>標的</th><th>價格來源</th><th>市場狀態</th><th>取得時間</th><th>新鮮度</th><th>備註</th></tr>
+        </thead>
+        <tbody>          <tr>
+            <td>0050.TW</td>
+            <td>no_token:twse_mis</td>
+            <td>未知</td>
+            <td class="num">2026-05-03T16:15:11+00:00</td>
+            <td><span class="freshness fresh">新鮮</span></td>
+            <td>yfinance_per_ticker_miss</td>
+          </tr>          <tr>
+            <td>00928.TW</td>
+            <td>no_token:tpex_mis</td>
+            <td>未知</td>
+            <td class="num">2026-05-03T16:15:14+00:00</td>
+            <td><span class="freshness fresh">新鮮</span></td>
+            <td>yfinance_per_ticker_miss</td>
+          </tr>          <tr>
+            <td>2330.TW</td>
+            <td>no_token:twse_mis</td>
+            <td>未知</td>
+            <td class="num">2026-05-03T16:14:53+00:00</td>
+            <td><span class="freshness fresh">新鮮</span></td>
+            <td>yfinance_per_ticker_miss</td>
+          </tr>          <tr>
+            <td>AMD</td>
+            <td>no_token:stooq</td>
+            <td>未知</td>
+            <td class="num">2026-05-01T22:00:18</td>
+            <td><span class="freshness fresh">新鮮</span></td>
+            <td>—</td>
+          </tr>          <tr>
+            <td>BTC</td>
+            <td>no_token:binance</td>
+            <td>24 小時交易</td>
+            <td class="num">2026-05-03T16:14:58+00:00</td>
+            <td><span class="freshness fresh">新鮮</span></td>
+            <td>—</td>
+          </tr>          <tr>
+            <td>EWH</td>
+            <td>no_token:stooq</td>
+            <td>未知</td>
+            <td class="num">2026-05-01T22:00:19</td>
+            <td><span class="freshness fresh">新鮮</span></td>
+            <td>—</td>
+          </tr>          <tr>
+            <td>EWJ</td>
+            <td>no_token:stooq</td>
+            <td>未知</td>
+            <td class="num">2026-05-01T22:00:18</td>
+            <td><span class="freshness fresh">新鮮</span></td>
+            <td>—</td>
+          </tr>          <tr>
+            <td>EWU</td>
+            <td>no_token:stooq</td>
+            <td>未知</td>
+            <td class="num">2026-05-01T22:00:18</td>
+            <td><span class="freshness fresh">新鮮</span></td>
+            <td>—</td>
+          </tr>          <tr>
+            <td>GOOGL</td>
+            <td>no_token:stooq</td>
+            <td>未知</td>
+            <td class="num">2026-05-01T22:00:19</td>
+            <td><span class="freshness fresh">新鮮</span></td>
+            <td>—</td>
+          </tr>          <tr>
+            <td>MSFT</td>
+            <td>no_token:stooq</td>
+            <td>未知</td>
+            <td class="num">2026-05-01T22:00:22</td>
+            <td><span class="freshness fresh">新鮮</span></td>
+            <td>—</td>
+          </tr>          <tr>
+            <td>NVDA</td>
+            <td>no_token:stooq</td>
+            <td>未知</td>
+            <td class="num">2026-05-01T22:00:19</td>
+            <td><span class="freshness fresh">新鮮</span></td>
+            <td>—</td>
+          </tr>          <tr>
+            <td>QQQ</td>
+            <td>no_token:stooq</td>
+            <td>未知</td>
+            <td class="num">2026-05-01T22:00:19</td>
+            <td><span class="freshness fresh">新鮮</span></td>
+            <td>—</td>
+          </tr>          <tr>
+            <td>SMR</td>
+            <td>no_token:stooq</td>
+            <td>未知</td>
+            <td class="num">2026-05-01T22:00:46</td>
+            <td><span class="freshness fresh">新鮮</span></td>
+            <td>—</td>
+          </tr>          <tr>
+            <td>TWD</td>
+            <td>cash</td>
+            <td>未知</td>
+            <td class="num">n/a</td>
+            <td><span class="freshness stale">n/a</span></td>
+            <td>—</td>
+          </tr>          <tr>
+            <td>USD</td>
+            <td>cash</td>
+            <td>未知</td>
+            <td class="num">n/a</td>
+            <td><span class="freshness stale">n/a</span></td>
+            <td>—</td>
+          </tr>          <tr>
+            <td>VT</td>
+            <td>no_token:stooq</td>
+            <td>未知</td>
+            <td class="num">2026-05-01T22:00:18</td>
+            <td><span class="freshness fresh">新鮮</span></td>
+            <td>—</td>
+          </tr>          <tr>
+            <td>VTI</td>
+            <td>no_token:stooq</td>
+            <td>未知</td>
+            <td class="num">2026-05-01T22:00:18</td>
+            <td><span class="freshness fresh">新鮮</span></td>
+            <td>—</td>
+          </tr>          <tr>
+            <td>FX USD/TWD</td>
+            <td>no_token:open_er_api</td>
+            <td>未知</td>
+            <td class="num">Sun, 03 May 2026 00:02:31 +0000</td>
+            <td><span class="freshness fresh">新鮮</span></td>
+            <td>rate=31.629326<br>yfinance_per_ticker_miss</td>
+          </tr></tbody>
+      </table>
+    </div>
+    <div class="eyebrow" style="margin-top:22px;margin-bottom:6px">資料缺口</div>
+    <ul class="gap-list"><li><b>獲利面板資料缺口:</b><ul class="gap-sublist"><li>1D: P&amp;L differs from realized + unrealized_delta by -70.36 (cash/FX drift or missing marks)</li><li>1D: residual -70.36 = fx_drift -70.36 + cash_drift -0.00</li><li>7D: P&amp;L differs from realized + unrealized_delta by -752.10 (cash/FX drift or missing marks)</li><li>7D: residual -752.10 = fx_drift -752.10 + cash_drift -0.00</li><li>MTD: P&amp;L differs from realized + unrealized_delta by -260.38 (cash/FX drift or missing marks)</li><li>MTD: residual -260.38 = fx_drift -260.38 + cash_drift 0.00</li><li>1M: P&amp;L differs from realized + unrealized_delta by 1317.33 (cash/FX drift or missing marks)</li><li>1M: residual 1317.33 = fx_drift 1317.33 + cash_drift -0.00</li><li>YTD: P&amp;L differs from realized + unrealized_delta by -1631.29 (cash/FX drift or missing marks)</li><li>YTD: residual -1631.29 = fx_drift -1598.64 + cash_drift -32.65</li><li>1Y: P&amp;L differs from realized + unrealized_delta by -3846.00 (cash/FX drift or missing marks)</li><li>1Y: residual -3846.00 = fx_drift -3808.91 + cash_drift -37.09</li><li class="gap-overflow">+5 more</li></ul></li></ul>
+    
+  </section>
+  <footer class="footer">
+    本報告依 docs/portfolio_report_agent_guidelines.md 規範產出，價格為產出時靜態快照，未持續刷新。
+  </footer>
+</div>
+</body>
+</html>

@@ -8,7 +8,7 @@ The estimates below are order-of-magnitude (within ~2×) based on typical run si
 
 | # | Change | Pipeline | Est. tokens saved per run | Quality risk |
 |---|--------|----------|---------------------------|--------------|
-| 1 | Wrap §10.5 news + §10.6 events research in a single subagent | portfolio-report Phase A | 30k–80k | None — artifact (`report_context.json` fragment) is identical |
+| 1 | Wrap §10.5 news + §10.6 events research in a single subagent **only when those sections render** | single-account daily-report Phase A | 30k–80k | None — artifact (`report_context.json` fragment) is identical |
 | 2 | Replace full `report_snapshot.json` reads with `jq` field reads | portfolio-report Phase B/D | 5k–25k | None — only the field actually needed crosses into context |
 | 3 | Wrap statement-file extraction (PDF / image / large CSV) in a subagent | onboarding §6 | 10k–60k for big imports | None — output is canonical JSON either way |
 
@@ -24,7 +24,7 @@ Heaviest pipeline in the repo. Four phases: A Gather → B Think → C Review �
 
 Per typical run, the dominant sources of cumulative input tokens are (descending):
 
-1. **Phase A news/events research** — WebSearch + WebFetch dumps for §10.5 (news per ticker, full universe) and §10.6 (30-day catalysts). Each ticker may produce 2–5K tokens of search snippets; a 15-name portfolio = 30–80K tokens. **Lives in main context for every subsequent turn unless dropped.**
+1. **Phase A news/events research** — WebSearch + WebFetch dumps for §10.5 (news per ticker, full universe) and §10.6 (30-day catalysts), **only for modes that render those sections** (current policy: single-account `daily_report`). Each ticker may produce 2–5K tokens of search snippets; a 15-name portfolio = 30–80K tokens. **Lives in main context for every subsequent turn unless dropped.** `portfolio_report` saves the entire cost by skipping this research by policy.
 2. **`report_snapshot.json`** read at Phase B and again at Phase D — typically 8–25K tokens of canonical numerics. Currently often read whole when only specific fields are referenced.
 3. **`report_context.json`** read after Phase A populates it — 5–20K tokens.
 4. **`transactions.db` dump** if the agent calls `db dump` for analytic context — can be 10–40K for established users.
@@ -35,9 +35,9 @@ Per typical run, the dominant sources of cumulative input tokens are (descending
 
 #### A1. News + events research → subagent (highest ROI)
 
-**Status quo**: Phase A runs WebSearch / WebFetch directly in the main agent. All snippets land in the main transcript. Per `MEMORY.md` `feedback_portfolio_news_research.md`, the agent *must* do live research; this isn't optional. So the data exists — the question is where it lives.
+**Status quo**: when daily sections render, Phase A may run WebSearch / WebFetch directly in the main agent. All snippets land in the main transcript. Live research is mandatory only for rendered daily decision sections; `portfolio_report` must not run it.
 
-**Change**: Phase A delegates §10.5 + §10.6 research to a temp-researcher per `docs/temp_researcher_contract.md` (any runtime's isolation primitive). The temp-researcher:
+**Change**: daily Phase A delegates §10.5 + §10.6 research to a temp-researcher per `docs/temp_researcher_contract.md` (any runtime's isolation primitive). The temp-researcher is not invoked for `portfolio_report` or `total_account`. The temp-researcher:
 - Receives the tickers list and the §10.5/§10.6 spec excerpts.
 - Runs WebSearch / WebFetch / source-fetching to its heart's content.
 - Writes findings directly into `$REPORT_RUN_DIR/report_context.json` under the `news` and `events_30d` fields.
@@ -45,11 +45,11 @@ Per typical run, the dominant sources of cumulative input tokens are (descending
 
 **Quality**: Identical — the artifact (`report_context.json` fragment) is the same bytes either way. The audit trail (per-source citations) lives in the artifact, not the conversation. Phase B reads what it needs from the artifact.
 
-**Risk**: Low. The `MEMORY.md` rule "WebSearch/WebFetch for §10.5 — empty section without audit trail = workflow violation" is satisfied as long as the subagent's audit fields are present in the artifact. Add a Phase A close-check that asserts `report_context.json.news.<ticker>.sources` is non-empty.
+**Risk**: Low. When §10.5 renders, the rule "empty section without audit trail = workflow violation" is satisfied as long as the subagent's audit fields are present in the artifact. When §10.5 is skipped, the close-check is inverted: assert `news`, `events`, `research_targets`, and `research_coverage` are absent.
 
 **Estimated savings**: 30k–80k tokens of cumulative input over the rest of the run (news snippets re-sent every turn after Phase A until session end or compaction).
 
-**Where to update**: `docs/portfolio_report_agent_guidelines/04-computations-to-static-snapshot.md` §10.5 / §10.6, with a `@temporary` declaration block per the protocol.
+**Where to update**: `docs/portfolio_report_agent_guidelines.md` section-level routing and `04-computations-to-static-snapshot.md` §10.5 / §10.6, with a section-gated `@temporary` declaration block per the protocol.
 
 #### A2. Snapshot/context reads → field-narrow
 

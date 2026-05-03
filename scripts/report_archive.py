@@ -42,7 +42,10 @@ from account import add_account_args, resolve_account, autodetect_and_migrate_or
 
 ARCHIVE_SCHEMA_VERSION = 1
 DEFAULT_DB_PATH = Path("transactions.db")
-REPORT_ID_RE = re.compile(r"(\d{4}-\d{2}-\d{2}_\d{4})")
+REPORT_ID_RE = re.compile(
+    r"(\d{4}-\d{2}-\d{2}_\d{4}_(?:single_account|total_account)_(?:daily_report|portfolio_report))"
+)
+LEGACY_REPORT_ID_RE = re.compile(r"(\d{4}-\d{2}-\d{2}_\d{4})")
 
 _SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS schema_meta (
@@ -230,15 +233,21 @@ def list_archive(db_path: Path = DEFAULT_DB_PATH,
 
 def _report_id_from_path(p: Path) -> Optional[str]:
     m = REPORT_ID_RE.search(p.name)
-    return m.group(1) if m else None
+    if m:
+        return m.group(1)
+    legacy = LEGACY_REPORT_ID_RE.search(p.name)
+    return legacy.group(1) if legacy else None
 
 
 def _backfill(reports_dir: Path, db_path: Path) -> int:
     """Register every reports/*.html that has no row yet. JSON blobs stay NULL
     when the source files are gone — only html_path + report_id get persisted.
     """
+    ensure_schema(db_path)
     n = 0
-    for html in sorted(reports_dir.glob("*_portfolio_report.html")):
+    patterns = ("*_daily_report.html", "*_portfolio_report.html")
+    html_files = sorted({html for pattern in patterns for html in reports_dir.glob(pattern)})
+    for html in html_files:
         rid = _report_id_from_path(html)
         if not rid:
             continue

@@ -39,6 +39,11 @@ def _failures(html: str) -> list[str]:
     if row_count and len(cards) != row_count:
         failures.append(f'card count {len(cards)} does not match holdings table row count {row_count}')
 
+    has_desktop_action = 'class="col-action"' in (wrap.group(1) if wrap else '')
+    has_mobile_action = 'holding-card-action' in html
+    if has_desktop_action != has_mobile_action:
+        failures.append('desktop/mobile holdings Action column visibility is inconsistent')
+
     required_classes = [
         'holding-card-symbol',
         'holding-card-category',
@@ -46,12 +51,15 @@ def _failures(html: str) -> list[str]:
         'holding-card-weight',
         'holding-card-value',
         'holding-card-pnl',
-        'holding-card-action',
     ]
+    if has_desktop_action:
+        required_classes.append('holding-card-action')
     for idx, card in enumerate(cards, start=1):
         for cls in required_classes:
             if cls not in card:
                 failures.append(f'card {idx} missing {cls}')
+        if not has_desktop_action and 'holding-card-action' in card:
+            failures.append(f'card {idx} includes hidden Action field')
         if '<div class="sym-trigger" tabindex="0" role="button">' not in card:
             failures.append(f'card {idx} missing exact sym-trigger div contract')
         if '<span class="sym-text">' not in card:

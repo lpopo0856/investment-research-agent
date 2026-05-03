@@ -19,7 +19,8 @@ Useful account-management subcommands:
 python scripts/transactions.py account list          # list accounts; marks active with (*)
 python scripts/transactions.py account use <name>    # set accounts/.active
 python scripts/transactions.py account create <name> # scaffold new account + db init
-python scripts/transactions.py account migrate --yes # non-interactive root-layout migration
+python scripts/transactions.py account detect        # print layout state before migration
+python scripts/transactions.py account migrate --yes # root-layout migration; run only if detect = migrate
 ```
 
 When the active account is `default`, omitting `--account` is equivalent to

@@ -60,3 +60,20 @@ The base currency every aggregate in the report is denominated in. Use a single 
 - Base currency: USD
 
 Choose this once and keep it stable — switching base mid-stream will make today's report incomparable to yesterday's. Pick whatever currency matches how you actually evaluate your portfolio (most TW-based users want `TWD`; most globally-diversified investors want `USD`).
+
+## Benchmark ETFs (optional)
+
+The report's profit-panel interval tables compare portfolio / market-bucket returns
+against broad-market ETF benchmarks. Defaults are built in; edit these lines only
+if you want a different comparison set.
+
+- Global benchmark: VT
+- US market benchmark: VTI
+- Taiwan listed benchmark: 0050.TW
+- Taiwan OTC benchmark: 00928.TW
+- Japan market benchmark: EWJ
+- Hong Kong market benchmark: EWH
+- London market benchmark: EWU
+
+Use `none` to disable a benchmark for a bucket. You may also provide a market tag
+when the ticker itself is ambiguous, e.g. `0050.TW` or `VWRL [LSE]`.

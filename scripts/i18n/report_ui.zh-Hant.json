@@ -49,6 +49,8 @@
     "col_period": "區間",
     "col_pnl": "損益",
     "col_return": "報酬率",
+    "col_benchmark": "基準",
+    "col_spread": "超額報酬",
     "col_realized": "已實現",
     "col_unrealized": "未實現變動",
     "col_flows": "淨流入",

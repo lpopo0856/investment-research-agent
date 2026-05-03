@@ -67,6 +67,7 @@ from account import (  # type: ignore[import-not-found]
     add_account_args,
     resolve_account,
     autodetect_and_migrate_or_exit,
+    detect_legacy_layout,
     prompt_and_migrate,
     validate_account_name,
     list_accounts,
@@ -75,6 +76,7 @@ from account import (  # type: ignore[import-not-found]
     write_active_pointer,
     check_pairing,
 )
+from benchmark_config import load_benchmark_config  # type: ignore[import-not-found]
 
 # --------------------------------------------------------------------------- #
 # Constants
@@ -799,7 +801,7 @@ def _earliest_txn_date(txns: List[Transaction]) -> Optional[str]:
 
 def _historical_close(history: Dict[str, List[Dict[str, Any]]], ticker: str, on_or_before: str) -> Optional[float]:
     """Latest close for ticker on-or-before the given date. None if not found."""
-    series = history.get(ticker)
+    series = history.get(ticker) or history.get(ticker.upper())
     if not series:
         return None
     best: Optional[Dict[str, Any]] = None
@@ -814,6 +816,57 @@ def _historical_close(history: Dict[str, List[Dict[str, Any]]], ticker: str, on_
         return float(best.get("close"))
     except (TypeError, ValueError):
         return None
+
+
+def _benchmark_config_from_prices(prices: Dict[str, Any]) -> Dict[str, Any]:
+    payload = prices.get("_benchmarks")
+    if isinstance(payload, dict):
+        return payload
+    return load_benchmark_config(None)
+
+
+def _benchmark_spec_for(config: Dict[str, Any], market: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    if market is None:
+        spec = config.get("global")
+    else:
+        markets = config.get("markets") if isinstance(config.get("markets"), dict) else {}
+        spec = markets.get(market)
+    return spec if isinstance(spec, dict) and spec.get("ticker") else None
+
+
+def _benchmark_return_pct(
+    *,
+    spec: Optional[Dict[str, Any]],
+    period: str,
+    boundary_iso: str,
+    latest_prices: Dict[str, float],
+    history: Dict[str, List[Dict[str, Any]]],
+    audit: List[str],
+    label: str,
+) -> Optional[float]:
+    if not spec:
+        return None
+    ticker = str(spec.get("ticker") or "").upper()
+    if not ticker:
+        return None
+    end_price = latest_prices.get(ticker)
+    if end_price is None:
+        audit.append(f"{period}: benchmark {label} {ticker}: missing latest price")
+        return None
+    start_price = _historical_close(history, ticker, boundary_iso)
+    if start_price is None:
+        audit.append(f"{period}: benchmark {label} {ticker}: no historical close at {boundary_iso}")
+        return None
+    if abs(start_price) <= 1e-12:
+        audit.append(f"{period}: benchmark {label} {ticker}: historical close at {boundary_iso} is zero")
+        return None
+    return round(((float(end_price) / float(start_price)) - 1.0) * 100.0, 4)
+
+
+def _spread_pct(return_pct: Optional[float], benchmark_return_pct: Optional[float]) -> Optional[float]:
+    if return_pct is None or benchmark_return_pct is None:
+        return None
+    return round(float(return_pct) - float(benchmark_return_pct), 4)
 
 
 def _historical_fx(fx_history: Dict[str, List[Dict[str, Any]]], pair: str, on_or_before: str) -> Optional[float]:
@@ -918,6 +971,7 @@ def compute_profit_panel(
     if earliest:
         boundaries["ALLTIME"] = _date(earliest)
     period_order = ["1D", "7D", "MTD", "1M", "YTD", "1Y", "ALLTIME"]
+    benchmark_config = _benchmark_config_from_prices(prices)
 
     rows: List[Dict[str, Any]] = []
     for period in period_order:
@@ -926,6 +980,7 @@ def compute_profit_panel(
                 "period": period, "pnl": None, "return_pct": None,
                 "realized": None, "unrealized_delta": None, "net_flows": None,
                 "starting_value": None, "ending_value": end_value,
+                "benchmark_ticker": None, "benchmark_return_pct": None, "spread_pct": None,
                 "per_market": {},
                 "per_market_detail": {},
                 "audit": ["no transactions yet"],
@@ -1015,6 +1070,23 @@ def compute_profit_panel(
         pnl = end_value - starting_value - flows
         denom = starting_value + 0.5 * flows
         ret = (pnl / denom) if abs(denom) > 1e-6 else None
+        ret_pct = round(ret * 100.0, 4) if ret is not None else None
+        global_benchmark_spec = _benchmark_spec_for(benchmark_config, None)
+        global_benchmark_return = _benchmark_return_pct(
+            spec=global_benchmark_spec,
+            period=period,
+            boundary_iso=boundary_iso,
+            latest_prices=latest_prices,
+            history=history,
+            audit=period_audit,
+            label="global",
+        )
+        global_benchmark_ticker = (
+            str(global_benchmark_spec.get("ticker")).upper()
+            if global_benchmark_spec is not None and global_benchmark_spec.get("ticker")
+            else None
+        )
+        global_spread = _spread_pct(ret_pct, global_benchmark_return)
 
         unrealized_delta = end_unrealized - starting_unrealized
         component_gap = pnl - (realized + unrealized_delta)
@@ -1073,7 +1145,7 @@ def compute_profit_panel(
         )
         per_market: Dict[str, float] = {}
         per_market_detail: Dict[str, Dict[str, Any]] = {}
-        for k in per_market_keys:
+        for k in sorted(per_market_keys):
             r = realized_by_market.get(k, 0.0)
             ud = end_unrealized_by_market.get(k, 0.0) - starting_unrealized_by_market.get(k, 0.0)
             value = r + ud
@@ -1087,11 +1159,29 @@ def compute_profit_panel(
                 ret_m = None
             else:
                 ret_m = round((value / denom) * 100.0, 4)
+            market_benchmark_spec = _benchmark_spec_for(benchmark_config, k)
+            market_benchmark_ticker = (
+                str(market_benchmark_spec.get("ticker")).upper()
+                if market_benchmark_spec is not None and market_benchmark_spec.get("ticker")
+                else None
+            )
+            market_benchmark_return = _benchmark_return_pct(
+                spec=market_benchmark_spec,
+                period=period,
+                boundary_iso=boundary_iso,
+                latest_prices=latest_prices,
+                history=history,
+                audit=period_audit,
+                label=k,
+            )
             per_market_detail[k] = {
                 "pnl": round(value, 2),
                 "realized": round(r, 2),
                 "unrealized_delta": round(ud, 2),
                 "return_pct": ret_m,
+                "benchmark_ticker": market_benchmark_ticker,
+                "benchmark_return_pct": market_benchmark_return,
+                "spread_pct": _spread_pct(ret_m, market_benchmark_return),
                 "starting_position_value": round(s_m, 2),
                 "ending_position_value": round(e_m, 2),
                 "net_flows": None,
@@ -1106,7 +1196,10 @@ def compute_profit_panel(
             "starting_value": round(starting_value, 2),
             "ending_value": round(end_value, 2),
             "pnl": round(pnl, 2),
-            "return_pct": round(ret * 100.0, 4) if ret is not None else None,
+            "return_pct": ret_pct,
+            "benchmark_ticker": global_benchmark_ticker,
+            "benchmark_return_pct": global_benchmark_return,
+            "spread_pct": global_spread,
             "realized": round(realized, 2),
             "unrealized_delta": round(unrealized_delta, 2),
             "net_flows": round(flows, 2),
@@ -1788,11 +1881,26 @@ def _selfcheck() -> int:
     # 6. compute_profit_panel — basic shape
     fake_prices_full = {
         "NVDA": {"latest_price": 220.0, "currency": "USD"},
+        "VT": {"latest_price": 110.0, "currency": "USD"},
+        "VTI": {"latest_price": 55.0, "currency": "USD"},
         "_fx": {"rates": {}},
+        "_benchmarks": {
+            "source": "self-check",
+            "global": {"ticker": "VT", "market": "US"},
+            "markets": {"us": {"ticker": "VTI", "market": "US"}},
+        },
         "_history": {
             "NVDA": [
                 {"date": "2026-04-29", "close": 215.50},
                 {"date": "2026-04-28", "close": 213.00},
+            ],
+            "VT": [
+                {"date": "2026-04-29", "close": 100.00},
+                {"date": "2026-04-28", "close": 99.00},
+            ],
+            "VTI": [
+                {"date": "2026-04-29", "close": 50.00},
+                {"date": "2026-04-28", "close": 49.00},
             ],
         },
     }
@@ -1807,6 +1915,13 @@ def _selfcheck() -> int:
     elif abs((alltime_row.get("net_flows") or 0) - 5000.0) > 1e-6:
         failures.append(f"profit_panel: ALLTIME net_flows should include first-day/whole-history deposits, got {alltime_row.get('net_flows')}")
     r1 = panel["rows"][0]
+    if r1.get("benchmark_ticker") != "VT":
+        failures.append(f"profit_panel: global benchmark ticker expected VT, got {r1.get('benchmark_ticker')}")
+    if abs(float(r1.get("benchmark_return_pct") or 0.0) - 10.0) > 1e-6:
+        failures.append(f"profit_panel: global benchmark return expected 10, got {r1.get('benchmark_return_pct')}")
+    expected_spread = round(float(r1.get("return_pct") or 0.0) - 10.0, 4)
+    if abs(float(r1.get("spread_pct") or 0.0) - expected_spread) > 1e-6:
+        failures.append(f"profit_panel: global spread expected {expected_spread}, got {r1.get('spread_pct')}")
     pmd = r1.get("per_market_detail") or {}
     if not pmd:
         failures.append("profit_panel: per_market_detail missing on rows")
@@ -1821,6 +1936,28 @@ def _selfcheck() -> int:
             comb = float(usd.get("realized") or 0.0) + float(usd.get("unrealized_delta") or 0.0)
             if abs(pnl_u - comb) > 0.02:
                 failures.append(f"profit_panel: us pnl {pnl_u} != realized+unrealized {comb}")
+            if usd.get("benchmark_ticker") != "VTI":
+                failures.append(f"profit_panel: us benchmark ticker expected VTI, got {usd.get('benchmark_ticker')}")
+            if abs(float(usd.get("benchmark_return_pct") or 0.0) - 10.0) > 1e-6:
+                failures.append(f"profit_panel: us benchmark return expected 10, got {usd.get('benchmark_return_pct')}")
+            if usd.get("return_pct") is not None:
+                expected_us_spread = round(float(usd.get("return_pct")) - 10.0, 4)
+                if abs(float(usd.get("spread_pct") or 0.0) - expected_us_spread) > 1e-6:
+                    failures.append(f"profit_panel: us spread expected {expected_us_spread}, got {usd.get('spread_pct')}")
+
+    missing_benchmark_prices = {
+        "NVDA": {"latest_price": 220.0, "currency": "USD"},
+        "VT": {"latest_price": 110.0, "currency": "USD"},
+        "_fx": {"rates": {}},
+        "_benchmarks": {"global": {"ticker": "VT", "market": "US"}, "markets": {}},
+        "_history": {"NVDA": [{"date": "2026-04-29", "close": 215.50}]},
+    }
+    missing_panel = compute_profit_panel(txns, missing_benchmark_prices, base="USD", today=_dt.date(2026, 4, 30))
+    missing_r1 = missing_panel["rows"][0]
+    if missing_r1.get("benchmark_return_pct") is not None or missing_r1.get("spread_pct") is not None:
+        failures.append("profit_panel: missing benchmark history should produce null benchmark/spread")
+    if not any("benchmark global VT" in str(a) for a in (missing_r1.get("audit") or [])):
+        failures.append("profit_panel: missing benchmark history should emit audit")
 
     sold_lot_sample = """\
 # Transactions
@@ -3012,6 +3149,7 @@ def _build_parser() -> argparse.ArgumentParser:
     acct_create.add_argument("name", help="Account name (lowercase, [a-z0-9_-]{1,32}, not 'demo')")
 
     acct_sub.add_parser("list", help="List all accounts; mark active")
+    acct_sub.add_parser("detect", help="Print account layout state (clean, migrate, partial, demo_only_at_root)")
 
     acct_migrate = acct_sub.add_parser("migrate", help="Migrate root layout into accounts/default/")
     acct_migrate.add_argument("--yes", action="store_true",
@@ -3406,6 +3544,9 @@ def _handle_account_cmd(args: argparse.Namespace) -> int:
         for name in accounts:
             marker = "*" if name == active else " "
             print(f" {marker} {name}")
+        return 0
+    if sub == "detect":
+        print(detect_legacy_layout())
         return 0
     if sub == "migrate":
         prompt_and_migrate(assume_yes=args.yes)

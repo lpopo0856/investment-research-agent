@@ -33,8 +33,11 @@ skip migration entirely; the migration path is only for users who already
 have root-level `SETTINGS.md` / `transactions.db` from an earlier version.
 
 > **Non-interactive agents (C-8):** Agents running non-interactively MUST
-> invoke `python scripts/transactions.py account migrate --yes` BEFORE any
-> other script that reads SETTINGS.md or transactions.db.
+> run `python scripts/transactions.py account detect` BEFORE any script that
+> reads SETTINGS.md or transactions.db. Invoke
+> `python scripts/transactions.py account migrate --yes` only when the detector
+> prints `migrate`. If it prints `clean` or `demo_only_at_root`, do not run
+> migration. If it prints `partial`, stop for manual reconciliation.
 
 If `transactions.db` already exists and has rows (in `accounts/<name>/` or
 at the root — see §3), **do not** re-run onboarding. Route to
@@ -461,7 +464,8 @@ accounts and is never moved.**
   changes are made.
 - **Non-TTY / non-interactive:** the script refuses to proceed and prints
   an error: `"Detected legacy layout. Run 'python scripts/transactions.py account migrate --yes' to migrate non-interactively."` Agents running
-  in CI or unattended mode must pass `--yes` explicitly (the C-8 rule).
+  in CI or unattended mode first run `python scripts/transactions.py account detect`;
+  they pass `--yes` explicitly only when the detector prints `migrate` (the C-8 rule).
 - **Pre-existing `.pre-migrate-backup/`:** the script refuses and prints
   an error: `"Backup directory .pre-migrate-backup/ already exists. Remove it or inspect it before re-running migration."` This prevents a
   second accidental migration from overwriting a prior backup.
@@ -480,7 +484,10 @@ python scripts/transactions.py account use <name>
 # Create a new account (scaffolds directory + SETTINGS.md from template + db init)
 python scripts/transactions.py account create <name>
 
-# Run migration non-interactively (agents / CI)
+# Preflight migration state non-interactively (agents / CI)
+python scripts/transactions.py account detect
+
+# Run migration only if the detector prints: migrate
 python scripts/transactions.py account migrate --yes
 ```
 

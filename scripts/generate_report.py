@@ -5,22 +5,23 @@ generate_report.py — Portfolio HTML report renderer template.
 
 Implements the structural and visual contract of `docs/portfolio_report_agent_guidelines.md`:
 
-  §10  — 11 HTML sections in order, plus High-priority alerts banner
+  §10  — policy-selected HTML sections in canonical order, plus High-priority alerts banner when rendered
   §13  — Symbol & Price popovers
   §14  — Visual design standard (tokens, typography, RWA, anti-patterns)
 
 The script is **deterministic for the structural / numeric parts** (totals, weights, P&L,
 holding period, period-strip buckets, fallbacks) and **agent-driven for the editorial
-parts** (today's verdict, news prose, action list, recommended adjustments).
-Editorial content comes from a JSON context file the agent prepares per-run.
+parts** (today's verdict, news prose, action list, recommended adjustments) when those sections render.
+Editorial content comes from a JSON context file the agent prepares per-run according to report_type/account_scope policy.
 
 USAGE
 -----
     python scripts/generate_report.py \
         --settings SETTINGS.md \
+        --report-type daily_report \
         --snapshot report_snapshot.json \
         --context report_context.json \
-        --output reports/2026-04-28_1330_portfolio_report.html
+        --output reports/2026-04-28_1330_single_account_daily_report.html
 
 The CSS / layout chrome is owned by this module (§14.9 — single source of style
 truth). Three constants compose the report's <style> block:
@@ -55,7 +56,7 @@ CONTEXT FILE SHAPE  (report_context.json)
                           "why": "...", "trigger": "260 突破才研究是否加碼"}, ...],
       "adjustments":   [{"ticker": "KAPA", "current_pct": 4.5, "action": "trim",
                           "action_label": "減碼 20%", "why": "...", "trigger": "..."},
-                         ...],          // non-empty list required — validate_report_context rejects []
+                         ...],          // required only when adjustments section renders
       "holdings_actions": {"BTC": "長線續抱；50–55k 分批加碼", ...},
       "actions":       {"must_do": [{"ticker": "NVDA", "action": "add",
                                       "why": "...", "trigger": "...",
@@ -89,12 +90,10 @@ CONTEXT FILE SHAPE  (report_context.json)
         "observations": [{"behavior": "...", "evidence": "snapshot.transaction_analytics...", "tone": "warn"}],
         "improvements": [{"issue": "...", "suggestion": "...", "priority": "high"}],
         "strengths": ["..."]
-      },                  // mandatory; full context validated by scripts/validate_report_context.py before render
+      },                  // required only when trading psychology section renders
       "reviewer_pass": {
         "completed": true,
-        "reviewed_sections": ["alerts", "watchlist", "adjustments", "actions",
-                              "strategy_readout", "trading_psychology",
-                              "theme_sector", "news_events"],
+        "reviewed_sections": ["...effective-rendered review sections..."],
         "summary": [],
         "by_section": {}
       },
@@ -231,7 +230,19 @@ from portfolio_snapshot import (                              # noqa: E402
     write_snapshot,
 )
 from validate_report_context import validate_report_context    # noqa: E402
-from report_archive import archive_report as _archive_report   # noqa: E402
+from report_mode_policy import (                              # noqa: E402
+    ACCOUNT_SCOPE_TOTAL,
+    REPORT_TYPES,
+    default_report_filename,
+    effective_skipped_renderers,
+    hide_holdings_action_column,
+    normalize_account_scope,
+    normalize_report_type,
+)
+from report_archive import (                                  # noqa: E402
+    _report_id_from_path,
+    archive_report as _archive_report,
+)
 
 
 # Legacy alias kept for any out-of-tree caller that imported this name from
@@ -2315,6 +2326,13 @@ def _profit_panel_pct(value: Optional[float]) -> Tuple[str, str]:
     return cls, f"{sign}{abs(value):.2f}%"
 
 
+def _profit_panel_benchmark_pct(value: Optional[float], ticker: Optional[str]) -> Tuple[str, str]:
+    cls, inner = _profit_panel_pct(value)
+    if value is None or not ticker:
+        return cls, inner
+    return cls, f'{inner} <span class="muted">({_esc(str(ticker).upper())})</span>'
+
+
 def _profit_panel_net_flows_cell(
     value: Optional[float],
     *,
@@ -2333,6 +2351,8 @@ def _profit_panel_thead_html() -> str:
             <th>{_esc(_ui("profit_panel.col_period"))}</th>
             <th class="num">{_esc(_ui("profit_panel.col_pnl"))}</th>
             <th class="num">{_esc(_ui("profit_panel.col_return"))}</th>
+            <th class="num">{_esc(_ui("profit_panel.col_benchmark"))}</th>
+            <th class="num">{_esc(_ui("profit_panel.col_spread"))}</th>
             <th class="num">{_esc(_ui("profit_panel.col_realized"))}</th>
             <th class="num">{_esc(_ui("profit_panel.col_unrealized"))}</th>
             <th class="num">{_esc(_ui("profit_panel.col_flows"))}</th>
@@ -2352,6 +2372,8 @@ def _profit_panel_row_cells_for_source(
     if market is None:
         pnl_cls, pnl_html = _profit_panel_signed_money(row.get("pnl"))
         ret_cls, ret_html = _profit_panel_pct(row.get("return_pct"))
+        bmk_cls, bmk_html = _profit_panel_benchmark_pct(row.get("benchmark_return_pct"), row.get("benchmark_ticker"))
+        spr_cls, spr_html = _profit_panel_pct(row.get("spread_pct"))
         rea_cls, rea_html = _profit_panel_signed_money(row.get("realized"))
         unr_cls, unr_html = _profit_panel_signed_money(row.get("unrealized_delta"))
         flw_cls, flw_inner = _profit_panel_net_flows_cell(row.get("net_flows"), null_as_dash=flows_null_as_dash)
@@ -2364,6 +2386,9 @@ def _profit_panel_row_cells_for_source(
                 src = {
                     "pnl": legacy_pm.get(market),
                     "return_pct": None,
+                    "benchmark_return_pct": None,
+                    "benchmark_ticker": None,
+                    "spread_pct": None,
                     "realized": None,
                     "unrealized_delta": None,
                     "net_flows": None,
@@ -2372,12 +2397,17 @@ def _profit_panel_row_cells_for_source(
                 src = {
                     "pnl": None,
                     "return_pct": None,
+                    "benchmark_return_pct": None,
+                    "benchmark_ticker": None,
+                    "spread_pct": None,
                     "realized": None,
                     "unrealized_delta": None,
                     "net_flows": None,
                 }
         pnl_cls, pnl_html = _profit_panel_signed_money(src.get("pnl"))
         ret_cls, ret_html = _profit_panel_pct(src.get("return_pct"))
+        bmk_cls, bmk_html = _profit_panel_benchmark_pct(src.get("benchmark_return_pct"), src.get("benchmark_ticker"))
+        spr_cls, spr_html = _profit_panel_pct(src.get("spread_pct"))
         rea_cls, rea_html = _profit_panel_signed_money(src.get("realized"))
         unr_cls, unr_html = _profit_panel_signed_money(src.get("unrealized_delta"))
         flw_cls, flw_inner = _profit_panel_net_flows_cell(src.get("net_flows"), null_as_dash=flows_null_as_dash)
@@ -2387,6 +2417,8 @@ def _profit_panel_row_cells_for_source(
         <td>{_esc(_ui(ui_key))}{boundary_html}</td>
         <td class="num {pnl_cls}">{pnl_html}</td>
         <td class="num {ret_cls}">{ret_html}</td>
+        <td class="num {bmk_cls}">{bmk_html}</td>
+        <td class="num {spr_cls}">{spr_html}</td>
         <td class="num {rea_cls}">{rea_html}</td>
         <td class="num {unr_cls}">{unr_html}</td>
         <td class="num {flw_cls}">{flw_inner}</td>
@@ -3412,36 +3444,58 @@ def _holding_card_field(label: str, value_html: str, *, class_name: str = "") ->
     return f'<div{cls}><dt>{_esc(label)}</dt><dd>{value_html}</dd></div>'
 
 
+def _holdings_colgroup_html(hide_action_column: bool) -> str:
+    if hide_action_column:
+        widths = ("9%", "14%", "16%", "9%", "18%", "34%")
+    else:
+        widths = ("7%", "12%", "14%", "7%", "11%", "19%", "30%")
+    return "\n".join(f'          <col style="width:{width}">' for width in widths)
+
+
+def _holdings_action_header_html(hide_action_column: bool) -> str:
+    if hide_action_column:
+        return ""
+    return f'<th class="col-action">{_esc(_ui("holdings.action"))}</th>'
+
+
 def render_holdings_table(
     aggs: Dict[str, TickerAggregate],
     total_assets: float,
     prices: Dict[str, Any],
     today: _dt.date,
     context: Optional[Dict[str, Any]] = None,
+    *,
+    hide_action_column: bool = False,
 ) -> str:
     """Render holdings for desktop/tablet table and phone card layouts."""
     row_models = _build_holdings_row_models(aggs, total_assets, prices, today, context)
-    rows = [f"""\
+    rows = []
+    for row in row_models:
+        action_cell = "" if hide_action_column else f'\n            <td class="col-action">{row.action_html}</td>'
+        rows.append(f"""\
           <tr>
             <td>{row.symbol_trigger_html}</td>
             <td>{row.category_html}</td>
             <td class="num price-cell">{row.price_trigger_html}</td>
             <td class="num">{row.weight_html}</td>
             <td class="num">{row.value_html}</td>
-            <td class="num{row.pnl_class_attr}">{row.pnl_html}</td>
-            <td class="col-action">{row.action_html}</td>
-          </tr>""" for row in row_models]
+            <td class="num{row.pnl_class_attr}">{row.pnl_html}</td>{action_cell}
+          </tr>""")
     body = "\n".join(rows)
 
     cards = []
     for row in row_models:
-        card_fields = "".join([
+        card_field_items = [
             _holding_card_field(_ui("holdings.latest_price"), row.price_trigger_html, class_name="holding-card-price"),
             _holding_card_field(_ui("holdings.weight"), row.weight_html, class_name="holding-card-weight"),
             _holding_card_field(_ui("holdings.value"), row.value_html, class_name="holding-card-value"),
             _holding_card_field(_ui("holdings.pnl"), row.pnl_html, class_name=f"holding-card-pnl{row.pnl_class_attr}"),
-            _holding_card_field(_ui("holdings.action"), row.action_html, class_name="holding-card-action"),
-        ])
+        ]
+        if not hide_action_column:
+            card_field_items.append(
+                _holding_card_field(_ui("holdings.action"), row.action_html, class_name="holding-card-action")
+            )
+        card_fields = "".join(card_field_items)
         cards.append(f"""\
       <article class="holding-card" aria-label="{_esc(row.ticker)}">
         <div class="holding-card-head">
@@ -3461,13 +3515,7 @@ def render_holdings_table(
     <div class="tbl-wrap holdings-table-wrap">
       <table class="holdings-tbl">
         <colgroup>
-          <col style="width:7%">
-          <col style="width:12%">
-          <col style="width:14%">
-          <col style="width:7%">
-          <col style="width:11%">
-          <col style="width:19%">
-          <col style="width:30%">
+{_holdings_colgroup_html(hide_action_column)}
         </colgroup>
         <thead>
           <tr>
@@ -3477,7 +3525,7 @@ def render_holdings_table(
             <th class="num">{_esc(_ui("holdings.weight"))}</th>
             <th class="num">{_esc(_ui("holdings.value"))}</th>
             <th class="num">{_esc(_ui("holdings.pnl"))}</th>
-            <th class="col-action">{_esc(_ui("holdings.action"))}</th>
+            {_holdings_action_header_html(hide_action_column)}
           </tr>
         </thead>
         <tbody>
@@ -4389,39 +4437,14 @@ def render_sources(prices: Dict[str, Any], context: Dict[str, Any]) -> str:
 # Master assembly
 # ----------------------------------------------------------------------------- #
 
-# Editorial sections excluded from --all-accounts (math-only) reports.
-# Each name is the function __name__ of a renderer that reads agent-authored
-# context fields (today_summary, alerts, news, events, adjustments, actions,
-# trading_psychology, theme_sector, transaction_analytics derivatives, sources).
-# Math-derived header content is provided by render_masthead + render_dashboard
-# (verified pure-math: render_masthead pulls only meta strings via _ui()/context
-# defaults; render_dashboard takes (aggs, total_assets, invested, cash, pnl)
-# numeric args).
-_TOTAL_MODE_SKIPPED_RENDERERS = frozenset({
-    "render_alerts",
-    "render_today_summary",
-    "render_news",
-    "render_events",
-    "render_adjustments",
-    "render_actions",
-    "render_trading_psychology",
-    "render_theme_sector",
-    "render_high_risk_opp",
-    "render_performance_attribution",
-    "render_trade_quality",
-    "render_discipline_check",
-    "render_report_accuracy",
-    "render_sources",
-})
-
-
 def render_html(
     snapshot: Snapshot,
     context: Dict[str, Any],
     css: str,
     settings: SettingsProfile,
     *,
-    total_mode: bool = False,
+    report_type: str,
+    account_scope: str,
 ) -> str:
     """Project a fully-resolved Snapshot onto HTML.
 
@@ -4430,10 +4453,10 @@ def render_html(
     special-check computation here. Editorial content (news, events, alerts,
     adjustments, action list, theme/sector HTML) comes from `context`.
 
-    ``total_mode=True`` (set by the ``--all-accounts`` path in main()) skips
-    every renderer named in ``_TOTAL_MODE_SKIPPED_RENDERERS`` so the report
-    renders math-only sections (positions, cash, P&L numeric, allocation,
-    holding-period pacing).
+    ``report_type`` controls daily-vs-portfolio content exclusions and
+    ``account_scope`` controls single-vs-total aggregation overlays.  The
+    effective policy comes from ``report_mode_policy.py`` so render and
+    validation behavior stay aligned.
     """
     try:
         today = _dt.date.fromisoformat(snapshot.today)
@@ -4454,9 +4477,11 @@ def render_html(
     cash = totals.get("cash") or 0.0
     pnl = totals.get("pnl")
 
-    # Render sections (§10 order).  Each entry is (function_name, callable);
-    # in total_mode any name appearing in _TOTAL_MODE_SKIPPED_RENDERERS is
-    # short-circuited to "" so the editorial section is omitted from output.
+    skipped_renderers = effective_skipped_renderers(report_type, account_scope)
+    hide_action_column = hide_holdings_action_column(report_type, account_scope)
+
+    # Render sections (§10 order). Each entry is (function_name, callable);
+    # any name in the effective policy is short-circuited to "".
     candidate_calls = [
         ("render_masthead", lambda: render_masthead(context)),
         ("render_alerts", lambda: render_alerts(context)),
@@ -4469,7 +4494,9 @@ def render_html(
         ("render_discipline_check", lambda: render_discipline_check(context)),
         ("render_trading_psychology", lambda: render_trading_psychology(context)),
         ("render_allocation_and_weight", lambda: render_allocation_and_weight(aggs, total_assets, today)),
-        ("render_holdings_table", lambda: render_holdings_table(aggs, total_assets, prices, today, context)),
+        ("render_holdings_table", lambda: render_holdings_table(
+            aggs, total_assets, prices, today, context, hide_action_column=hide_action_column
+        )),
         ("render_pnl_ranking", lambda: render_pnl_ranking(aggs)),
         ("render_holding_period", lambda: render_holding_period(snapshot.book_pacing)),
         ("render_theme_sector", lambda: render_theme_sector(context)),
@@ -4481,10 +4508,7 @@ def render_html(
         ("render_actions", lambda: render_actions(context)),
         ("render_sources", lambda: render_sources(prices, context)),
     ]
-    sections = [
-        "" if (total_mode and name in _TOTAL_MODE_SKIPPED_RENDERERS) else fn()
-        for name, fn in candidate_calls
-    ]
+    sections = ["" if name in skipped_renderers else fn() for name, fn in candidate_calls]
 
     return f"""<!doctype html>
 <html lang="{_esc(settings.locale)}">
@@ -4531,13 +4555,18 @@ def _cli(argv: Optional[List[str]] = None) -> argparse.Namespace:
                         "and pass the translated JSON here.")
     p.add_argument("--context", default=None, type=Path,
                    help="Editorial context JSON (today summary, news, actions, ...)")
+    p.add_argument("--report-type", choices=list(REPORT_TYPES), default=None,
+                   help="Required for report generation: daily_report or portfolio_report. "
+                        "Combined with account scope (--all-accounts vs single account) "
+                        "to select rendered sections and default output naming.")
     p.add_argument("--sample", default=None, type=Path,
                    help="Optional override CSS source. By default the embedded "
                         "_BASE_CSS in this module is used (§14.9 — single source of "
                         "style truth). Pass a path to an HTML file with a <style> "
                         "block to swap in alternative chrome for experiments.")
     p.add_argument("--output", default=None, type=Path,
-                   help="Output HTML path; default: reports/<timestamp>_portfolio_report.html")
+                   help="Output HTML path; default encodes both axes: "
+                        "<timestamp>_<single_account|total_account>_<daily_report|portfolio_report>.html")
     p.add_argument("--self-check", action="store_true",
                    help="Run unit tests for PM-grade indicator helpers and exit. Validates "
                         "the canonical math (R:R, rails, style readout, lever inference) "
@@ -4768,7 +4797,14 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.self_check:
         return _run_self_check()
 
-    total_mode = bool(getattr(args, "all_accounts", False))
+    try:
+        report_type = normalize_report_type(args.report_type)
+        account_scope = normalize_account_scope(all_accounts=bool(getattr(args, "all_accounts", False)))
+    except ValueError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+
+    total_mode = account_scope == ACCOUNT_SCOPE_TOTAL
 
     if total_mode:
         if args.db is not None or args.settings is not None:
@@ -4787,7 +4823,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             out_dir = synthetic_total_reports_dir()
             out_dir.mkdir(parents=True, exist_ok=True)
             ts = _dt.datetime.now().strftime("%Y-%m-%d_%H%M")
-            output_path = out_dir / f"{ts}_portfolio_report.html"
+            output_path = out_dir / default_report_filename(ts, report_type, account_scope)
         else:
             output_path = args.output
         # Total mode does not consult per-account paths; leave args.db /
@@ -4805,7 +4841,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         # AC-DEF-1: default --output goes under accounts/<active>/reports/
         if args.output is None:
             ts = _dt.datetime.now().strftime("%Y-%m-%d_%H%M")
-            output_path = paths.reports_dir / f"{ts}_portfolio_report.html"
+            output_path = paths.reports_dir / default_report_filename(ts, report_type, account_scope)
             paths.reports_dir.mkdir(parents=True, exist_ok=True)
         else:
             output_path = args.output
@@ -4981,11 +5017,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         context["trading_psychology"] = snapshot.trading_psychology
 
     if total_mode:
-        # Total mode bypasses context validation: the renderer skips every
-        # editorial section via _TOTAL_MODE_SKIPPED_RENDERERS, so the
-        # validator's editorial-field requirements (today_summary, news,
-        # events, alerts, action items, ...) cannot be satisfied by design.
-        # Exit code 7 cannot be raised in total mode.
+        # Total-account mode bypasses context validation: the account-scope
+        # overlay skips strategy-dependent/editorial fields. Exit code 7 cannot
+        # be raised in total mode.
         context_errors: List[str] = []
         # Identify the report as the total / all-accounts variant via the
         # masthead subtitle slot.  render_masthead falls through to
@@ -4993,7 +5027,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         # Note") and consumes context["subtitle"] for the second-line label.
         context["subtitle"] = "Total (All Accounts)"
     else:
-        context_errors = validate_report_context(context, serialize_snapshot(snapshot))
+        context_errors = validate_report_context(
+            context, serialize_snapshot(snapshot), report_type=report_type, account_scope=account_scope
+        )
         if context_errors:
             print(
                 f"ERROR: report_context failed pre-render validation "
@@ -5004,7 +5040,8 @@ def main(argv: Optional[List[str]] = None) -> int:
                 print(f"  - {err}", file=sys.stderr)
             print(
                 "Run `python scripts/validate_report_context.py --snapshot "
-                "report_snapshot.json --context report_context.json` before rendering.",
+                "report_snapshot.json --context report_context.json --report-type "
+                f"{report_type}` before rendering.",
                 file=sys.stderr,
             )
             return 7
@@ -5034,11 +5071,13 @@ def main(argv: Optional[List[str]] = None) -> int:
         )
 
     css = load_canonical_css(args.sample)
-    html_doc = render_html(snapshot, context, css, settings, total_mode=total_mode)
+    html_doc = render_html(
+        snapshot, context, css, settings, report_type=report_type, account_scope=account_scope
+    )
 
     if args.output is None:
         ts = _dt.datetime.now().strftime("%Y-%m-%d_%H%M")
-        args.output = Path("reports") / f"{ts}_portfolio_report.html"
+        args.output = Path("reports") / default_report_filename(ts, report_type, account_scope)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(html_doc, encoding="utf-8")
     print(f"Wrote {args.output} ({len(html_doc):,} bytes)")
@@ -5050,8 +5089,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 0
 
     try:
-        m = re.search(r"(\d{4}-\d{2}-\d{2}_\d{4})", args.output.name)
-        report_id = m.group(1) if m else args.output.stem
+        report_id = _report_id_from_path(args.output) or args.output.stem
         # Demo-isolation guard: if the HTML lands under a `demo/` directory,
         # archive into `demo/transactions.db` so synthetic runs do not pollute
         # the production `report_archive` table. Mirrors the cache-isolation

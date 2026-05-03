@@ -5,18 +5,20 @@ validate_report_context.py — pre-render gate for agent-authored report context
 
 This validates the editorial layer that cannot be computed by the snapshot:
 research coverage, theme/sector classification, PM-grade recommendations,
-strategy readout, mandatory trading_psychology, and reviewer pass metadata.
+strategy readout, trading_psychology, and reviewer pass metadata when those
+sections render under the selected `report_type` + `account_scope`.
 
 Recommended adjustments (`adjustments`) must be a non-empty list with at least one
-agent-authored §10.9 row (`ticker`, `action`, `action_label`, `why`, `trigger`);
-an empty array fails validation — express passivity with explicit hold / wait rows.
+agent-authored §10.9 row only when the adjustments section renders; an empty
+array fails validation in that mode — express passivity with explicit hold / wait rows.
 
 `trading_psychology` strings must be plain text (no HTML tags). Visual typography
 for §10.1.7 is renderer-owned: `generate_report.render_trading_psychology` plus
 appended `.psych-*` CSS uses the same scale/tokens as `.prose` / §14.9.
 
 It is a validator, not a generator. Agents must author the content from
-report_snapshot.json, SETTINGS.md, and current public research before render.
+report_snapshot.json, SETTINGS.md, and current public research only when the
+effective rendered sections require that research before render.
 """
 from __future__ import annotations
 
@@ -29,6 +31,14 @@ from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from account import autodetect_and_migrate_or_exit
+from report_mode_policy import (
+    ACCOUNT_SCOPES,
+    REPORT_TYPES,
+    effective_skipped_renderers,
+    normalize_account_scope,
+    normalize_report_type,
+    should_validate,
+)
 
 
 ACTION_BUCKETS = ("must_do", "may_do", "avoid", "need_data")
@@ -706,7 +716,35 @@ def _validate_research_coverage(
             _validate_horizon_v1_entry(ticker, entry, expected_by_ticker.get(ticker, {}), errors)
 
 
-def _validate_reviewer_pass(context: Dict[str, Any], errors: List[str]) -> None:
+def _required_review_sections(report_type: str, account_scope: str) -> Set[str]:
+    required = set(REQUIRED_REVIEW_SECTIONS)
+    skipped = effective_skipped_renderers(report_type, account_scope)
+    if "render_alerts" in skipped:
+        required.discard("alerts")
+    if "render_adjustments" in skipped:
+        required.discard("adjustments")
+    if "render_actions" in skipped:
+        required.discard("actions")
+    if "render_trading_psychology" in skipped:
+        required.discard("trading_psychology")
+    if "render_theme_sector" in skipped:
+        required.discard("theme_sector")
+    if "render_high_risk_opp" in skipped:
+        required.discard("watchlist")
+    if "render_news" in skipped and "render_events" in skipped:
+        required.discard("news_events")
+    if "render_sources" in skipped:
+        required.discard("strategy_readout")
+    return required
+
+
+def _validate_reviewer_pass(
+    context: Dict[str, Any],
+    errors: List[str],
+    *,
+    report_type: str,
+    account_scope: str,
+) -> None:
     reviewer = context.get("reviewer_pass")
     if not isinstance(reviewer, dict):
         errors.append("reviewer_pass must be present as an object")
@@ -719,7 +757,8 @@ def _validate_reviewer_pass(context: Dict[str, Any], errors: List[str]) -> None:
         reviewed_set: Set[str] = set()
     else:
         reviewed_set = {str(x) for x in reviewed}
-    missing = sorted(REQUIRED_REVIEW_SECTIONS - reviewed_set)
+    required_sections = _required_review_sections(report_type, account_scope)
+    missing = sorted(required_sections - reviewed_set)
     if missing:
         errors.append("reviewer_pass.reviewed_sections missing: " + ", ".join(missing))
     if not isinstance(reviewer.get("summary"), list):
@@ -1020,26 +1059,50 @@ def _validate_data_gaps(context: Dict[str, Any], errors: List[str]) -> None:
         errors.append("data_gaps contains placeholder/demo audit text")
 
 
-def validate_report_context(context: Dict[str, Any], snapshot: Dict[str, Any]) -> List[str]:
+def validate_report_context(
+    context: Dict[str, Any],
+    snapshot: Dict[str, Any],
+    *,
+    report_type: str = "daily_report",
+    account_scope: str = "single_account",
+) -> List[str]:
     """Return validation errors for the agent-authored report context."""
     if not isinstance(context, dict):
         return ["context must be a JSON object"]
     if not isinstance(snapshot, dict):
         return ["snapshot must be a JSON object"]
 
+    try:
+        report_type = normalize_report_type(report_type)
+        account_scope = normalize_account_scope(value=account_scope)
+    except ValueError as exc:
+        return [str(exc)]
+
     errors: List[str] = []
     cover_tickers = _cover_tickers(snapshot)
 
-    _validate_today_summary(context, errors)
-    _validate_strategy_readout(context, errors)
-    _validate_data_gaps(context, errors)
-    _validate_theme_sector(context, cover_tickers, errors)
-    _validate_research_coverage(context, cover_tickers, snapshot, errors)
-    _validate_adjustments(context, errors)
-    _validate_high_opps(context, errors)
-    _validate_actions(context, errors)
-    _validate_reviewer_pass(context, errors)
-    _validate_trading_psychology(context, errors)
+    if should_validate("today_summary", report_type, account_scope):
+        _validate_today_summary(context, errors)
+    if should_validate("strategy_readout", report_type, account_scope):
+        _validate_strategy_readout(context, errors)
+    if should_validate("data_gaps", report_type, account_scope):
+        _validate_data_gaps(context, errors)
+    if should_validate("theme_sector", report_type, account_scope):
+        _validate_theme_sector(context, cover_tickers, errors)
+    if should_validate("research_coverage", report_type, account_scope):
+        _validate_research_coverage(context, cover_tickers, snapshot, errors)
+    if should_validate("adjustments", report_type, account_scope):
+        _validate_adjustments(context, errors)
+    if should_validate("high_opps", report_type, account_scope):
+        _validate_high_opps(context, errors)
+    if should_validate("actions", report_type, account_scope):
+        _validate_actions(context, errors)
+    if should_validate("reviewer_pass", report_type, account_scope):
+        _validate_reviewer_pass(
+            context, errors, report_type=report_type, account_scope=account_scope
+        )
+    if should_validate("trading_psychology", report_type, account_scope):
+        _validate_trading_psychology(context, errors)
 
     return errors
 
@@ -1048,6 +1111,12 @@ def _cli(argv: Optional[List[str]] = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--snapshot", required=True, type=Path)
     p.add_argument("--context", required=True, type=Path)
+    p.add_argument("--report-type", choices=list(REPORT_TYPES), required=True,
+                   help="Report content type being validated.")
+    p.add_argument("--account-scope", choices=list(ACCOUNT_SCOPES), default=None,
+                   help="Account aggregation scope. Defaults from --all-accounts when omitted.")
+    p.add_argument("--all-accounts", action="store_true",
+                   help="Validate as total_account scope (alias for --account-scope total_account).")
     return p.parse_args(argv)
 
 
@@ -1067,7 +1136,16 @@ def main(argv: Optional[List[str]] = None) -> int:
         print(f"ERROR: invalid JSON: {exc}", file=sys.stderr)
         return 2
 
-    errors = validate_report_context(context, snapshot)
+    try:
+        report_type = normalize_report_type(args.report_type)
+        account_scope = normalize_account_scope(all_accounts=args.all_accounts, value=args.account_scope)
+    except ValueError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+
+    errors = validate_report_context(
+        context, snapshot, report_type=report_type, account_scope=account_scope
+    )
     if not errors:
         print("OK: report_context is valid.")
         return 0

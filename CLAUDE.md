@@ -12,7 +12,7 @@ If `accounts/<active>/SETTINGS.md` or `accounts/<active>/transactions.db` is mis
 - If `accounts/` exists and contains at least one subdirectory → multi-account layout is active; use `--account` / `accounts/.active` / `accounts/default/` resolution order.
 - If root `SETTINGS.md` or `transactions.db` exists and `accounts/` is absent → legacy layout; any script will prompt migration to `accounts/default/`. Net-new users are never prompted — onboarding writes directly to `accounts/default/`.
 
-**Agent migration recipe (C-8):** Agents running non-interactively MUST invoke `python scripts/transactions.py account migrate --yes` BEFORE any other script that reads SETTINGS.md or transactions.db.
+**Agent migration recipe (C-8):** Agents running non-interactively MUST run a layout preflight (`python scripts/transactions.py account detect`) BEFORE any script that reads SETTINGS.md or transactions.db. Invoke `python scripts/transactions.py account migrate --yes` only when the detector prints `migrate`; if it prints `clean` or `demo_only_at_root`, do not run migration; if it prints `partial`, stop for manual reconciliation per `docs/onboarding_agent_guidelines.md`.
 
 ## Help — capability menu
 

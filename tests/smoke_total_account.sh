@@ -24,7 +24,7 @@ REPO="$(git rev-parse --show-toplevel)"
 # Mirror smoke_multi_account.sh:23 — copy scripts into $SMOKE and invoke with
 # relative paths from cd $SMOKE. ALSO refuse to run if a stale synthetic
 # account dir already exists in the live repo.
-for live in "$REPO/accounts/alpha" "$REPO/accounts/beta" "$REPO/accounts/beta_empty" "$REPO/accounts/_total"; do
+for live in "$REPO/accounts/alpha" "$REPO/accounts/beta" "$REPO/accounts/beta_empty"; do
     test ! -d "$live" || { echo "STALE LIVE-REPO POLLUTION: clean up $live first" >&2; exit 1; }
 done
 
@@ -168,9 +168,10 @@ python scripts/transactions.py snapshot \
     --today "$FIXED_TODAY" \
     --output "$SMOKE/snapshot_all.json"
 
-echo "=== generate_report --all-accounts (language=en)"
+echo "=== generate_report --all-accounts portfolio_report (language=en)"
 python scripts/generate_report.py \
     --snapshot "$SMOKE/snapshot_all.json" \
+    --report-type portfolio_report \
     --all-accounts \
     --language en \
     --output "$SMOKE/report.html"
@@ -239,16 +240,23 @@ for marker in \
     fi
 done
 
-# --- §5. output path: explicit --output works AND default lands under
-#         accounts/_total/reports/<dated>_portfolio_report.html
-echo "=== §5: default output path lands under accounts/_total/reports/"
+# --- §5. output path: explicit --output works AND defaults encode type + scope
+echo "=== §5: default output path lands under accounts/_total/reports/ with type/scope"
 test -f "$SMOKE/report.html" || { echo "FAIL §5: explicit --output missing"; exit 1; }
 python scripts/generate_report.py \
     --snapshot "$SMOKE/snapshot_all.json" \
+    --report-type daily_report \
     --all-accounts \
     --language en
-ls "$SMOKE/accounts/_total/reports/"*_portfolio_report.html >/dev/null 2>&1 \
-    || { echo "FAIL §5: default output not under accounts/_total/reports/"; exit 1; }
+python scripts/generate_report.py \
+    --snapshot "$SMOKE/snapshot_all.json" \
+    --report-type portfolio_report \
+    --all-accounts \
+    --language en
+ls "$SMOKE/accounts/_total/reports/"*_total_account_daily_report.html >/dev/null 2>&1 \
+    || { echo "FAIL §5: total daily default output missing"; exit 1; }
+ls "$SMOKE/accounts/_total/reports/"*_total_account_portfolio_report.html >/dev/null 2>&1 \
+    || { echo "FAIL §5: total portfolio default output missing"; exit 1; }
 
 # --- §M1. Mutex assertion (AC#7) + MUTEX-1 leak-free check ----------------
 echo "=== §M1: mutex + MUTEX-1 leak-free check"
@@ -263,7 +271,7 @@ grep -q "not allowed with" "$TMP_ERR" \
     || { echo "FAIL §M1: --account + --all-accounts not rejected"; cat "$TMP_ERR"; exit 1; }
 # MUTEX-1: subcommands that did NOT opt in must reject --all-accounts as
 # unrecognized rather than treating it as a no-op.
-for cmd in "account migrate" "verify" "db init" ; do
+for cmd in "account detect" "account migrate" "verify" "db init" ; do
     set +e
     python scripts/transactions.py $cmd --all-accounts >/dev/null 2>"$TMP_ERR"
     set -e
@@ -411,6 +419,7 @@ diff <(jq -S '. | del(.generated_at)' "$SMOKE/snapshot_alpha_only.json") \
 echo "=== §7: backwards-compat --account alpha"
 python scripts/generate_report.py \
     --snapshot "$SMOKE/snapshot_alpha_direct.json" \
+    --report-type portfolio_report \
     --account alpha \
     --output "$SMOKE/accounts/alpha/reports/regression_check.html" 2>&1 \
     || echo "(note: per-account render may require context — the snapshot path is what matters)"
@@ -421,7 +430,8 @@ echo "=== §9: live-repo non-pollution"
 test ! -d "$REPO/accounts/alpha"      || { echo "LIVE REPO POLLUTED: $REPO/accounts/alpha"      >&2; exit 1; }
 test ! -d "$REPO/accounts/beta"       || { echo "LIVE REPO POLLUTED: $REPO/accounts/beta"       >&2; exit 1; }
 test ! -d "$REPO/accounts/beta_empty" || { echo "LIVE REPO POLLUTED: $REPO/accounts/beta_empty" >&2; exit 1; }
-test ! -d "$REPO/accounts/_total"     || { echo "LIVE REPO POLLUTED: $REPO/accounts/_total"     >&2; exit 1; }
+# accounts/_total is a legitimate report sink in live repos; the smoke uses a
+# copied script tree under $SMOKE and must not create synthetic real accounts.
 # CACHE-PIN: live cache mtime must NOT have advanced.
 if [ -n "$LIVE_CACHE_MTIME_BEFORE" ] && [ -f "$LIVE_CACHE" ]; then
     LIVE_CACHE_MTIME_AFTER="$(stat -f %m "$LIVE_CACHE" 2>/dev/null || stat -c %Y "$LIVE_CACHE")"

@@ -49,6 +49,8 @@
     "col_period": "Period",
     "col_pnl": "P&L",
     "col_return": "Return",
+    "col_benchmark": "Benchmark",
+    "col_spread": "Spread",
     "col_realized": "Realized",
     "col_unrealized": "Unrealized Δ",
     "col_flows": "Net Flows",

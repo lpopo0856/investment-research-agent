@@ -6,7 +6,7 @@
 
 ## Multi-account model
 
-This repo uses a multi-account layout: each account owns its files under `accounts/<name>/` (e.g. `accounts/default/SETTINGS.md`, `accounts/default/transactions.db`, `accounts/default/reports/`). Pass `--account <name>` to any script to target a specific account; omitting the flag resolves via `accounts/.active` → `accounts/default/` → error. The shared price/FX cache (`market_data_cache.db`) and `demo/` directory live at the repo root and are never account-scoped. Agents running non-interactively MUST invoke `python scripts/transactions.py account migrate --yes` before any other script that reads SETTINGS.md or transactions.db. See `docs/onboarding_agent_guidelines.md` for the full migration and onboarding flow.
+This repo uses a multi-account layout: each account owns its files under `accounts/<name>/` (e.g. `accounts/default/SETTINGS.md`, `accounts/default/transactions.db`, `accounts/default/reports/`). Pass `--account <name>` to any script to target a specific account; omitting the flag resolves via `accounts/.active` → `accounts/default/` → error. The shared price/FX cache (`market_data_cache.db`) and `demo/` directory live at the repo root and are never account-scoped. Agents running non-interactively MUST run a layout preflight (`python scripts/transactions.py account detect`) before any script that reads SETTINGS.md or transactions.db; invoke `python scripts/transactions.py account migrate --yes` only when the detector prints `migrate`. If it prints `clean` or `demo_only_at_root`, do not run migration. If it prints `partial`, stop and follow the onboarding reconciliation path. See `docs/onboarding_agent_guidelines.md` for the full migration and onboarding flow.
 
 ## New users
 

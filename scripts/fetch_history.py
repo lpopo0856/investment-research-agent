@@ -104,6 +104,10 @@ from fetch_prices import (  # type: ignore[import-not-found]
     parse_base_currency,
     to_yfinance_symbol,
 )
+from benchmark_config import (  # type: ignore[import-not-found]
+    iter_benchmark_specs,
+    load_benchmark_config,
+)
 
 
 def _utc_iso() -> str:
@@ -740,12 +744,34 @@ def collect_history(
 ) -> Dict[str, Any]:
     """Collect history for lots loaded from transactions.db."""
     base = parse_base_currency(settings) if (settings is not None and settings.exists()) else "USD"
+    benchmark_config = load_benchmark_config(settings if (settings is not None and settings.exists()) else None)
+    benchmark_lots: List[Lot] = []
+    for spec in iter_benchmark_specs(benchmark_config):
+        try:
+            market = MarketType(spec.market)
+        except ValueError:
+            normalized = spec.market.strip().lower()
+            market = next((m for m in MarketType if m.value.lower() == normalized), MarketType.US)
+        benchmark_lots.append(
+            Lot(
+                raw_line=f"benchmark {spec.ticker} [{market.value}]",
+                bucket="Benchmark",
+                ticker=spec.ticker,
+                quantity=0.0,
+                cost=None,
+                date=None,
+                market=market,
+                is_share=market not in (MarketType.CRYPTO, MarketType.FX, MarketType.CASH),
+            )
+        )
+    history_lots = lots + benchmark_lots
+    benchmark_tickers = sorted({lot.ticker for lot in benchmark_lots})
     use_cache = cache_path is not None
     if use_cache:
         cache_init(cache_path)
 
     by_ticker: Dict[Tuple[str, MarketType], List[Lot]] = {}
-    for lot in lots:
+    for lot in history_lots:
         if lot.bucket.lower().startswith("cash"):
             continue
         by_ticker.setdefault((lot.ticker, lot.market), []).append(lot)
@@ -821,6 +847,8 @@ def collect_history(
             "as_of": _utc_iso(),
             "lookback_days": lookback_days,
             "base_currency": base,
+            "benchmarks": benchmark_config,
+            "benchmark_tickers": benchmark_tickers,
             "tickers_ok": sorted(tickers_ok),
             "tickers_failed": tickers_failed,
             "fx_ok": sorted(fx_ok),
@@ -855,6 +883,8 @@ def merge_into_prices(prices_path: Path, history: Dict[str, Any]) -> None:
     merged_fx = {**old_fx, **new_fx}
     existing["_history"] = merged_hist
     existing["_fx_history"] = merged_fx
+    if "_benchmarks" not in existing and isinstance((history.get("_history_meta") or {}).get("benchmarks"), dict):
+        existing["_benchmarks"] = (history.get("_history_meta") or {}).get("benchmarks")
     # Re-derive meta to match the merged data: a wholesale replace would advertise
     # only this run's tickers and mark prior-cached symbols as "failed".
     new_meta = history.get("_history_meta") or {}
@@ -884,9 +914,10 @@ def find_history_gaps(payload: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], Li
     meta = payload.get("_history_meta") or {}
     history = payload.get("_history") or {}
     fx = payload.get("_fx_history") or {}
+    benchmark_tickers = set(meta.get("benchmark_tickers") or [])
     ticker_gaps = [
         f for f in (meta.get("tickers_failed") or [])
-        if f.get("ticker") not in history
+        if f.get("ticker") not in history and f.get("ticker") not in benchmark_tickers
     ]
     fx_gaps = [
         f for f in (meta.get("fx_failed") or [])

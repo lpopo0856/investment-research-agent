@@ -12,14 +12,14 @@ Strategy policy: no lever block / keyword inference. Read whole `SETTINGS.md` `#
 - No-edge default = cash/wait; edge default = directional, sized, time-bound, kill-bearing call.
 - Aggressive calls allowed only with data, variant view, R:R, kill. Do not reflexively sell dips; distinguish fundamentals/news deterioration from price noise. Do not chase without valuation/growth/catalyst/expectation check.
 - Apply full strategy section continuously. Before each alert/watchlist/variant/kill/size/lot-trim/action, check governing bullets: sizing→conviction; kill width→drawdown; lot trim→holding period; contrarian→contrarian appetite; upside language→hype tolerance; allowed structure→off-limits. Untraceable calls = PM default; flag in readout, downsize/soften, reviewer-note.
-- Phase order hard gate: no summary/alert/watchlist/recommendation/action before Phase A prices + metrics + §10.5 news/events + follow-up research are complete. Interesting Phase A datapoints get follow-up search before Phase B.
-- Phase A owns live news/events and `research_coverage.quality_schema="horizon_v1"` metadata from the parent-supplied `research_targets` map; Phase B owns final investment judgment, sizing, R:R, kill, portfolio fit, and action text. Phase B must consume horizon metadata or explicit audited absence before drafting.
+- Phase order hard gate: no rendered summary/alert/watchlist/recommendation/action before Phase A prices + metrics and any section-required §10.5 news/events + follow-up research are complete. Interesting Phase A datapoints get follow-up search before Phase B only when §10.5 renders.
+- Phase A owns live news/events and `research_coverage.quality_schema="horizon_v1"` metadata from the parent-supplied `research_targets` map only for modes that render §10.5 (current policy: single-account `daily_report`). Phase B owns final investment judgment, sizing, R:R, kill, portfolio fit, and action text for rendered sections. Phase B must consume horizon metadata or explicit audited absence before drafting daily decision sections; `portfolio_report` must not fabricate this metadata.
 
 ### 15.2 Position handling
 
 Dynamic `transactions.db.open_lots`; never hard-code. Judge long-term core, mid-term growth, short-term positions separately; same ticker in different buckets may get different actions. High-growth/high-vol names require bull/base/bear. Every recommendation needs action + price band + trigger. Trims name ticker + acquisition date; default highest-cost-first unless §15.6.1 strategy posture says otherwise. Use hold period and per-lot P&L context. Flag data gaps, estimates, source conflicts.
 
-Horizon standard: lots-first bucket derivation controls research depth. Any Short Term lot requires tactical evidence and a state (`act_now`, `wait`, `exit`, `need_data`) even if aggregate bucket is long; mixed-bucket tickers require a `quality_audit` explaining the split. Mid/long-term lots require thesis/strategic status (`strengthening`/`intact`/`weakening`/`broken` or allocation-role equivalent). Aggregate bucket is fallback only when lots are missing or immaterial.
+Horizon standard for rendered §10.5 / daily decision sections: lots-first bucket derivation controls research depth. Any Short Term lot requires tactical evidence and a state (`act_now`, `wait`, `exit`, `need_data`) even if aggregate bucket is long; mixed-bucket tickers require a `quality_audit` explaining the split. Mid/long-term lots require thesis/strategic status (`strengthening`/`intact`/`weakening`/`broken` or allocation-role equivalent). Aggregate bucket is fallback only when lots are missing or immaterial. `portfolio_report` skips this research layer; it may still show math/position horizon sections from the snapshot.
 
 ### 15.3 Today's action list
 
@@ -36,7 +36,7 @@ Incomplete executable item → fill or move to `Need data`. Non-executable statu
 
 ### 15.3.1 Recommended adjustments (`adjustments`) (HARD)
 
-`context["adjustments"]` must be a **non-empty** array. Every report includes at least one §10.9 table row authored by the agent, each with non-empty `ticker`, `action`, `action_label`, `why`, and `trigger` (columns rendered by `scripts/generate_report.py`). There is no “skip the table” option: if no NAV-changing trade is warranted, emit explicit `hold` / `watch` / `wait` rows with triggers tied to evidence (earnings dates, thesis checkpoints, rails). An empty `[]` fails `scripts/validate_report_context.py`. Actionable rows still require the PM-grade field bundle per §15.4–15.6.
+For report modes that render §10.9 (`daily_report` single-account), `context["adjustments"]` must be a **non-empty** array. Each rendered §10.9 row is authored by the agent with non-empty `ticker`, `action`, `action_label`, `why`, and `trigger` (columns rendered by `scripts/generate_report.py`). There is no “skip the table” option when the section renders: if no NAV-changing trade is warranted, emit explicit `hold` / `watch` / `wait` rows with triggers tied to evidence. `portfolio_report` and total-account scope skip this section by policy, and `scripts/validate_report_context.py --report-type ...` must be called with the selected mode so validation matches rendering. Actionable rows still require the PM-grade field bundle per §15.4–15.6.
 
 ### 15.4 Variant view & asymmetry (HARD)
 
@@ -131,9 +131,9 @@ Translate field labels in SETTINGS language: `Strategy readout`, `Reviewer note`
 
 ### 15.8 Reviewer pass — senior PM review (HARD)
 
-Phase C after Phase B and before render. Persona switches from user-author to senior PM reviewer. Reviewer annotates, never rewrites; user-authored readout/alerts/watchlist/recommendations/actions remain. Empty notes acceptable; filler forbidden.
+Phase C after Phase B and before render when the reviewer gate renders. Persona switches from user-author to senior PM reviewer. Reviewer annotates, never rewrites; rendered user-authored readout/alerts/watchlist/recommendations/actions remain. Empty notes acceptable; filler forbidden.
 
-Review targets: sizing vs strategy; anchor quality; kill realism/action consistency; strategy/action contradictions; missed correlation/concentration; rail-breach handling; missing data dependencies; horizon/research-quality fit; phase-ordering hygiene; tone/persona drift; cleaner expression (different lot, hedge, smaller tranche, limit band).
+Review targets for rendered sections: sizing vs strategy; anchor quality; kill realism/action consistency; strategy/action contradictions; missed correlation/concentration; rail-breach handling; missing data dependencies; horizon/research-quality fit when §10.5 renders; phase-ordering hygiene; tone/persona drift; cleaner expression (different lot, hedge, smaller tranche, limit band).
 
 #### 15.8.1 `reviewer_pass` shape
 
@@ -142,8 +142,7 @@ Review targets: sizing vs strategy; anchor quality; kill realism/action consiste
   "reviewer_pass": {
     "completed": true,
     "reviewed_sections": [
-      "alerts", "watchlist", "adjustments", "actions", "strategy_readout",
-      "trading_psychology", "theme_sector", "news_events"
+      "...effective-rendered review sections only..."
     ],
     "summary": ["cross-cutting concern; final reviewer-summary block under §10.11; Strategy readout remains first"],
     "by_section": {
@@ -154,15 +153,15 @@ Review targets: sizing vs strategy; anchor quality; kill realism/action consiste
       "strategy_readout": ["..."],
       "trading_psychology": ["..."],
       "theme_sector": ["..."],
-      "news_events": ["..."]
+      "news_events": ["... only when §10.5 rendered ..."]
     }
   }
 }
 ```
 
-Inline per-row preferred: add `"reviewer_notes":["..."]` to `adjustments[i]`, `watchlist[i]`, or `actions[bucket][i]`. Renderer displays notes alongside content with translated `Reviewer note`; summary with translated `Reviewer summary` as final reviewer-summary block under §10.11. Empty notes are expressed as `summary: []` and `by_section: {}`, but `completed: true` and full `reviewed_sections` remain required so the reviewer pass cannot be silently skipped.
+Inline per-row preferred: add `"reviewer_notes":["..."]` to `adjustments[i]`, `watchlist[i]`, or `actions[bucket][i]` when those sections render. Renderer displays notes alongside content with translated `Reviewer note`; summary with translated `Reviewer summary` as final reviewer-summary block under §10.11. Empty notes are expressed as `summary: []` and `by_section: {}`, but `completed: true` and the effective required `reviewed_sections` remain required when the reviewer gate renders so the reviewer pass cannot be silently skipped.
 
-`news_events` review is decision-grade, not count-grade: short-term holdings missing tactical decision/evidence are serious defects; mid/long-term holdings missing thesis/strategic status are serious defects; generic headline-only support, weak source hierarchy, or unaudited escape hatches must return to Phase A/Phase B before render. A reviewer note may annotate marginal evidence, but cannot ship an unsourced action dependency.
+Required `reviewed_sections` are computed from the effective report policy, matching `scripts/validate_report_context.py`: daily single includes `strategy_readout`, `alerts`, `watchlist`, `adjustments`, `actions`, `trading_psychology`, `theme_sector`, and `news_events`; portfolio single includes only rendered non-daily review sections such as `strategy_readout` and `theme_sector`; total scope skips the reviewer-pass gate. `news_events` review is decision-grade, not count-grade, **when §10.5 renders**: short-term holdings missing tactical decision/evidence are serious defects; mid/long-term holdings missing thesis/strategic status are serious defects; generic headline-only support, weak source hierarchy, or unaudited escape hatches must return to Phase A/Phase B before render. A reviewer note may annotate marginal evidence, but cannot ship an unsourced action dependency. For `portfolio_report`, absence of `news_events` is correct and must not be treated as a gap.
 
 #### 15.8.2 Discipline
 
@@ -172,7 +171,7 @@ Notes ≤240 chars / 2 sentences; summary ≤120 words. Reviewer prose in SETTIN
 
 ## 16. Reply format to user
 
-Reply in SETTINGS language with absolute HTML path, most important alerts, data gaps, §10.5.1 searched-ticker counts, and `建議更新 agent spec` note if yfinance correction/pacing tweak succeeded. Do not ask user to assemble/install/run anything.
+Reply in SETTINGS language with absolute HTML path, most important rendered alerts (if any), data gaps, §10.5.1 searched-ticker counts only if §10.5 rendered, and `建議更新 agent spec` note if yfinance correction/pacing tweak succeeded. Do not ask user to assemble/install/run anything.
 
 ---
 
@@ -184,7 +183,7 @@ Reply in SETTINGS language with absolute HTML path, most important alerts, data 
 
 ### A.2 File output
 
-- [ ] HTML only at `reports/YYYY-MM-DD_HHMM_portfolio_report.html`; local-clock timestamp; no companion Markdown/files.
+- [ ] HTML only at `reports/YYYY-MM-DD_HHMM_single_account_<daily_report|portfolio_report>.html` or `accounts/_total/reports/YYYY-MM-DD_HHMM_total_account_<daily_report|portfolio_report>.html`; local-clock timestamp; no companion Markdown/files.
 - [ ] Portfolio pipeline JSON (`prices.json`, `report_snapshot.json`, `report_context.json`, gap-fill merge target, optional `--ui-dict` overlay) written only under `$REPORT_RUN_DIR` in `/tmp`; `rm -rf "$REPORT_RUN_DIR"` after successful render + this appendix (no root-dir litter).
 
 ### A.3 Self-containment
@@ -201,7 +200,7 @@ Reply in SETTINGS language with absolute HTML path, most important alerts, data 
 
 ### A.6 Required sections
 
-- [ ] 11 sections in order; 7 holdings fields and no `Held`/`Move` (desktop/tablet table columns; phone cards preserve the same fields); §10.3 KPI+strip+bucket-notes; 8 inline charts no external lib; §10.5 news and events searched for every cover ticker with item or audit; `research_targets` derived lots-first and `research_coverage.quality_schema="horizon_v1"` authored for canonical runs; generic headline-only items rejected or audited; materiality-not-weight ordering; no silent small-position omission; events cover earnings/calls/ex-div/launches/regulators/M&A/raises/debt/lockup/macro; final reply names searched tickers + item counts; high-priority alerts rendered when triggered.
+- [ ] Effective rendered sections match `report_type` + `account_scope` policy; holdings fields and Action-column visibility match policy; §10.3 KPI+strip+bucket-notes; 8 inline charts no external lib. If §10.5 renders, news and events searched for every cover ticker with item or audit, `research_targets` derived lots-first, `research_coverage.quality_schema="horizon_v1"` authored, generic headline-only items rejected or audited, materiality-not-weight ordering, no silent small-position omission, events cover earnings/calls/ex-div/launches/regulators/M&A/raises/debt/lockup/macro, and final reply names searched tickers + item counts. If §10.5 is skipped (`portfolio_report` / `total_account`), no news/event search, `research_targets`, or `research_coverage` exists.
 
 ### A.7 Special checks
 
@@ -221,12 +220,12 @@ Reply in SETTINGS language with absolute HTML path, most important alerts, data 
 
 ### A.11 Investment content
 
-- [ ] Phase ordering + Phase A follow-up research; Phase B consumes `horizon_v1` or audited absence before judgment; short-term holdings have tactical state/evidence and mid/long holdings have thesis/strategic status; PM voice; recommendations action+band+trigger; trims name lots and respect §15.6.1; translated 4 action buckets and empty buckets allowed; executable Must/May fields variant tag + sized pp + R:R + kill; mandatory `trading_psychology` authored from `snapshot.transaction_analytics`; `theme_sector_audit` and `research_coverage` complete; `scripts/validate_report_context.py` passes; Strategy readout first under §10.11, first-person, ≤90 words, whole SETTINGS strategy reflected or fallback flagged; continuous strategy-anchor trace for every actionable judgment; actionable rows carry Variant/Consensus/Anchor or carve-out; non-action rows avoid fake PM strings; no fabricated consensus/anchors; R:R/kill/Portfolio fit complete; NAV math renderer-owned; rail breaches handled; contrarian appetite ceiling; hype tolerance base/bull/bear and bull ≤1.5× base unless comparable; length budgets; translation contract.
+- [ ] Phase ordering + Phase A follow-up research only for rendered §10.5 sections; daily Phase B consumes `horizon_v1` or audited absence before judgment; short-term holdings have tactical state/evidence and mid/long holdings have thesis/strategic status when daily decision sections render; PM voice; rendered recommendations action+band+trigger; trims name lots and respect §15.6.1; translated 4 action buckets and empty buckets allowed when actions render; executable Must/May fields variant tag + sized pp + R:R + kill when actionable sections render; `trading_psychology` authored from `snapshot.transaction_analytics` when rendered and omitted when skipped; `theme_sector_audit` complete when rendered; `research_coverage` complete only when §10.5 renders and absent otherwise; `scripts/validate_report_context.py` passes for selected report type/scope; Strategy readout first under §10.11 when sources render, first-person, ≤90 words, whole SETTINGS strategy reflected or fallback flagged; continuous strategy-anchor trace for every actionable judgment; actionable rows carry Variant/Consensus/Anchor or carve-out; non-action rows avoid fake PM strings; no fabricated consensus/anchors; R:R/kill/Portfolio fit complete; NAV math renderer-owned; rail breaches handled; contrarian appetite ceiling; hype tolerance base/bull/bear and bull ≤1.5× base unless comparable; length budgets; translation contract.
 
 ### A.12 Reply
 
-- [ ] Absolute HTML path, key alerts, data gaps, yfinance spec-update note if relevant, SETTINGS language.
+- [ ] Absolute HTML path, key rendered alerts if any, data gaps, §10.5 searched-ticker counts only if rendered, yfinance spec-update note if relevant, SETTINGS language.
 
 ### A.13 Reviewer pass
 
-- [ ] Phase C executed before render; `reviewer_pass.completed=true` and required `reviewed_sections` present including `news_events`; reviewer checks horizon evidence quality, source hierarchy, generic-headline rejection, and escape-hatch audits; annotations do not replace content; empty notes allowed/filler rejected; third-person reviewer voice; note/summary length budgets; translated labels/prose; serious defects sent back to earlier phase; reviewer summary rendered as final reviewer-summary block under §10.11 when present.
+- [ ] Phase C executed before render when reviewer gate renders; `reviewer_pass.completed=true` and required `reviewed_sections` match effective policy (`news_events` only when §10.5 renders); reviewer checks horizon evidence quality, source hierarchy, generic-headline rejection, and escape-hatch audits only for rendered research sections; annotations do not replace content; empty notes allowed/filler rejected; third-person reviewer voice; note/summary length budgets; translated labels/prose; serious defects sent back to earlier phase; reviewer summary rendered as final reviewer-summary block under §10.11 when present.

@@ -25,7 +25,7 @@ Every phase that produces large intermediate data must declare its lifetime up-f
   fallback: keep | warn | fail
 ```
 
-Example, for the portfolio-report news-research phase:
+Example, for the section-gated daily-report news-research phase:
 
 ```
 @temporary
@@ -33,7 +33,7 @@ Example, for the portfolio-report news-research phase:
   consumer_artifact: $REPORT_RUN_DIR/report_context.json (news + events fields populated)
   bytes_estimate: 30k–80k tokens of search results
   drop_trigger: artifact_exists
-  fallback: fail   # no silent rendering with empty news
+  fallback: fail   # no silent rendering with empty news when the news section renders
 ```
 
 ### 2. Result artifact = the drop trigger
@@ -52,7 +52,7 @@ When a phase closes, the workflow must take one of these actions, in priority or
 
 ## HARD rules
 
-- **Research-class phases run in subagents, not the main agent.** A "research-class phase" is any phase whose deliverable is a file or short summary and whose internal work involves > 5K tokens of tool_use_result (web searches, large file reads, repeated greps, multi-step API queries). Violation = workflow defect. The portfolio-report Phase A gather, the onboarding statement-parsing phase, and any /docs lookup that pulls > 3 files all qualify.
+- **Research-class phases run in subagents, not the main agent.** A "research-class phase" is any phase whose deliverable is a file or short summary and whose internal work involves > 5K tokens of tool_use_result (web searches, large file reads, repeated greps, multi-step API queries). Violation = workflow defect. The section-gated daily-report §10.5 Phase A news/events gather, the onboarding statement-parsing phase, and any /docs lookup that pulls > 3 files all qualify. `portfolio_report` does not qualify through §10.5 because it must not run that research at all.
 - **Subagents must not return their full reasoning trace to the parent.** Return shape is `{result_file: <path>, summary: <≤ 200 words>, audit: <hash + bytes>}`. Pasting the subagent's intermediate findings back into the main response is the same as not having used a subagent.
 - **The parent agent must read the result file lazily.** Read it only when the next-stage step actually needs a field, and prefer narrow reads (offset/limit, jq filters) over full file dumps. A full result-file read in the main context defeats the protocol.
 - **No artifact, no drop.** If the consumer artifact is missing or fails validation at phase close, the protocol fails per the declaration's `fallback` setting. `keep` retains the temp data and warns; `warn` drops anyway with a logged warning; `fail` aborts the pipeline. Default `fallback` is `fail` for any artifact whose absence would corrupt downstream reasoning.
@@ -64,8 +64,8 @@ When a phase closes, the workflow must take one of these actions, in priority or
 
 Phases A–D already have an implicit version of this. Make it explicit:
 
-- **Phase A (Gather)** — declare `@temporary` on news/events/research dumps. Run inside a subagent (`general-purpose` with WebSearch). Return path to the populated `report_context.json` segment plus ≤ 200-word summary.
-- **Phase B (Think)** — reads `report_context.json` lazily. Does *not* re-summarize Phase A's search results.
+- **Phase A (Gather)** — declare `@temporary` on news/events/research dumps only when the effective report policy renders §10.5 / daily decision sections (current policy: single-account `daily_report`). Run inside a subagent (`general-purpose` with WebSearch). Return path to the populated `report_context.json` segment plus ≤ 200-word summary. For `portfolio_report` and `total_account`, skip this phase entirely; do not produce `news`, `events`, `research_targets`, or `research_coverage`.
+- **Phase B (Think)** — reads `report_context.json` lazily. Does *not* re-summarize Phase A's search results. If §10.5 was skipped by policy, Phase B must not treat absent research fields as a gap.
 - **Phase D (Render)** — already does filesystem cleanup (`rm -rf "$REPORT_RUN_DIR"`). Add the context-side equivalent: after the HTML is durable, the main agent's response should not echo the snapshot/context contents back to the user; reply with the HTML path + audit notes only (this is already the rule, but cross-link it here for completeness).
 
 ### Onboarding (`docs/onboarding_agent_guidelines.md`)

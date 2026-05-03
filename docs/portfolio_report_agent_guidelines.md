@@ -17,18 +17,19 @@ Read this file first, then read **every** part file below in order on every port
 
 ## Hard Run Invariants
 
-- **Run unsandboxed for the entire workflow — explicit authorization granted.** The portfolio-report workflow REQUIRES live internet for §10.5 news WebSearch/WebFetch, §10.6 dated-catalyst lookups, FX / price / consensus retrieval, and any temp-researcher delegations made under `docs/temp_researcher_contract.md`. This authorization is normative — the agent does not need a separate user prompt to disable the sandbox; this spec grants it. Concrete delegation primitives the agent will use during this workflow:
-  - **Codex CLI `spawn_agent` / Codex subagents:** every `spawn_agent` invocation that fulfills a research-class step (Phase A news, events, follow-up research) MUST pass `sandbox: "danger-full-access"` (or the project equivalent unsandboxed profile) plus a network-enabled approval policy in the call arguments. Inheriting a `read-only` / `workspace-write` default is a workflow violation.
+- **Network use is section-triggered, not report-global.** Latest price / FX / history fetches are part of every normal run and may require network access. §10.5 live news, §10.6 dated-catalyst lookup, follow-up research, consensus-style decision research, and temp-researcher delegation run **only when the effective rendered sections require them** (see "Section-level pipeline routing" below). Today, that means **single-account `daily_report` only**. `portfolio_report` and all `total_account` variants **must not** run §10.5 news search, event-calendar search, `research_targets`, `research_coverage`, or temp-researcher news/events delegation.
+- **When a rendered section does require live research, run unsandboxed — explicit authorization granted.** For those included research-class sections, the workflow requires live internet and the agent does not need a separate user prompt to disable the sandbox. Concrete delegation primitives the agent will use for such sections:
+  - **Codex CLI `spawn_agent` / Codex subagents:** every `spawn_agent` invocation that fulfills a rendered research-class step (Phase A news, events, follow-up research) MUST pass `sandbox: "danger-full-access"` (or the project equivalent unsandboxed profile) plus a network-enabled approval policy in the call arguments. Inheriting a `read-only` / `workspace-write` default is a workflow violation.
   - **Claude Code Task tool / `subagent_type="temp-researcher"`:** the surrounding session must allow network egress; Bash calls that fetch external data must run with `dangerouslyDisableSandbox: true` when the session default would otherwise block them.
   - **Gemini CLI subagents / fresh-session delegation:** invoke with `--yolo` / `--no-sandbox` / runtime equivalent.
-  - **Direct (non-delegated) work in the parent agent:** the same authorization applies — the agent itself runs unsandboxed for this workflow.
-  
-  A run that silently returns empty `news` / `events_30d` / `research_coverage` because the network or sandbox blocked outbound calls is a workflow violation, not a clean empty-result outcome — empty results are valid only when the search ran and genuinely found nothing in the window.
+  - **Direct (non-delegated) work in the parent agent:** the same authorization applies only for included research-class sections.
+
+  A run that renders `news` / `events_30d` / `research_coverage` but silently returns them empty because the network or sandbox blocked outbound calls is a workflow violation, not a clean empty-result outcome. When those sections are skipped by report policy, the correct state is **absent / not authored**, not empty researched output.
 - Execute in four serial phases: **A Gather → B Think → C Review → D Render + reply**.
-- Phase A gathers files, prices, metrics, full-universe news, dated catalysts, and follow-up research before any judgment is drafted.
-- Phase B drafts all alerts, watchlists, adjustments, action items, scoring, mandatory `trading_psychology`, Strategy readout, and summary while continuously anchoring to `SETTINGS.md` `## Investment Style And Strategy`.
-- Phase C switches hat to a senior PM reviewer, annotates issues, reviews `trading_psychology`, and sends serious defects back to the relevant earlier phase before render.
-- Phase D renders one self-contained HTML file only after `scripts/validate_report_context.py --snapshot "$REPORT_RUN_DIR/report_snapshot.json" --context "$REPORT_RUN_DIR/report_context.json"` passes, runs Appendix A self-checks, **deletes `$REPORT_RUN_DIR`** (`rm -rf`), and replies with the absolute HTML path plus required audit notes.
+- Phase A gathers files, prices, metrics, and **only the live research required by rendered sections** before any judgment for those sections is drafted.
+- Phase B drafts **only rendered editorial sections** (alerts / watchlists / adjustments / action items / `trading_psychology` / Strategy readout / summary as applicable) while continuously anchoring to `SETTINGS.md` `## Investment Style And Strategy`.
+- Phase C switches hat to a senior PM reviewer, annotates issues for rendered strategy-dependent sections only, and sends serious defects back to the relevant earlier phase before render.
+- Phase D renders one self-contained HTML file only after `scripts/validate_report_context.py --snapshot "$REPORT_RUN_DIR/report_snapshot.json" --context "$REPORT_RUN_DIR/report_context.json" --report-type <daily_report|portfolio_report>` passes for the selected mode, runs Appendix A self-checks, **deletes `$REPORT_RUN_DIR`** (`rm -rf`), and replies with the absolute HTML path plus required audit notes.
 - `SETTINGS.md` and `transactions.db` (resolved from `accounts/<active>/` via `--account <name>` or the `accounts/.active` pointer; see §4) are read-only unless the user explicitly asks to edit them.
 
 ### Intermediate files and cleanup (HARD)
@@ -39,6 +40,64 @@ Aligns with `CLAUDE.md` **Temp files**: nothing ephemeral in the repo working tr
 - **Write only under `$REPORT_RUN_DIR`:** `prices.json` (including merged `_history` / `_fx_history`), `report_snapshot.json`, `report_context.json`, any `fill_history_gap.py --merge-into` target, and optional `--ui-dict` JSON. **Do not** place these files at the repository root.
 - **After success:** HTML lives under `reports/` only; then `rm -rf "$REPORT_RUN_DIR"`. On repeated failed renders you may keep the directory for debugging, but never leave successful-run debris in the repo root.
 - **Basenames in part files:** unqualified names like `report_snapshot.json` / `prices.json` mean those files **inside** `$REPORT_RUN_DIR`, not cwd-relative to the repo.
+
+### Report type and account scope (HARD)
+
+Every report run must choose two orthogonal axes before Phase A gather:
+
+- `report_type`: `daily_report` or `portfolio_report`. This is the content taxonomy.
+- `account_scope`: `single_account` or `total_account` (`--all-accounts`). This is only input aggregation; **total is not a report type**.
+
+**Unspecified report type stop rule.** If the user asks to generate/run a report and the prompt does not clearly specify `daily_report` or `portfolio_report`, stop before Phase A. Do not run `account migrate`, fetch prices/history, read `SETTINGS.md` / `transactions.db`, create `$REPORT_RUN_DIR`, launch live research, or infer a default. Ask one concise question that briefly explains:
+
+- `daily_report`: daily decision/editorial report with alerts, today's summary, material news, 30-day events, high risk/opportunity, recommended adjustments, today's actions, trading psychology, and the holdings Action column for single-account scope.
+- `portfolio_report`: math/position review that omits immediate-attention/news/events/actions/trading-psychology sections and the holdings Action column.
+
+Resume the pipeline only after the user selects a type. Account scope can still be inferred from wording (for example, "all accounts") or resolved separately; `total_account` is not a substitute for report type.
+
+`daily_report` is the current report minus Profit Panel, Performance Attribution, Discipline Check, Holding Period and Pacing, and P&L Ranking. It still includes alerts, today's summary, material news, 30-day events, high risk/opportunity, recommended adjustments, today's actions, trading psychology, and the holdings Action column for single-account scope.
+
+`portfolio_report` is the current report minus Immediate Attention, Today's Summary, Recent Trading Mindset, Latest Material News, 30-Day Event Calendar, High Risk/Opportunity, Recommended Adjustments, Today's Action List, and the holdings Action column. Math/position sections remain.
+
+`total_account` overlays the existing math-only / strategy-dependent suppression. Effective rendered sections = report-type skips ∪ total-account overlay. Agents must gather/research only sections that will render; do not collect news/events/actions/trading psychology for skipped sections.
+
+### Section-level pipeline routing (HARD)
+
+Before gathering editorial context, compute the effective skipped renderer set with `scripts/report_mode_policy.py`. A section can trigger data collection only if its renderer is not skipped. This table is the agent-facing source of truth for what to gather, what to skip, and which context keys are legal. The `total_account` column shows only the additional account-scope overlay; final total-account rendering is still `report_type` skips ∪ this overlay.
+
+| Renderer / UI section | Single-account `daily_report` | Single-account `portfolio_report` | `total_account` overlay (additional; still apply report-type skips) | Pipeline trigger |
+|---|---:|---:|---:|---|
+| `render_masthead` / report header | Render | Render | Render | Snapshot metadata + selected axes only. `next_event` may be populated only if `render_events` renders; never search events just for the masthead. |
+| `render_alerts` / Immediate Attention | Render | Skip | Skip | Daily-only Phase B from snapshot risk checks + §10.5 evidence. Triggers live research only in daily single. |
+| `render_today_summary` / Today's Summary | Render | Skip | Skip | Daily-only synthesis from gathered evidence. No extra search beyond daily §10.5. |
+| `render_dashboard` / Portfolio dashboard | Render | Render | Render | Snapshot math only. No news/research. |
+| `render_profit_panel` / Profit Panel | Skip | Render | Render | Snapshot `profit_panel` + price/history math. No news/research. |
+| `render_report_accuracy` / Report accuracy | Render | Render | Skip | Snapshot/source-quality fields + data gaps. No news/research. |
+| `render_performance_attribution` / Performance Attribution | Skip | Render | Skip | Snapshot `transaction_analytics.performance_attribution`. No news/research. |
+| `render_trade_quality` / Trade Quality | Render | Render | Skip | Snapshot `transaction_analytics.trade_quality`. No news/research. |
+| `render_discipline_check` / Discipline Check | Skip | Render | Skip | Snapshot `transaction_analytics.discipline_check`. No news/research. |
+| `render_trading_psychology` / Recent Trading Mindset | Render | Skip | Skip | Daily-only agent-authored self-coaching from `snapshot.transaction_analytics` + SETTINGS strategy. No news/event search; skip entirely for portfolio/total. |
+| `render_allocation_and_weight` / Allocation & weights | Render | Render | Render | Snapshot allocation math only. No news/research. |
+| `render_holdings_table` / Holdings P&L and weights | Render with Action column | Render without Action column | Render without Action column | Snapshot holdings math. The Action column may use daily `holdings_actions` / `adjustments`; portfolio/total must not author action context. |
+| `render_pnl_ranking` / P&L Ranking | Skip | Render | Render | Snapshot realized/unrealized ranking only. No news/research. |
+| `render_holding_period` / Holding Period and Pacing | Skip | Render | Render | Snapshot holding-period / pacing math only. No news/research. |
+| `render_theme_sector` / Theme & sector exposure | Render | Render | Skip | Agent-authored classification + audit. Static issuer / ETF taxonomy or factsheet lookup is allowed when needed, but this is not §10.5 decision research: no material-news search, no event search, no `research_targets`, no `research_coverage`. |
+| `render_news` / Latest Material News | Render | Skip | Skip | Daily-only §10.5 temp-researcher news workflow. Forbidden for portfolio/total. |
+| `render_events` / Forward 30-Day Event Calendar | Render | Skip | Skip | Daily-only §10.5 temp-researcher events workflow. Forbidden for portfolio/total. |
+| `render_high_risk_opp` / High Risk and High Opportunity | Render | Skip | Skip | Daily-only Phase B from snapshot risk heat + §10.5 decision evidence. Forbidden for portfolio/total. |
+| `render_adjustments` / Recommended Adjustments | Render | Skip | Skip | Daily-only recommendations with PM fields. Requires §10.5 evidence when action depends on external developments. Forbidden for portfolio/total. |
+| `render_actions` / Today's Action List | Render | Skip | Skip | Daily-only action buckets from §10.5 + strategy. Forbidden for portfolio/total. |
+| `render_sources` / Sources & data gaps | Render | Render | Skip | Price/FX/data gaps, Strategy readout, reviewer summary. Include `research_coverage` / searched-ticker counts only if §10.5 rendered. Portfolio reports must omit research coverage rather than backfilling it. |
+
+**Research trigger rule.** Run §10.5 news/events, `research_targets`, `research_coverage`, and temp-researcher delegation if and only if at least one effective rendered section is in this set: `render_news`, `render_events`, `render_high_risk_opp`, `render_adjustments`, `render_actions`, `render_alerts`, `render_today_summary`. Under the current policy this is **single-account `daily_report` only**. `portfolio_report` must not trigger news search or research.
+
+**Context authoring by mode.**
+
+- Single-account `daily_report`: author rendered editorial keys only: `alerts`, `today_summary`, `news`, `events`, `research_coverage`, `high_opps`, `adjustments`, `actions`, `trading_psychology`, `theme_sector_html`, `theme_sector_audit`, `strategy_readout`, `data_gaps`, `reviewer_pass`, and optional `holdings_actions`.
+- Single-account `portfolio_report`: author math-adjacent / non-daily context only: `theme_sector_html`, `theme_sector_audit`, `strategy_readout`, `data_gaps`, `reviewer_pass`. Do **not** author `news`, `events`, `research_coverage`, `research_targets`, `high_opps`, `adjustments`, `actions`, `trading_psychology`, or holdings action text.
+- `total_account` with either report type: context may be empty or contain only renderer-safe metadata. Do not read per-account strategies, do not author strategy-dependent editorial sections, and do not run news/events/recommendation research.
+
+**History fetch note.** `fetch_history.py` remains in the canonical pipeline because current snapshots compute profit panel / transaction analytics in one pass. It is math/history support, not §10.5 research, and it never authorizes news or event search for `portfolio_report`.
 
 ### Pipeline order (HARD)
 
@@ -68,13 +127,17 @@ or structural field is materialized once, in this order:
    Skipping this step makes `generate_report.py` exit with code **8** —
    there is no English-chrome fallback for non-English settings. See §5.1.1
    in `02-inputs-to-self-containment.md` for the full contract.
-4. Agent authors `"$REPORT_RUN_DIR/report_context.json"` with editorial-only content (news,
-   events, alerts, adjustments, action list, theme/sector HTML,
-   `trading_psychology`, Strategy readout, reviewer notes). The agent **must
-   not** re-derive any numeric field that the snapshot already exposes. The
-   entire context must be linted with `python scripts/validate_report_context.py
-   --snapshot "$REPORT_RUN_DIR/report_snapshot.json" --context "$REPORT_RUN_DIR/report_context.json"` before render.
-5. `python scripts/generate_report.py --account default --snapshot "$REPORT_RUN_DIR/report_snapshot.json"
+4. Agent authors `"$REPORT_RUN_DIR/report_context.json"` with editorial-only content **only for sections included by the effective report policy** (for example, single-account daily gathers news/actions/psychology; single-account portfolio skips them). The agent **must not** re-derive any numeric field that the snapshot already exposes. The context must be linted with:
+
+   ```bash
+   python scripts/validate_report_context.py \
+       --snapshot "$REPORT_RUN_DIR/report_snapshot.json" \
+       --context "$REPORT_RUN_DIR/report_context.json" \
+       --report-type daily_report
+   ```
+
+   Replace `daily_report` with `portfolio_report` as selected. For total scope, use `--all-accounts` / `--account-scope total_account`; total scope intentionally skips strategy-dependent editorial validation.
+5. `python scripts/generate_report.py --account default --report-type daily_report --snapshot "$REPORT_RUN_DIR/report_snapshot.json"
    --context "$REPORT_RUN_DIR/report_context.json"` — projects the
    snapshot + context onto the §10 HTML. (Omitting `--account` resolves the active account
    from `accounts/.active`; pass `--account <name>` to target a specific account.)
@@ -82,24 +145,12 @@ or structural field is materialized once, in this order:
 The renderer's legacy `--prices --db` path remains for backwards compatibility
 but emits a deprecation warning; new agent runs must use `--snapshot`.
 
-### Total / All-Accounts mode (§N)
+### Total / All-Accounts scope (§N)
 
 **Trigger phrases.** "Total report", "all-accounts report", "portfolio across
-all my accounts", "consolidated report".
+all my accounts", "consolidated report". The agent must still choose `--report-type daily_report` or `--report-type portfolio_report`; "total" only means account scope.
 
-**What it does.** Renders a math-only HTML report that unions every real
-account under `accounts/<name>/` (filtered by `NAME_REGEX`; underscore-
-prefixed sinks like `_total` are skipped). The report contains positions
-(merged, weighted-avg cost), per-currency cash, P&L panel (numeric only),
-allocation %, total market value, holding-period book pacing. Editorial
-sections are excluded by construction:
-
-- skipped: today_summary, alerts, news, events, adjustments, action items,
-  trading psychology, theme/sector, watchlist, transaction analytics
-  narrative, performance attribution, trade quality, discipline check,
-  report data quality scores, sources.
-- kept: masthead, dashboard (KPI tiles), profit panel (numeric), allocation
-  & weights, holdings table, P&L ranking, holding period.
+**What it does.** Unions every real account under `accounts/<name>/` (filtered by `NAME_REGEX`; underscore-prefixed sinks like `_total` are skipped) and then applies the selected report type plus the total-account math-only overlay. Editorial/strategy-dependent sections are excluded by construction.
 
 **Runtime prompts (agent → user).**
 1. Language — default `en`; restricted to `en` / `zh-Hant` / `zh-Hans`. ja /
@@ -128,21 +179,22 @@ python scripts/transactions.py snapshot --all-accounts --base-currency USD \
     --today $(date +%Y-%m-%d)
 
 python scripts/generate_report.py --snapshot "$RUN_DIR/report_snapshot.json" \
+    --report-type daily_report \
     --all-accounts --language en
-# Output defaults to accounts/_total/reports/<YYYY-MM-DD_HHMM>_portfolio_report.html
+# Output defaults to accounts/_total/reports/<YYYY-MM-DD_HHMM>_total_account_daily_report.html
 ```
 
 After success, `rm -rf "$RUN_DIR"`.
 
 **Output path.** When `--output` is omitted, the renderer writes to
-`accounts/_total/reports/<YYYY-MM-DD_HHMM>_portfolio_report.html`. The
+`accounts/_total/reports/<YYYY-MM-DD_HHMM>_total_account_<report_type>.html`. The
 `accounts/_total/` directory holds **only** reports — there is no SETTINGS.md
 or transactions.db; `account list` does not show it.
 
 **Mutually exclusive with `--account NAME`.** Passing both on any of the
 four pipeline scripts (`fetch_prices.py`, `fetch_history.py`,
 `transactions.py snapshot`, `generate_report.py`) emits an argparse error
-and exits non-zero.
+and exits non-zero. `generate_report.py` also rejects omitted `--report-type` on render paths.
 
 **Exit codes.** `2` = mutex / invalid combo (e.g., `--all-accounts --db`).
 `4` = no real accounts under `accounts/`. `7` is **not** raised in total
@@ -163,7 +215,7 @@ on a synthetic 3-account fixture under `/tmp/`.
 To exercise the **same pipeline** without reading or writing the user’s active-account
 `transactions.db`, use **`demo/`**: seed `demo/transactions_history.json` →
 `demo/transactions.db` via `python demo/bootstrap_demo_ledger.py --apply`.
-There is no demo report pipeline script and no committed demo editorial JSON; context is authored per run under `$REPORT_RUN_DIR` like production.
+There is no demo report pipeline script and no committed demo editorial JSON; context is authored per run under `$REPORT_RUN_DIR` like production and only for sections rendered by the selected report type / account scope.
 The demo ledger is an **alternate `--db` path** plus **alternate history cache**:
 run the normal portfolio-report workflow, pass **`--db demo/transactions.db`**
 to `fetch_prices.py`, `fetch_history.py`, and `transactions.py snapshot`, and
@@ -174,10 +226,10 @@ public data, `SETTINGS.md`, and these guidelines exactly as for a production
 report. Prefer writing deliverable demo HTML under **`demo/reports/`** (same
 filename pattern) instead of `reports/` so user production reports stay
 separated. Only the transaction ledger is synthetic; price retrieval, FX,
-history, snapshot math, analytics,
-mandatory `trading_psychology`, theme/sector classification, news, catalysts,
-consensus, recommendations, reviewer pass, and HTML rendering must all be real
-run outputs.
+history, snapshot math, analytics, section-gated editorial context, reviewer pass,
+and HTML rendering must all be real run outputs. For demo `portfolio_report`
+runs, the same portfolio rule applies: no news, catalysts, `trading_psychology`,
+consensus, recommendations, actions, or §10.5 temp-researcher workflow.
 
 ## Section Links
 

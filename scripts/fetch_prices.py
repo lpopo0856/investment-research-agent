@@ -117,6 +117,10 @@ from account import (
     autodetect_and_migrate_or_exit,
     check_pairing,
 )
+from benchmark_config import (  # type: ignore[import-not-found]
+    iter_benchmark_specs,
+    load_benchmark_config,
+)
 
 # ----------------------------------------------------------------------------- #
 # Constants — edit cautiously. These mirror the spec; deviations must be agreed.
@@ -1683,6 +1687,8 @@ def find_todo_required_hard_failures(payload: Dict[str, Any]) -> List[Dict[str, 
     """Return unresolved price rows that still need manual tier 3 / tier 4 work."""
     failures: List[Dict[str, Any]] = []
     for symbol, detail in _iter_price_payload_details(payload):
+        if detail.get("benchmark"):
+            continue
         chain_raw = detail.get("fallback_chain") or []
         chain = chain_raw if isinstance(chain_raw, list) else [chain_raw]
         if not _chain_has_todo_required(chain):
@@ -1766,6 +1772,29 @@ def _load_lots_from_db(db: Path) -> Tuple[List[Lot], str]:
     return [], str(db)
 
 
+def _benchmark_lots_from_config(config: Dict[str, Any]) -> List[Lot]:
+    lots: List[Lot] = []
+    for spec in iter_benchmark_specs(config):
+        try:
+            market = MarketType(spec.market)
+        except ValueError:
+            normalized = spec.market.strip().lower()
+            market = next((m for m in MarketType if m.value.lower() == normalized), MarketType.US)
+        lots.append(
+            Lot(
+                raw_line=f"benchmark {spec.ticker} [{market.value}]",
+                bucket="Benchmark",
+                ticker=spec.ticker,
+                quantity=0.0,
+                cost=None,
+                date=None,
+                market=market,
+                is_share=market not in (MarketType.CRYPTO, MarketType.FX, MarketType.CASH),
+            )
+        )
+    return lots
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     autodetect_and_migrate_or_exit()
     args = _cli_args(argv)
@@ -1827,7 +1856,11 @@ def main(argv: Optional[List[str]] = None) -> int:
         len(lots), base_currency,
     )
 
-    results = fetch_all_prices(lots, skip_yfinance=args.skip_yfinance)
+    benchmark_config = load_benchmark_config(settings_path)
+    benchmark_lots = _benchmark_lots_from_config(benchmark_config)
+    benchmark_tickers = sorted({lot.ticker for lot in benchmark_lots})
+    fetch_lots = lots + benchmark_lots
+    results = fetch_all_prices(fetch_lots, skip_yfinance=args.skip_yfinance)
     required_ccys = required_fx_currencies(lots, results, base_currency)
     fx_payload = fetch_auto_fx_rates(
         required_ccys,
@@ -1838,6 +1871,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     payload: Dict[str, Any] = {
         ticker: _serialize_result(pr) for ticker, pr in results.items()
     }
+    for ticker in benchmark_tickers:
+        if isinstance(payload.get(ticker), dict):
+            payload[ticker]["benchmark"] = True
     payload["_fx"] = fx_payload
     payload["_audit"] = {
         "generated_at": _now_iso(),
@@ -1845,6 +1881,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         "settings_file": str(settings_path) if settings_path is not None else None,
         "base_currency": base_currency,
         "lot_count": len(lots),
+        "benchmark_ticker_count": len(benchmark_lots),
+        "benchmark_tickers": benchmark_tickers,
         "ticker_count": len(results),
         "required_fx_currencies": required_ccys,
         "yfinance_skipped": args.skip_yfinance,
@@ -1860,6 +1898,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         payload["_audit"]["all_accounts_sources"] = [
             {"account": name, "source": src} for name, src in per_account_sources
         ]
+    payload["_benchmarks"] = benchmark_config
     hard_failures = find_todo_required_hard_failures(payload)
     payload["_audit"]["todo_required_hard_failures"] = hard_failures
     payload["_audit"]["todo_required_hard_fail"] = bool(hard_failures)

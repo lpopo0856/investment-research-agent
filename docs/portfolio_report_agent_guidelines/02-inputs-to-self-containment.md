@@ -69,10 +69,12 @@ Full runbook: [`demo/README.md`](../../demo/README.md).
 There is no demo-specific report pipeline, no committed demo
 `report_context.json`, and no auto-fill script for editorial content. Only the
 transaction ledger is synthetic. Everything else must be generated exactly as
-in a real report: latest-price retrieval, history retrieval, snapshot math,
-profit panel, transaction analytics, mandatory `trading_psychology`,
-theme/sector classification, news, catalysts, consensus, recommendations,
-Strategy readout, reviewer pass, and HTML rendering. Parser-test/offline flags
+in a real report for the selected `report_type` + `account_scope`: latest-price
+retrieval, history retrieval, snapshot math, profit panel, transaction analytics,
+section-gated editorial context, Strategy readout / reviewer pass when rendered,
+and HTML rendering. A demo `portfolio_report` follows the same portfolio policy:
+no `trading_psychology`, news, catalysts, consensus, recommendations, actions,
+or §10.5 temp-researcher workflow. Parser-test/offline flags
 that produce `n/a` quotes are not valid for user-facing demo reports.
 
 ---
@@ -154,7 +156,7 @@ Search rendered HTML for stray non-SETTINGS-language text; every non-allow-liste
 
 ## 6. File output
 
-Write exactly one HTML file to `accounts/<active>/reports/YYYY-MM-DD_HHMM_portfolio_report.html` using local clock (production / user runs). The active account is resolved via `--account <name>` or `accounts/.active`; omitting `--account` defaults to `accounts/default/`. For **demo-ledger-only** runs (`--db demo/transactions.db`), write the same filename pattern under **`demo/reports/`** instead so the artifact stays under `demo/` and does not sit beside user reports. No Markdown summary or companion files in the repo.
+Write exactly one HTML file whose filename encodes both axes: `accounts/<active>/reports/YYYY-MM-DD_HHMM_single_account_<daily_report|portfolio_report>.html` for single-account runs, or `accounts/_total/reports/YYYY-MM-DD_HHMM_total_account_<daily_report|portfolio_report>.html` for total-account scope. The active account is resolved via `--account <name>` or `accounts/.active`; omitting `--account` defaults to `accounts/default/`. For **demo-ledger-only** runs (`--db demo/transactions.db`), write the same type/scope filename pattern under **`demo/reports/`** instead so the artifact stays under `demo/` and does not sit beside user reports. No Markdown summary or companion files in the repo.
 
 **Pipeline intermediates (HARD):** `fetch_prices` / `fetch_history` / `fill_history_gap` / `transactions.py snapshot` / `report_context.json` / optional `--ui-dict` JSON for the report run **must** use paths under `$REPORT_RUN_DIR` in `/tmp` only (see main `portfolio_report_agent_guidelines.md` — Intermediate files and cleanup). After successful render + Appendix A, delete the whole directory.
 

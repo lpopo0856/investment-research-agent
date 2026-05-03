@@ -30,7 +30,7 @@
   </script>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark light">
-  <title>Demo reports — portfolio HTML previews</title>
+  <title>Demo reports — daily and portfolio HTML previews</title>
   <style>
     :root {
       --bg0: #0c0e12;
@@ -165,7 +165,7 @@
       opacity: 0.85;
     }
 
-    .lang-panel {
+    .selector-panel {
       background: linear-gradient(145deg, var(--panel) 0%, rgba(18, 21, 28, 0.92) 100%);
       border: 1px solid var(--stroke);
       border-radius: var(--radius-lg);
@@ -173,7 +173,7 @@
       box-shadow: var(--shadow);
     }
 
-    .lang-panel label {
+    .selector-panel label {
       display: block;
       font-size: 0.65rem;
       font-weight: 600;
@@ -183,13 +183,13 @@
       margin-bottom: 0.65rem;
     }
 
-    .lang-grid {
+    .selector-grid {
       display: flex;
       flex-wrap: wrap;
       gap: 0.5rem;
     }
 
-    .lang-btn {
+    .selector-btn {
       position: relative;
       appearance: none;
       border: 1px solid var(--stroke);
@@ -206,18 +206,18 @@
       transition: border-color 0.2s, background 0.2s, box-shadow 0.25s;
     }
 
-    .lang-btn:hover {
+    .selector-btn:hover {
       border-color: var(--stroke-strong);
       background: rgba(255, 255, 255, 0.06);
     }
 
-    .lang-btn[aria-pressed="true"] {
+    .selector-btn[aria-pressed="true"] {
       border-color: rgba(201, 162, 39, 0.55);
       background: var(--accent-dim);
       box-shadow: 0 0 0 1px rgba(201, 162, 39, 0.2), 0 0 28px var(--glow);
     }
 
-    .lang-btn .sub {
+    .selector-btn .sub {
       display: block;
       margin-top: 0.2rem;
       font-size: 0.72rem;
@@ -291,7 +291,7 @@
     }
 
     @media (max-width: 640px) {
-      .lang-btn {
+      .selector-btn {
         min-width: calc(50% - 0.25rem);
         flex: 1 1 calc(50% - 0.25rem);
       }
@@ -305,11 +305,11 @@
         <span class="eyebrow">Investments repo</span>
         <h1>Portfolio report demos</h1>
         <p class="lede">
-          Static HTML samples from the demo ledger. Pick a locale to preview the same pipeline output in another language.
+          Static HTML samples from the demo ledger. Pick report type and locale to preview the matching pipeline output.
         </p>
       </div>
       <div class="actions">
-        <a class="btn" id="open-tab" href="./demo/reports/zh-Hant.html" target="_blank" rel="noopener">
+        <a class="btn" id="open-tab" href="./demo/reports/zh-Hant_daily_report.html" target="_blank" rel="noopener">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
             <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
             <polyline points="15 3 21 3 21 9"/>
@@ -320,20 +320,25 @@
       </div>
     </header>
 
-    <section class="lang-panel" aria-labelledby="lang-heading">
+    <section class="selector-panel" aria-labelledby="type-heading">
+      <label id="type-heading">Report type</label>
+      <div class="selector-grid" id="type-grid" role="tablist" aria-label="Report type"></div>
+    </section>
+
+    <section class="selector-panel" aria-labelledby="lang-heading">
       <label id="lang-heading">Language</label>
-      <div class="lang-grid" id="lang-grid" role="tablist" aria-label="Report locale"></div>
+      <div class="selector-grid" id="lang-grid" role="tablist" aria-label="Report locale"></div>
     </section>
 
     <section class="viewer-wrap" aria-label="Report preview">
       <div class="viewer-toolbar">
-        <code class="path" id="path-line">demo/reports/<strong id="path-file">zh-Hant.html</strong></code>
+        <code class="path" id="path-line">demo/reports/<strong id="path-file">zh-Hant_daily_report.html</strong></code>
         <span class="status" id="iframe-status" aria-live="polite"></span>
       </div>
       <iframe
         id="report-frame"
         title="Portfolio report preview"
-        src="./demo/reports/zh-Hant.html"
+        src="./demo/reports/zh-Hant_daily_report.html"
         loading="lazy"
         referrerpolicy="no-referrer"
       ></iframe>
@@ -341,10 +346,23 @@
   </div>
 
   <script>
-    /** Each entry maps to demo/reports/{file}.html */
+    const REPORT_TYPES = [
+      {
+        id: "daily_report",
+        native: "Daily report",
+        en: "Decision flow · news / events / actions",
+      },
+      {
+        id: "portfolio_report",
+        native: "Portfolio report",
+        en: "Math + positions · no daily research",
+      },
+    ];
+
+    /** Each locale/type pair maps to demo/reports/{locale}_{report_type}.html */
     const REPORT_LOCALES = [
-      { id: "zh-Hant", file: "zh-Hant", native: "繁體中文", en: "Traditional Chinese" },
-      { id: "en", file: "en", native: "English", en: "en" },
+      { id: "zh-Hant", native: "繁體中文", en: "Traditional Chinese" },
+      { id: "en", native: "English", en: "en" },
     ];
 
     // Paths are repo-relative; early <base> in head handles subpath hosting.
@@ -352,20 +370,31 @@
     const frame = document.getElementById("report-frame");
     const pathFile = document.getElementById("path-file");
     const openTab = document.getElementById("open-tab");
+    const typeGrid = document.getElementById("type-grid");
     const grid = document.getElementById("lang-grid");
     const statusEl = document.getElementById("iframe-status");
+    let activeType = REPORT_TYPES[0].id;
+    let activeLocale = REPORT_LOCALES[0].id;
 
-    function hrefFor(file) {
-      return reportsDir + file + ".html";
+    function fileFor(locale, type) {
+      return locale + "_" + type + ".html";
     }
 
-    function setActive(id) {
-      const entry = REPORT_LOCALES.find((l) => l.id === id) || REPORT_LOCALES[0];
-      const url = hrefFor(entry.file);
-      pathFile.textContent = entry.file + ".html";
+    function hrefFor(locale, type) {
+      return reportsDir + fileFor(locale, type);
+    }
+
+    function updatePreview() {
+      const url = hrefFor(activeLocale, activeType);
+      pathFile.textContent = fileFor(activeLocale, activeType);
       openTab.href = url;
-      grid.querySelectorAll(".lang-btn").forEach((btn) => {
-        const pressed = btn.dataset.locale === entry.id;
+      typeGrid.querySelectorAll(".selector-btn").forEach((btn) => {
+        const pressed = btn.dataset.type === activeType;
+        btn.setAttribute("aria-pressed", pressed ? "true" : "false");
+        btn.setAttribute("tabindex", pressed ? "0" : "-1");
+      });
+      grid.querySelectorAll(".selector-btn").forEach((btn) => {
+        const pressed = btn.dataset.locale === activeLocale;
         btn.setAttribute("aria-pressed", pressed ? "true" : "false");
         btn.setAttribute("tabindex", pressed ? "0" : "-1");
       });
@@ -375,8 +404,18 @@
         frame.setAttribute("src", url);
       }
       try {
-        history.replaceState(null, "", "#" + entry.id);
+        history.replaceState(null, "", "#" + activeType + "/" + activeLocale);
       } catch (_) {}
+    }
+
+    function setType(id) {
+      activeType = REPORT_TYPES.some((t) => t.id === id) ? id : REPORT_TYPES[0].id;
+      updatePreview();
+    }
+
+    function setLocale(id) {
+      activeLocale = REPORT_LOCALES.some((l) => l.id === id) ? id : REPORT_LOCALES[0].id;
+      updatePreview();
     }
 
     frame.addEventListener("load", () => {
@@ -384,28 +423,45 @@
       statusEl.classList.remove("loading");
     });
 
+    REPORT_TYPES.forEach((type) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "selector-btn";
+      btn.dataset.type = type.id;
+      btn.setAttribute("role", "tab");
+      btn.setAttribute("id", "tab-type-" + type.id);
+      btn.setAttribute("aria-controls", "report-frame");
+      btn.innerHTML =
+        "<span>" + type.native + "</span><span class=\"sub\">" + type.en + "</span>";
+      btn.addEventListener("click", () => setType(type.id));
+      typeGrid.appendChild(btn);
+    });
+
     REPORT_LOCALES.forEach((loc, i) => {
       const btn = document.createElement("button");
       btn.type = "button";
-      btn.className = "lang-btn";
+      btn.className = "selector-btn";
       btn.dataset.locale = loc.id;
       btn.setAttribute("role", "tab");
-      btn.setAttribute("id", "tab-" + loc.id);
+      btn.setAttribute("id", "tab-locale-" + loc.id);
       btn.setAttribute("aria-controls", "report-frame");
       btn.innerHTML =
         "<span>" + loc.native + "</span><span class=\"sub\">" + loc.en + "</span>";
-      btn.addEventListener("click", () => setActive(loc.id));
+      btn.addEventListener("click", () => setLocale(loc.id));
       grid.appendChild(btn);
     });
 
     const hash = (location.hash || "").replace(/^#/, "");
-    const initial = REPORT_LOCALES.some((l) => l.id === hash) ? hash : REPORT_LOCALES[0].id;
-    setActive(initial);
+    const parts = hash.split("/");
+    activeType = REPORT_TYPES.some((t) => t.id === parts[0]) ? parts[0] : REPORT_TYPES[0].id;
+    activeLocale = REPORT_LOCALES.some((l) => l.id === parts[1]) ? parts[1] : REPORT_LOCALES[0].id;
+    updatePreview();
 
-    grid.addEventListener("keydown", (e) => {
+    function bindRovingKeys(container, selector, getId, setter) {
+      container.addEventListener("keydown", (e) => {
       const keys = ["ArrowRight", "ArrowLeft", "Home", "End"];
       if (!keys.includes(e.key)) return;
-      const tabs = [...grid.querySelectorAll(".lang-btn")];
+        const tabs = [...container.querySelectorAll(selector)];
       const i = tabs.findIndex((t) => t.getAttribute("aria-pressed") === "true");
       if (i < 0) return;
       let next = i;
@@ -415,8 +471,12 @@
       if (e.key === "End") next = tabs.length - 1;
       e.preventDefault();
       tabs[next].focus();
-      setActive(tabs[next].dataset.locale);
-    });
+        setter(getId(tabs[next]));
+      });
+    }
+
+    bindRovingKeys(typeGrid, ".selector-btn", (btn) => btn.dataset.type, setType);
+    bindRovingKeys(grid, ".selector-btn", (btn) => btn.dataset.locale, setLocale);
   </script>
 </body>
 </html>

@@ -49,6 +49,8 @@
     "col_period": "区间",
     "col_pnl": "损益",
     "col_return": "回报率",
+    "col_benchmark": "基准",
+    "col_spread": "超额回报",
     "col_realized": "已实现",
     "col_unrealized": "未实现变动",
     "col_flows": "净流入",
