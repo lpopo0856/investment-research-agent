@@ -55,16 +55,6 @@ Use this path if you are comfortable opening Terminal, PowerShell, or Command Pr
 5. Open the `investment-research-agent` folder with your assistant.
 6. Say: “Help me get started.”
 
-## If you already downloaded the ZIP
-
-A ZIP download is fine for a quick demo, but it is a standalone copy. It has no Git history, so the assistant cannot safely align branches or release tags for automatic upgrades.
-
-For long-term use:
-
-1. Keep your ZIP copy until you are sure any private portfolio files are safe.
-2. Install the repo again using Git or GitHub Desktop.
-3. If the ZIP copy already contains real portfolio data, do **not** delete it. Open it with your assistant and ask: “Help me move this ZIP install to a Git install safely.”
-
 ## Useful links
 
 - Project repository: <https://github.com/lpopo0856/investment-research-agent>

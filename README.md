@@ -40,6 +40,16 @@ You do not need to learn project scripts or install technical packages by hand. 
 
 4. **Review before anything is saved.** The assistant previews settings, transaction, and import changes before writing portfolio data, so you can confirm or edit the plan first.
 
+## If you already downloaded the ZIP
+
+A ZIP download is fine for a quick demo, but it is a standalone copy. It has no Git history, so the assistant cannot safely align branches or release tags for automatic upgrades.
+
+For long-term use:
+
+1. Keep your ZIP copy until you are sure any private portfolio files are safe.
+2. Install the repo again using Git or GitHub Desktop.
+3. If the ZIP copy already contains real portfolio data, do **not** delete it. Open it with your assistant and ask: “Help me move this ZIP install to a Git install safely.”
+
 ## Upgrade
 
 To update an existing local copy, open this repo with your assistant and ask:
