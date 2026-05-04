@@ -87,7 +87,7 @@ If yfinance is not installed and the run is interactive (TTY), the script
 asks once whether to `pip install yfinance` and caches the answer for the
 rest of the run. Decline (or running non-interactively) skips yfinance
 silently — every ticker records `yfinance_failure_reason="yfinance_not_installed"`
-and the chain falls through to keyed APIs / web pages / no-token sources
+and the chain falls through to web pages / no-token public sources
 per §8.3.1. `--skip-yfinance` forces the skip path without prompting.
 """
 
@@ -599,7 +599,7 @@ def _auto_correct(
 
     §8.3.1 — rate-limit failures **skip** this loop entirely; retrying yfinance during
     the rate-limit window wastes the §8.3 backoff budget and prolongs the limiter
-    state. The caller continues to keyed APIs / web / no-token instead.
+    state. The caller continues to web / no-token public sources instead.
     """
     if _is_rate_limit_failure_reason(result.yfinance_failure_reason):
         logging.info("Skipping yfinance auto-correction for %s (rate-limited; §8.3.1 tier-down).",
@@ -1078,7 +1078,7 @@ def _build_fallback_chain(
 
 
 def _try_yfinance_per_ticker(symbol: str, pacer: "Pacer", session: Optional[Any]) -> Optional[Dict[str, Any]]:
-    """Wrap `_yfinance_per_ticker_history` to return the same dict shape as Stooq/keyed callers."""
+    """Wrap `_yfinance_per_ticker_history` to return the same dict shape as Stooq/public-source callers."""
     out = _yfinance_per_ticker_history(symbol, pacer, session)
     if out is None:
         return None
@@ -1152,7 +1152,7 @@ def _verify_currency_via_internet(
 
     Strategy (in order):
       1. Keep `pr.currency` if the price-source already supplied a non-empty value
-         (yfinance / keyed APIs usually include it; Stooq does not).
+         (yfinance and some public sources usually include it; Stooq does not).
       2. Direct Yahoo v8 chart endpoint probe — no-auth HTTP that returns canonical
          exchange-confirmed currency/exchange in `chart.result[0].meta.currency`.
          This is the "agent web-search the listing exchange" step the spec's Stooq
@@ -1283,7 +1283,7 @@ def fetch_all_prices(
         if market == MarketType.CRYPTO:
             results[ticker].fallback_chain.append("primary:crypto_native_sources")
 
-    # ---- Per-ticker fetch: Stooq primary → yfinance secondary → keyed APIs --- #
+    # ---- Per-ticker fetch: Stooq primary → yfinance secondary → public fallbacks --- #
     # `skip_yfinance` is repurposed as "no network": skip the entire fetch chain so the
     # parser and JSON shape can be smoke-tested without making any HTTP calls.
     for (ticker, market) in distinct:
@@ -1562,7 +1562,7 @@ def _cli_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     p.add_argument("--output", default=None, type=Path,
                    help="Write JSON output to this path; default: stdout")
     p.add_argument("--skip-yfinance", action="store_true",
-                   help="Skip yfinance AND the keyed/no-token fallback chain — leaves every "
+                   help="Skip yfinance AND the public fallback chain — leaves every "
                         "non-cash ticker at price_source=n/a. Useful for testing the parser and "
                         "JSON shape without making any network calls.")
     p.add_argument("--allow-incomplete-fallbacks", action="store_true",

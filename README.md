@@ -10,6 +10,44 @@ Investment Research Agent is a private, local assistant for tracking your portfo
 
 **[Report Demo](https://lpopo0856.github.io/investment-research-agent/)**
 
+## Quick start
+
+### What you need
+
+- A local coding assistant such as Codex, Claude Code, or another assistant that can read and edit files in this workspace.
+- Git is recommended for installing this repo from GitHub. A ZIP download works for a one-time trial, but it is a standalone copy and cannot use the assistant-managed upgrade flow.
+- Optional broker data, such as a statement, CSV, spreadsheet, PDF, screenshot, or pasted transaction history, if you want the assistant to build your real portfolio.
+
+You do not need to learn project scripts or install technical packages by hand. During onboarding, the assistant checks the local setup, installs the small dependency set if needed, and tells you if something requires your attention.
+
+### Start using it
+
+1. **Install this repo with Git (recommended).** Clone it from `https://github.com/lpopo0856/investment-research-agent.git` and checkout to the latest release. If Git is new to you, follow the [Git beginner install guide](docs/git-install.md). If you only downloaded the ZIP, you can still try it, but future updates are manual; for ongoing use, reinstall with Git.
+
+   ```bash
+   git clone https://github.com/lpopo0856/investment-research-agent.git
+   cd investment-research-agent
+   git checkout "$(git tag --sort=-v:refname | head -n 1)"
+   ```
+
+2. **Open the folder with your assistant.** Use a local assistant that can work with files in this workspace.
+3. **Start in normal language.** Good first prompts are:
+
+   > "Help me get started."
+   > "Create my first investment account."
+   > "Import this broker statement and show me what you found before saving."
+   > "Generate a portfolio report from the demo data."
+
+4. **Review before anything is saved.** The assistant previews settings, transaction, and import changes before writing portfolio data, so you can confirm or edit the plan first.
+
+## Upgrade
+
+To update an existing local copy, open this repo with your assistant and ask:
+
+> "Help me upgrade this repo safely."
+
+The assistant will use the `upgrade-management` skill to back up private portfolio data when needed, update Git-installed repo code and dependencies, check account layout, and stop for confirmation before any migration or portfolio-data write. Git installs can follow the current branch or release tag safely; ZIP/archive installs are treated as standalone copies, so the assistant will explain manual update steps and recommend switching to Git for future upgrades.
+
 ## Main features
 
 You do not need technical setup knowledge. Describe your intention in plain language, and the assistant will handle the workflow. If anything changes saved portfolio data, it will show you the proposed change and ask for confirmation before saving.
@@ -65,15 +103,18 @@ This can include account purpose, risk tolerance, position sizing, holding perio
 
 ### Add and manage accounts
 
-Use natural language to manage multiple accounts:
+Accounts here are just separate ledgers — split them however suits your bookkeeping. Common ways: by person (yourself, spouse, a kid's college fund), by goal (retirement, house, emergency cash), by strategy (core, satellite, speculative), by tax bucket (taxable, tax-advantaged), or, if it fits how you think, by stock market (Taiwan, US, Japan). The tool does not prescribe a split.
 
-> "Create a new account for my Japan portfolio."
 > "Add a retirement account."
+> "Open an account for my spouse."
+> "Add a college fund ledger for my kid."
+> "Add a satellite strategy account for higher-risk bets."
+> "Create a new account for my Japan portfolio."
 > "Show all my accounts."
 > "Which account am I using now?"
 > "Switch to my default account."
 > "Switch to my Taiwan account."
-> "Generate a report for my Japan account."
+> "Generate a report for my retirement account."
 > "Generate a total report across all accounts."
 
 Each account keeps its own settings, transactions, cash, holdings, and reports. Its settings can include a short description/purpose label so account lists are easier to scan. A total report combines accounts for a high-level view while keeping the underlying accounts separate.

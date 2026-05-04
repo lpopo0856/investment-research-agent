@@ -4,7 +4,7 @@
 
 ### 8.0 Subagent prerequisites — `yfinance` + `requests` (HARD)
 
-`requests` is required (HTTP for the no-token tiers). `yfinance` is *preferred* but no longer required: when missing, both `scripts/fetch_prices.py` and `scripts/fetch_history.py` ask the operator once whether to `pip install yfinance` (interactive shells only); decline (or non-interactive) tiers down to keyed APIs / web pages / no-token sources per §8.3.1 without aborting. `--skip-yfinance` on `fetch_prices.py` forces the skip path.
+`requests` is required (HTTP for the no-token tiers). `yfinance` is *preferred* but no longer required: when missing, both `scripts/fetch_prices.py` and `scripts/fetch_history.py` ask the operator once whether to `pip install yfinance` (interactive shells only); decline (or non-interactive) tiers down to web pages / no-token public sources per §8.3.1 without aborting. `--skip-yfinance` on `fetch_prices.py` forces the skip path.
 
 Before ad-hoc yfinance code or a REPL quote probe (NOT needed when running the scripts themselves — they self-probe):
 
@@ -28,9 +28,9 @@ Asset-native first; never yfinance-first globally.
 | 1 listed securities `[US/TW/TWO/JP/HK/LSE]` | Stooq JSON primary: `https://stooq.com/q/l/?s=<ticker>.<suffix>&f=sd2t2ohlcv&h&e=json`; after every hit verify currency via Yahoo v8 chart `chart.result[0].meta.currency`; then yfinance per-ticker secondary. |
 | 1 FX | yfinance `<PAIR>=X` primary; Stooq does not cover FX. |
 | 1 crypto | Binance public spot where pair exists → CoinGecko. Do not use yfinance / Stooq for crypto unless spec changes. |
-| 2 keyed APIs | Use relevant optional keys from `SETTINGS.md`; missing / quota-limited keys are skipped. |
-| 3 agent web search / quote pages | Mandatory after unresolved tiers 1-2. Search price **and trading currency**; read public pages; record source URL, retrieval time, timestamp / prior-close context. |
-| 4 no-token APIs | Mandatory after tier 3 fails or blocks. Record as no-token fallback. |
+| 2 | Reserved; authenticated/keyed providers have been removed. |
+| 3 agent web search / quote pages | Mandatory after unresolved automated tiers. Search price **and trading currency**; read public pages; record source URL, retrieval time, timestamp / prior-close context. |
+| 4 no-token public endpoints | Mandatory after tier 3 fails or blocks. Record as no-token fallback. |
 
 Accept only values passing §8.7 Freshness gate. Conflict rule: prefer fresher credible timestamp + clearer market coverage; audit rejected source + reason.
 
@@ -39,8 +39,8 @@ Accept only values passing §8.7 Freshness gate. Conflict rule: prefer fresher c
 ### 8.2 Primary policy and required returned fields
 
 - Listed securities: Stooq JSON primary → Yahoo v8 currency verify → yfinance per-ticker secondary → §8.5 fallbacks.
-- FX: yfinance pair primary → keyed Twelve Data / Alpha Vantage → Frankfurter / Open ExchangeRate-API / official reference → web if needed.
-- Crypto: Binance → CoinGecko → keyed CoinGecko / Alpha Vantage / FMP → web → no-token.
+- FX: yfinance pair primary → Frankfurter / Open ExchangeRate-API / official reference → web if needed.
+- Crypto: Binance → CoinGecko → web → no-token public endpoints.
 - Company/event data priority: company IR, SEC / exchange filings, official releases, then StockAnalysis, Nasdaq, Yahoo Finance, Reuters, CNBC, MarketWatch.
 - Refresh each holding for latest price, prior close / 24h ref, move %, timestamp/as-of, currency, exchange, market cap, valuation multiples (PE, forward PE, PS, EV/EBITDA where relevant), volume, next earnings date, imminent material event, failure reason.
 
@@ -65,13 +65,12 @@ Rate-limit failures **do not** retry yfinance and never enter §8.4 symbol/forma
 ```
 yfinance 429 / YFRateLimitError / throttled empty history
 → failure_reason=rate_limited (no retry on yfinance), skip §8.4
-→ tier 2 keyed APIs
 → tier 3 web quote pages
 → tier 4 no-token APIs
 → only then price_source="n/a"
 ```
 
-Rules: distinguish `rate_limited` from `symbol_not_found` / `empty_history` / `exception`; process per ticker; never treat batch failure as whole-book degradation; each walked tier appends `fallback_chain` (`tier3:yahoo_quote_page`, `tier4:stooq_json`, etc.) and updates `price_source`, `price_as_of`, `price_freshness`. Exhaustive `n/a` audit example: `yfinance:rate_limited · keyed:no key · web:yahoo/google/nasdaq page-not-found · no-token:stooq empty,yahoo chart 401 · price_freshness:stale_after_exhaustive_search`.
+Rules: distinguish `rate_limited` from `symbol_not_found` / `empty_history` / `exception`; process per ticker; never treat batch failure as whole-book degradation; each walked tier appends `fallback_chain` (`tier3:yahoo_quote_page`, `tier4:stooq_json`, etc.) and updates `price_source`, `price_as_of`, `price_freshness`. Exhaustive `n/a` audit example: `yfinance:rate_limited · web:yahoo/google/nasdaq page-not-found · no-token:stooq empty,yahoo chart 401 · price_freshness:stale_after_exhaustive_search`.
 
 ### 8.4 yfinance symbol/format recovery (3 attempts)
 
@@ -101,7 +100,7 @@ Stooq currency rule: Stooq has no currency. Script verifies through Yahoo v8 cha
 
 ### 8.6 No-token data sources only
 
-Price retrieval uses only no-token public endpoints (Stooq, Yahoo public chart, Binance, CoinGecko, Frankfurter / ECB, Open ExchangeRate-API, TWSE / TPEx) and `yfinance`. There are no API keys or paid-source overrides; never leak tokens, authenticated URLs, or third-party credentials into HTML.
+Price retrieval uses only no-token public endpoints (Stooq, Yahoo public chart, Binance, CoinGecko, Frankfurter / ECB, Open ExchangeRate-API, TWSE / TPEx) and `yfinance`. There are no paid-source overrides; never leak tokens, authenticated URLs, or third-party credentials into HTML.
 
 ### 8.7 Freshness gate
 
@@ -115,7 +114,7 @@ Determine exchange calendar, timezone, local market date, regular-session state 
 | Weekend/holiday/closed all day | Most recent opened trading-day official/credible close. | Older closes; if unverifiable `n/a`. |
 | 24/7 crypto | Fresh spot with retrieval/source timestamp. | Stale snapshot when fresher source exists. |
 
-Opened-market strictness: prior-session/stale value cannot be accepted until Stooq primary, yfinance secondary, up to 3 yfinance symbol fixes, configured APIs, web pages, and no-token fallbacks are exhausted. Degraded fallback after exhaustion: use freshest credible value only with `price_freshness=stale_after_exhaustive_search`, full attempted-source audit, visible data-gap/alert text. Unsourced numeric guesses forbidden; own derivations label `estimate`.
+Opened-market strictness: prior-session/stale value cannot be accepted until Stooq primary, yfinance secondary, up to 3 yfinance symbol fixes, web pages, and no-token fallbacks are exhausted. Degraded fallback after exhaustion: use freshest credible value only with `price_freshness=stale_after_exhaustive_search`, full attempted-source audit, visible data-gap/alert text. Unsourced numeric guesses forbidden; own derivations label `estimate`.
 
 ### 8.8 Stored fields per ticker
 

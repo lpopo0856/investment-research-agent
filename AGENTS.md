@@ -27,11 +27,12 @@ Core workflow skills:
 - `skills/onboarding/SKILL.md` — new users, missing account files, legacy-layout migration, statement import bootstrap.
 - `skills/transaction-management/SKILL.md` — trades, cash flows, dividends, corrections, broker CSV/JSON imports.
 - `skills/account-management/SKILL.md` — account detect/list/use/create/migrate, with side-effect classification.
-- `skills/settings-management/SKILL.md` — `SETTINGS.md` setup/review/edit, strategy interview, API-key edits.
+- `skills/settings-management/SKILL.md` — `SETTINGS.md` setup/review/edit and strategy interview.
 - `skills/report-management/SKILL.md` — `daily_report` / `portfolio_report` / all-accounts / demo HTML pipeline gate.
 - `skills/investment-analysis/SKILL.md` — ad hoc stock / ETF / crypto / market / portfolio analysis without HTML generation.
 - `skills/context-economy/SKILL.md` — context-drop / temp-researcher gate for large extraction or research phases.
 - `skills/split-asset-account/SKILL.md` — auditable account split / sleeve migration.
+- `skills/upgrade-management/SKILL.md` — safe repo upgrade/update flow with backup, dependency refresh, and account-layout migration gates.
 
 Canonical docs behind those skills:
 
@@ -48,6 +49,6 @@ Canonical docs behind those skills:
 1. **Protected files:** do not edit/delete account `SETTINGS.md` or `transactions.db` unless the user explicitly asks and the matching skill/doc confirmation gate has passed.
 2. **Multi-account preflight:** before any non-interactive script reads account `SETTINGS.md` or `transactions.db`, run `python scripts/transactions.py account detect`. Run migration only when the detector prints exactly `migrate`; stop on `partial`; do not migrate on `clean` or `demo_only_at_root`.
 3. **Ledger writes:** use `skills/transaction-management/SKILL.md`. Never insert/import without parsed plan, canonical JSON or `/tmp` JSON path, resulting-state preview, explicit same-turn `yes`, backup, and verify. Never SQL-update/delete ledger rows or edit derived tables directly.
-4. **Settings writes:** use `skills/settings-management/SKILL.md`. Never write without proposed content or unified diff, explicit same-turn `yes`, and backup for existing files. Never invent strategy or leak keys.
+4. **Settings writes:** use `skills/settings-management/SKILL.md`. Never write without proposed content or unified diff, explicit same-turn `yes`, and backup for existing files. Never invent strategy or leak secrets.
 5. **Report generation:** use `skills/report-management/SKILL.md`. Report intermediates stay under `/tmp`; final HTML only goes to the configured reports path; `portfolio_report` must not gather daily decision/news/action content.
 6. **Skill drift check:** after changing project skills, run `python scripts/validate_project_skills.py`.

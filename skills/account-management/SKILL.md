@@ -5,6 +5,10 @@ description: Manage the repo's multi-account layout safely by classifying accoun
 
 # Account Management
 
+## Account Concept
+
+Accounts are separate ledgers — a bookkeeping container, not a market label. Users split them however suits their record-keeping: by person (self, spouse, a kid's college fund), by goal (retirement, house, emergency cash), by strategy (core, satellite, speculative), by tax bucket (taxable, tax-advantaged), or by stock market (Taiwan, US, Japan). Treat all of these as equally valid framings — do not assume a market-based split. When the user names a new account ("open an account for my spouse", "add a college fund ledger", "create a satellite strategy account"), accept their framing and create the account under that label; do not rewrite a person- or goal- or strategy-based name into a market label, and do not require the user to justify their split.
+
 ## Core Rule
 
 Account management changes repository layout and active-account resolution. Follow `docs/onboarding_agent_guidelines.md` and `docs/transactions_agent_guidelines.md`; classify side effects before every command.

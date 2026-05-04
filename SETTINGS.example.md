@@ -10,7 +10,7 @@ The agent reads this file on every run to set tone, language, and risk handling.
 
 Describe what this account is for. Keep this short: one sentence or phrase that
 helps you and the agent distinguish accounts when listing, switching, importing,
-or generating reports. Do not put API keys or sensitive account numbers here.
+or generating reports. Do not put sensitive account numbers or secrets here.
 
 - Description: Example taxable brokerage account for long-term global equities.
 

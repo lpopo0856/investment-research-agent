@@ -1,6 +1,6 @@
 ---
 name: investment-help
-description: Render the repo's state-aware capability menu for investment workflows. Use when the user asks "help", "what can I do here", "what can you do", "show me what's possible", "now what", or does not know where to start; route specific requests directly to onboarding, transaction-management, settings-management, research, or report workflows instead of rendering the menu.
+description: Render the repo's state-aware capability menu for investment workflows. Use when the user asks "help", "what can I do here", "what can you do", "show me what's possible", "now what", or does not know where to start; route specific requests directly to onboarding, transaction-management, settings-management, upgrade-management, research, or report workflows instead of rendering the menu.
 ---
 
 # Investment Help
@@ -31,7 +31,8 @@ If the user already asks for a specific workflow, skip the menu and route direct
 - setup/import/new user → `skills/onboarding/SKILL.md`
 - trade/cash/dividend/correction/import write → `skills/transaction-management/SKILL.md`
 - account list/switch/create/migrate → `skills/account-management/SKILL.md`
-- settings/strategy/language/base currency/API keys → `skills/settings-management/SKILL.md`
+- settings/strategy/language/base currency → `skills/settings-management/SKILL.md`
+- upgrade/update/pull latest/safe migration check → `skills/upgrade-management/SKILL.md`
 - report generation → `skills/report-management/SKILL.md`
 - investment research → `skills/investment-analysis/SKILL.md`
 

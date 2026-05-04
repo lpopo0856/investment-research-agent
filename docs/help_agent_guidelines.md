@@ -24,8 +24,8 @@ Trigger on any of:
 - A user who has just finished onboarding and asks "now what?"
 
 If the user is asking about a *specific* capability already
-("generate a report", "log a trade", "import this CSV"), do **not**
-render the help menu — route directly to the relevant workflow doc.
+("generate a report", "log a trade", "import this CSV", "upgrade this repo"), do **not**
+render the help menu — route directly to the relevant workflow doc or skill.
 
 ## 2. State-aware reply
 
@@ -156,8 +156,9 @@ enumerate every SETTINGS field in the menu reply.
   manual CLI lives in `README.md` "Manual setup (fallback)").
 - Schema / field reference (lives in `docs/transactions_agent_guidelines.md` §2).
 - Report section taxonomy (lives in `docs/portfolio_report_agent_guidelines/`).
-- API key setup, advanced flags, demo ledger workflow. Mention these
-  only if the user asks specifically.
+- Advanced flags, demo ledger workflow, and upgrade workflow. Mention these
+  only if the user asks specifically; upgrade requests route to
+  `skills/upgrade-management/SKILL.md`.
 
 ## 6. Format and length
 

@@ -40,7 +40,7 @@ not invent or hard-code holdings — always read fresh from the DB.
 
 **Path resolution:** `SETTINGS.md` lives under the active account directory (`accounts/<active>/SETTINGS.md`), resolved by the same `--account` / `accounts/.active` / `default` chain as §4.1. Explicit `--settings <path>` overrides `--account` for that flag.
 
-Read every run for account description, language, tone, `## Investment Style And Strategy`, optional sizing rails, optional API keys (§8.6). Settings rails override spec defaults. The account description is a short purpose label from `## Account description (optional)` / `- Description: ...`; it is metadata for identifying account intent, not a strategy substitute and not a place for secrets.
+Read every run for account description, language, tone, `## Investment Style And Strategy`, optional sizing rails. Settings rails override spec defaults. The account description is a short purpose label from `## Account description (optional)` / `- Description: ...`; it is metadata for identifying account intent, not a strategy substitute and not a place for secrets.
 
 ### 4.3 Auto-classify
 
@@ -82,7 +82,7 @@ Every user-facing HTML string uses SETTINGS language; no bilingual labels or Eng
 ### 5.1 Rules
 
 - `<html lang>` and `<title>` match language; filename remains ASCII.
-- Translate section titles, headers, KPI labels, badges, tag text, callouts, action labels, tooltips/popovers, prose, natural-language source/freshness labels. Provider names may stay English (`Twelve Data`, `Finnhub`, `CoinGecko`, `TWSE`). No session-state badges.
+- Translate section titles, headers, KPI labels, badges, tag text, callouts, action labels, tooltips/popovers, prose, natural-language source/freshness labels. Provider names may stay English (`CoinGecko`, `TWSE`, `Yahoo Finance`). No session-state badges.
 - Translate visible tag chips (`High vol`, `Long`, `Mid`, `Rich val`); CSS class hooks stay English.
 - Missing/unparseable `SETTINGS.md` → English default and masthead meta `n/a`.
 - Renderer loads stable dictionaries for English / Traditional Chinese / Simplified Chinese from `scripts/i18n/`.
@@ -168,7 +168,7 @@ Temp wrangling scripts and one-off scrapers go under `/tmp` and are removed with
 
 ### 7.2 Inline JavaScript
 
-Allowed only for optional Symbol/Price popover ergonomics if CSS descendant pattern (§13.3) cannot cover target browser behavior. Constraints: inline `<script>` only; no `<script src>`; no third-party libs/bundlers/transpiled output; hand-written ES2020; page remains valid/complete with JS disabled/offline; no API keys/tokens/user-identifying headers/market endpoints/`fetch`/XHR/polling/runtime quote refresh. Agent may call APIs only during generation using optional `SETTINGS.md` keys.
+Allowed only for optional Symbol/Price popover ergonomics if CSS descendant pattern (§13.3) cannot cover target browser behavior. Constraints: inline `<script>` only; no `<script src>`; no third-party libs/bundlers/transpiled output; hand-written ES2020; page remains valid/complete with JS disabled/offline; no tokens/user-identifying headers/market endpoints/`fetch`/XHR/polling/runtime quote refresh. Agent may call public data endpoints only during generation.
 
 ### 7.3 Self-containment grep
 
@@ -178,4 +178,4 @@ Run:
 rg -n "<script\\s+src=|<link[^>]+stylesheet|href=.*\\.css" reports/*.html
 ```
 
-For each hit, verify citation-only; otherwise inline. If any `<script>` exists, verify no `fetch`, `XMLHttpRequest`, API keys, market endpoints.
+For each hit, verify citation-only; otherwise inline. If any `<script>` exists, verify no `fetch`, `XMLHttpRequest`, tokens, or market endpoints.

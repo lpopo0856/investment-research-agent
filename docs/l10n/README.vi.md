@@ -10,6 +10,49 @@ Investment Research Agent là trợ lý đầu tư riêng tư chạy trong máy 
 
 **[Report Demo](https://lpopo0856.github.io/investment-research-agent/)**
 
+## Bắt đầu nhanh
+
+### Bạn cần chuẩn bị gì
+
+- Một coding assistant cục bộ như Codex, Claude Code hoặc trợ lý khác có thể đọc và sửa file trong workspace này.
+- Nên cài repo này từ GitHub bằng Git. Nếu bạn chưa biết Git hoặc chưa cài Git, hãy bắt đầu với [hướng dẫn cài Git cho người mới](git-install.vi.md). Tải ZIP vẫn dùng được để thử một lần, nhưng đó là bản sao độc lập và không dùng được quy trình nâng cấp do trợ lý quản lý.
+- Dữ liệu công ty chứng khoán tùy chọn nếu bạn muốn trợ lý dựng danh mục thật, như sao kê, CSV, bảng tính, PDF, ảnh chụp màn hình hoặc lịch sử giao dịch dán vào.
+
+Bạn không cần học script của dự án hoặc tự cài các gói kỹ thuật. Trong onboarding, trợ lý sẽ kiểm tra môi trường cục bộ, cài bộ dependency nhỏ nếu cần, và cho bạn biết nếu có việc cần chú ý.
+
+### Bắt đầu sử dụng
+
+1. **Cài repo này bằng Git (khuyến nghị).** Clone từ `https://github.com/lpopo0856/investment-research-agent.git`, rồi mở thư mục. Nếu Git còn mới với bạn, hãy làm theo [hướng dẫn cài Git cho người mới](git-install.vi.md). Nếu bạn chỉ tải ZIP, bạn vẫn có thể dùng thử, nhưng cập nhật sau này phải làm thủ công; để dùng lâu dài, nên cài bằng Git.
+2. **Mở thư mục bằng trợ lý của bạn.** Dùng trợ lý cục bộ có thể làm việc với file trong workspace này.
+3. **Bắt đầu bằng ngôn ngữ bình thường.** Bạn có thể bắt đầu như sau:
+
+   > "Hãy chuyển repo này sang release tag mới nhất, rồi giúp tôi bắt đầu."
+   > "Tạo tài khoản đầu tư đầu tiên cho tôi."
+   > "Nhập sao kê công ty chứng khoán này và cho tôi xem bạn đọc được gì trước khi lưu."
+   > "Tạo báo cáo danh mục từ dữ liệu demo."
+
+   Câu mở đầu nên dùng đúng dòng chuyển release tag ở trên — nó đảm bảo bạn đang ở bản phát hành mới nhất trước khi có dữ liệu danh mục nào bị ghi, và hoạt động cho cả người cài bằng Git CLI lẫn GitHub Desktop.
+
+4. **Xem lại trước khi lưu.** Trợ lý sẽ xem trước các thay đổi về cài đặt, giao dịch và dữ liệu nhập trước khi ghi dữ liệu danh mục, để bạn có thể xác nhận hoặc chỉnh sửa kế hoạch trước.
+
+## Nếu bạn đã tải ZIP
+
+Tải ZIP vẫn ổn để thử demo nhanh, nhưng đó là bản sao độc lập. Nó không có Git history, nên trợ lý không thể tự động căn chỉnh branch hoặc release tag để nâng cấp an toàn.
+
+Để dùng lâu dài:
+
+1. Giữ bản ZIP cho đến khi bạn chắc chắn các file danh mục riêng tư đã an toàn.
+2. Cài lại repo bằng Git hoặc GitHub Desktop.
+3. Nếu bản ZIP đã chứa dữ liệu danh mục thật, đừng xóa nó. Mở thư mục đó bằng trợ lý và nói: “Giúp tôi chuyển bản cài ZIP này sang bản cài Git một cách an toàn.”
+
+## Nâng cấp
+
+Để cập nhật một repo đã có trên máy, hãy mở thư mục này bằng trợ lý và nói:
+
+> "Hãy giúp tôi nâng cấp repo này một cách an toàn."
+
+Trợ lý sẽ dùng skill `upgrade-management` để sao lưu dữ liệu danh mục riêng tư khi cần, cập nhật code repo và dependency đối với bản cài bằng Git, kiểm tra layout tài khoản, và dừng lại để xin xác nhận trước mọi migration hoặc ghi dữ liệu danh mục. Bản cài bằng Git có thể theo branch hiện tại hoặc release tag một cách an toàn; bản ZIP/archive được xem là bản sao độc lập, nên trợ lý chỉ hướng dẫn cập nhật thủ công và khuyến nghị chuyển sang Git cho các lần nâng cấp sau.
+
 ## Tính năng chính
 
 Bạn không cần biết chi tiết kỹ thuật. Chỉ cần mô tả ý định bằng lời nói thường ngày, trợ lý sẽ xử lý quy trình. Nếu có thao tác thay đổi dữ liệu danh mục đã lưu, trợ lý sẽ cho bạn xem thay đổi dự kiến và chờ xác nhận trước khi lưu.
@@ -64,15 +107,18 @@ Nội dung có thể gồm khẩu vị rủi ro, quy mô vị thế, thời gian
 
 ### Thêm và quản lý tài khoản
 
-Quản lý nhiều tài khoản bằng ngôn ngữ tự nhiên:
+"Tài khoản" ở đây chỉ là sổ ghi chép tách riêng. Bạn chia sao cũng được: theo người (bạn, vợ/chồng, quỹ học vấn của con), theo mục đích (hưu trí, mua nhà, quỹ khẩn cấp), theo chiến lược (lõi, vệ tinh, vị thế thử nghiệm), theo phân loại thuế, hoặc nếu quen, theo thị trường (Việt Nam, Mỹ, Nhật Bản). Công cụ không bắt buộc cách chia.
 
-> "Tạo tài khoản mới cho danh mục Nhật Bản của tôi."
 > "Thêm tài khoản hưu trí."
+> "Tạo tài khoản cho vợ/chồng tôi."
+> "Thêm sổ ghi quỹ học vấn cho con."
+> "Tạo tài khoản chiến lược vệ tinh (vị thế nhỏ, rủi ro cao)."
+> "Tạo tài khoản mới cho danh mục Nhật Bản của tôi."
 > "Hiển thị tất cả tài khoản của tôi."
 > "Hiện tôi đang dùng tài khoản nào?"
 > "Chuyển sang tài khoản mặc định."
 > "Chuyển sang tài khoản Việt Nam."
-> "Tạo báo cáo cho tài khoản Nhật Bản."
+> "Tạo báo cáo cho tài khoản hưu trí."
 > "Gộp tất cả tài khoản để tạo báo cáo tổng hợp."
 
 Mỗi tài khoản có cài đặt, giao dịch, tiền mặt, vị thế và báo cáo riêng. Báo cáo tổng hợp tạo góc nhìn cấp cao nhưng dữ liệu gốc của từng tài khoản vẫn tách biệt.
@@ -114,7 +160,6 @@ Trợ lý sẽ giải thích thay đổi dự kiến trước khi lưu.
 
 Mẹo nhập liệu:
 
-- Nếu bạn nắm giữ cổ phiếu niêm yết tại Đài Loan, file xuất từ Sở giao dịch chứng khoán Đài Loan thường là nguồn tốt khi có sẵn.
 - Nếu PDF có mật khẩu, hãy tự mở và lưu một bản không mật khẩu trước khi nhập.
 - Nếu file rất lớn, đặc biệt là PDF, hãy chia thành các phần nhỏ hơn.
 - Nếu nội dung nhập có điểm mơ hồ, trợ lý sẽ hỏi bạn xác nhận cách hiểu trước khi lưu.

@@ -1,13 +1,13 @@
 ---
 name: settings-management
-description: Safely set up, review, or edit an account SETTINGS.md through the canonical settings interview and diff-confirm workflow. Use when the user wants to change account description, language, base currency, time zone, API keys, investment strategy, rails, or asks what strategy is internalized; never invent strategy or store settings outside the account file.
+description: Safely set up, review, or edit an account SETTINGS.md through the canonical settings interview and diff-confirm workflow. Use when the user wants to change account description, language, base currency, time zone, investment strategy, rails, or asks what strategy is internalized; never invent strategy or store settings outside the account file.
 ---
 
 # Settings Management
 
 ## Core Rule
 
-Follow `docs/settings_agent_guidelines.md` end to end. Settings edits are user-authored configuration changes, not agent inference. Never invent account purpose, investment strategy, risk tolerance, sizing rails, API keys, or preferences the user did not state.
+Follow `docs/settings_agent_guidelines.md` end to end. Settings edits are user-authored configuration changes, not agent inference. Never invent account purpose, investment strategy, risk tolerance, sizing rails, or preferences the user did not state.
 
 ## Natural-Language User Interface
 
@@ -28,7 +28,7 @@ Stop on `partial`. If the settings workflow needs an account scaffold, route to 
 
 Bootstrap from `SETTINGS.example.md` only under the settings workflow in `docs/settings_agent_guidelines.md`. For first creation, create `accounts/<active>/SETTINGS.md` from the template only after the workflow has established the active account and the user-facing settings path.
 
-Do not store API keys, strategy drafts, or derived preferences anywhere outside `accounts/<active>/SETTINGS.md` except transient `/tmp` work files that are cleaned up.
+Never store strategy drafts or derived preferences outside SETTINGS.md except transient `/tmp` work files that are cleaned up.
 
 ## Diff-Confirm Edit Gate
 
@@ -38,7 +38,7 @@ Before confirmed edits to an existing settings file, back it up:
 cp accounts/<active>/SETTINGS.md accounts/<active>/SETTINGS.md.bak
 ```
 
-Then show the proposed full content or a unified diff. For API key edits, show a masked diff only; never echo full secrets back to the user.
+Then show the proposed full content or a unified diff.
 
 Require explicit same-turn `yes` before writing. The confirmation prompt should be the settings workflow prompt, for example:
 
@@ -52,6 +52,6 @@ For a new strategy section or first creation, show the full proposed section/con
 
 - Backup before editing an existing `accounts/<active>/SETTINGS.md`; first creation is the only backup exception.
 - Never rewrite strategy from defaults or market views; ask the user or leave neutral/default text as explicitly labeled fallback.
-- Never place keys or strategy in another file, project memory, report context, or ledger metadata.
+- Never place strategy or derived preferences in another file, project memory, report context, or ledger metadata.
 - Keep account description/language/base currency/time zone changes inside `SETTINGS.md` and verify by re-reading the changed section after write.
 - Do not edit `transactions.db`, `open_lots`, `cash_balances`, reports, or Python scripts as part of settings management.

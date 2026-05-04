@@ -13,6 +13,31 @@ Onboarding is a router, not an absorber. Follow `docs/onboarding_agent_guideline
 
 Treat natural language as the only default user interface. Command snippets, flags, paths, and machine formats below are internal agent contracts or audit evidence, not user instructions. Execute eligible steps yourself via tools, summarize results naturally, and collect missing parameters conversationally. Do not ask the user to run commands, choose flags, know canonical command names, assemble files, or write JSON unless they explicitly request CLI/API instructions or execution is blocked by missing authority. Confirmation gates ask for the required decision in natural language and must not delegate command execution or machine formatting to the user.
 
+## Environment Preflight
+
+For new-user onboarding, the agent owns the technical setup check. Do not send the user to README for Python or package installation steps.
+
+Run a lightweight environment check before account/layout work:
+
+```bash
+python3 --version
+python3 - <<'PY'
+import importlib.util
+missing = [m for m in ("requests", "yfinance") if importlib.util.find_spec(m) is None]
+print(",".join(missing) if missing else "ok")
+PY
+```
+
+If Python is missing or older than 3.11, stop before account work and ask in natural language whether the user wants you to try installing or updating Python 3.11+ for them. Because this is a system-level change, require an explicit same-turn `yes` before attempting it. If confirmed, use the safest available local installer/package manager for the platform; if no safe installer is available or installation fails, report the blocker and explain that Python 3.11+ is needed before onboarding can continue. Do not invent credentials or bypass OS prompts.
+
+If Python is usable and only dependencies are missing, install the small runtime dependency set yourself:
+
+```bash
+python3 -m pip install yfinance requests
+```
+
+If dependency installation fails, report the blocker and continue only with workflow parts that do not require the missing dependency. Do not ask the user to run pip commands unless execution is blocked by local permissions or they explicitly ask for manual CLI instructions.
+
 ## Layout Preflight Gate
 
 Before any script reads `SETTINGS.md` or `transactions.db`, run the C-8 layout preflight:
@@ -37,14 +62,15 @@ Never run `python scripts/transactions.py account migrate --yes` unless `account
 
 ## Routing Workflow
 
+0. Run the environment preflight above.
 1. Detect account state with `python scripts/transactions.py account detect`.
-2. If an account must be created, use the canonical scaffold command:
+2. If an account must be created, accept the user's framing for the name — accounts are separate ledgers and can be split by person (self / spouse / a kid's college fund), goal (retirement / house / emergency), strategy (core / satellite / speculative), tax bucket (taxable / tax-advantaged), or stock market (Taiwan / US / Japan). The canonical framing lives in `skills/account-management/SKILL.md` under "Account Concept". Do not rewrite a person/goal/strategy name into a market label. Then use the canonical scaffold command:
 
 ```bash
 python scripts/transactions.py account create <name>
 ```
 
-3. For language, base currency, time zone, API keys, or strategy text, switch to `docs/settings_agent_guidelines.md`. Bootstrap from `SETTINGS.example.md` only under that settings workflow, and keep its diff-confirm gate.
+3. For language, base currency, time zone, or strategy text, switch to `docs/settings_agent_guidelines.md`. Bootstrap from `SETTINGS.example.md` only under that settings workflow, and keep its diff-confirm gate.
 4. For trades, cash, broker CSV/JSON, or converted statement imports, switch to `docs/transactions_agent_guidelines.md`. Keep the transaction confirmation, backup, and verify gates.
 5. After onboarding verification, stop at the user's completed setup state. Do not immediately offer report generation; wait for a separate report request.
 

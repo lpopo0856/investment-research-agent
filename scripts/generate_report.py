@@ -4867,7 +4867,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             print(
                 f"WARNING: --output {output_path} appears to be a demo report but --settings "
                 f"is the root default ({settings_path}). Pass --settings demo/SETTINGS.md to "
-                "keep the demo run from reading your real strategy / language / API keys.",
+                "keep the demo run from reading your real strategy / language / base currency.",
                 file=sys.stderr,
             )
 

@@ -28,6 +28,8 @@ In the multi-account layout, each account owns its settings file:
 accounts/<active>/SETTINGS.md
 ```
 
+`Account description` inside `SETTINGS.md` is a free-form purpose label — it can capture any framing the user chose for that ledger (a family member, a goal like retirement or a kid's college fund, a strategy bucket like core or satellite, a tax bucket, or a stock market). Use the user's own wording verbatim; do not normalize a person- or goal- or strategy-based label into a market label. The canonical framing lives in `skills/account-management/SKILL.md` under "Account Concept".
+
 Resolve the target account before reading or editing settings. Use the account named by the user when present; otherwise use the active account via `accounts/.active`, falling back to `default` only when safely resolvable. Before editing, confirm the resolved account in natural language:
 
 ```sh
@@ -50,7 +52,7 @@ Trigger on any of:
 - "Edit my SETTINGS." / "Review my SETTINGS." / "Update my style."
 - "What strategy did you internalise?" — read-only review variant.
 - The user wants to change account description, `Language`, `Base currency`,
-  sizing rails, or API keys.
+  sizing rails.
 
 If the user is asking a *research* question or a *transaction* question,
 do **not** start the settings interview. Route to the matching doc.
@@ -70,9 +72,7 @@ do **not** start the settings interview. Route to the matching doc.
 4. **Never** paraphrase the user's words in a way that loses risk
    nuance ("I can take big drawdowns if EV is positive" is *not* the
    same as "I have high risk tolerance"). Quote close to the source.
-5. **Never** add API keys you generated, guessed, or remembered from
-   another session. Keys come from the user's own paste only.
-6. **Never** store the user's strategy or keys outside `SETTINGS.md`
+5. **Never** store the user's strategy outside `SETTINGS.md`
    (no agent memory, no notepad, no commit). `SETTINGS.md` is
    gitignored; anything else is a leak.
 
@@ -124,12 +124,12 @@ not answer or says "use defaults". Confirm before writing.
 
 | Field | Default | Notes |
 |-------|---------|-------|
-| `Account description` | blank / user-provided | Optional one-sentence purpose label stored as `- Description: ...` under `## Account description (optional)`. Useful for distinguishing brokerage, retirement, regional, or strategy accounts. Do not ask for account numbers or secrets. |
+| `Account description` | blank / user-provided | Optional one-sentence purpose label stored as `- Description: ...` under `## Account description (optional)`. Useful for distinguishing ledgers split by person (self, spouse, a kid's college fund), goal (retirement, house, emergency), strategy (core, satellite, speculative), tax bucket (taxable, tax-advantaged), or stock market — see `skills/account-management/SKILL.md` "Account Concept". Do not ask for account numbers or secrets. |
 | `Language` | `english` | Built-in dictionaries: `english`, `traditional chinese`, `simplified chinese`. Other single-language values allowed. Detect from the user's prior messages — do not ask in English if they wrote in Chinese. |
 | `Base currency` | `USD` | ISO 4217 (`USD`, `TWD`, `JPY`, `HKD`, `GBP`, `EUR`, …). Pick once and keep stable. |
 | `Time zone` | `Asia / Taipei` | Optional. From the example template's "Reporting cadence". |
 
-Do **not** ask about reporting cadence, sample sizing rails, or API keys
+Do **not** ask about reporting cadence or sample sizing rails
 in this batch. The defaults in `SETTINGS.example.md` are reasonable; the
 user can edit them later (§5).
 
@@ -201,15 +201,7 @@ have"):
 Write only on `yes`. On `edit`, ask which bullet to change. On `no`,
 keep the example template intact and move on.
 
-### 4.5 API keys block
-
-Leave the optional Market Data API Keys block blank in the cold start.
-Tell the user once: "There is an optional `Market Data API Keys` block
-at the bottom of `SETTINGS.md` for fallback price providers. You can
-fill it in later by saying 'set my Twelve Data key' — keys never enter
-git." Do not interview for keys.
-
-### 4.6 Wrap-up
+### 4.5 Wrap-up
 
 After the file is written, run no commands; `accounts/<active>/SETTINGS.md`
 is read on-demand by every workflow (resolved via `--account <name>` or
@@ -229,16 +221,12 @@ When `SETTINGS.md` already exists:
    - Base currency: <value>
    - Strategy bullets: <count> — first 2–3 paraphrased
    - Sizing rails: <single-name / theme / high-vol / cash-floor>
-   - API keys set: <comma list of provider names with non-empty values, or "none">
 3. Ask: "What would you like to change?" Do not auto-edit.
 4. For each change request:
    - **Strategy edits** — re-run the relevant §4.3 dimension, show the
      before/after of just that bullet, confirm.
    - **Light field edits** (account description, language, base currency, rails, time zone)
      — show before/after, confirm.
-   - **API key edits** — accept the user's pasted key as-is; never
-     reformat or "validate" it. Show the masked key (`sk-…last4`) in
-     the diff, not the full value.
 5. Before writing: `cp accounts/<active>/SETTINGS.md accounts/<active>/SETTINGS.md.bak`.
 6. Show a unified diff (or full new section for strategy rewrites) and
    ask: `Confirm and write? (yes / no / edit)`.
@@ -277,5 +265,4 @@ dictionary handling is a separate concern documented in
   Add to the example template first via a separate spec change, then
   the interview can pick it up.
 - Saving any answer outside `SETTINGS.md` — no agent memory, no
-  notepad, no shared store. Strategy and keys are local-only by
-  design.
+  notepad, no shared store. Strategy is local-only by design.

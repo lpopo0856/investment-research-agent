@@ -188,11 +188,11 @@ Reply in SETTINGS language with absolute HTML path, most important rendered aler
 
 ### A.3 Self-containment
 
-- [ ] No `<script src>`, stylesheet link, CDN chart lib, runtime `fetch`/XHR/API key/market endpoint; valid with JS disabled; self-containment grep clean; single `<style>` ordered tokens→base→layout→components.
+- [ ] No `<script src>`, stylesheet link, CDN chart lib, runtime `fetch`/XHR/token/market endpoint; valid with JS disabled; self-containment grep clean; single `<style>` ordered tokens→base→layout→components.
 
 ### A.4 Latest-price retrieval
 
-- [ ] §8.0 import/install probe + `subagent_prerequisites`; market-native primary order honored (Stooq+Yahoo currency verify → yfinance listed secondary; yfinance FX; Binance/CoinGecko crypto); yfinance pacing respected; 429 tier-down skipped §8.4; no dangling `agent_web_search:TODO`; symbol failures got ≤3 auto-fixes; per-asset fallback order + Freshness gate + §8.8 fields; no leaked keys/auth URLs.
+- [ ] §8.0 import/install probe + `subagent_prerequisites`; market-native primary order honored (Stooq+Yahoo currency verify → yfinance listed secondary; yfinance FX; Binance/CoinGecko crypto); yfinance pacing respected; 429 tier-down skipped §8.4; no dangling `agent_web_search:TODO`; symbol failures got ≤3 auto-fixes; per-asset fallback order + Freshness gate + §8.8 fields; no leaked tokens/auth URLs.
 
 ### A.5 Computations
 

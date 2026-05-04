@@ -423,7 +423,7 @@ Price column is generation-time static; no runtime refresh.
 
 ### 12.1 Generation-time retrieval
 
-Delegate first to §8 market-native order: Stooq listed + Yahoo currency verify → yfinance listed secondary; yfinance FX primary; Binance/CoinGecko crypto. Run §8.4 only for yfinance non-rate-limit failures. Use keyed APIs only after native pair fails. Use agent web pages before remaining no-token endpoints. Apply §8.7 to every candidate; opened markets require same-date latest/close until hierarchy exhausted; pre-open requires previous opened trading-day close minimum. Degraded delayed/EOD only after exhaustion and audit. Store §8.8 fields; HTML embeds static fields only.
+Delegate first to §8 market-native order: Stooq listed + Yahoo currency verify → yfinance listed secondary; yfinance FX primary; Binance/CoinGecko crypto. Run §8.4 only for yfinance non-rate-limit failures. Use agent web pages after native pair fails, then remaining no-token endpoints. Apply §8.7 to every candidate; opened markets require same-date latest/close until hierarchy exhausted; pre-open requires previous opened trading-day close minimum. Degraded delayed/EOD only after exhaustion and audit. Store §8.8 fields; HTML embeds static fields only.
 
 ### 12.2 Display
 

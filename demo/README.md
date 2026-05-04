@@ -28,7 +28,7 @@ For demo work, keep **all durable demo-side artifacts under `demo/`**:
 | Concern | What to pass |
 |--------|----------------|
 | Transaction store | `--db demo/transactions.db` on `fetch_prices.py`, `fetch_history.py`, `transactions.py snapshot` (already required). |
-| Strategy / language / API keys | **`--settings demo/SETTINGS.md`** on `fetch_prices.py`, `fetch_history.py`, **`transactions.py snapshot`**, and `generate_report.py` so demo runs do **not** read the user's real strategy, base currency, or API keys from the root `SETTINGS.md`. The snapshot bakes `locale` / `base_currency` into `report_snapshot.json`; the renderer reads those from the snapshot (its own `--settings` flag is ignored for locale once `--snapshot` is used), so omitting this flag on the snapshot step silently renders the report in the root profile's language. |
+| Strategy / language / base currency | **`--settings demo/SETTINGS.md`** on `fetch_prices.py`, `fetch_history.py`, **`transactions.py snapshot`**, and `generate_report.py` so demo runs do **not** read the user's real strategy or base currency from the root `SETTINGS.md`. The snapshot bakes `locale` / `base_currency` into `report_snapshot.json`; the renderer reads those from the snapshot (its own `--settings` flag is ignored for locale once `--snapshot` is used), so omitting this flag on the snapshot step silently renders the report in the root profile's language. |
 | History / gap-fill cache | **`--cache demo/market_data_cache.db`** on `fetch_history.py` and on **`fill_history_gap.py`** whenever you inject rows for that demo run. |
 | Pipeline JSON | Still only under `/tmp/$REPORT_RUN_DIR` per `docs/portfolio_report_agent_guidelines.md` — never `prices.json` at repo root. |
 | Delivered HTML (optional) | Write `generate_report.py --output demo/reports/<locale>_<report_type>.html` when refreshing the root `index.html` preview (for example `zh-Hant_daily_report.html` / `zh-Hant_portfolio_report.html`). For ad hoc archives, a dated `YYYY-MM-DD_HHMM_demo_<report_type>.html` name is also fine. Create `demo/reports/` if missing. |
@@ -42,7 +42,7 @@ Do **not** write `prices_history.json` or a merge-target `prices.json` in the re
 | `transactions_history.json` | Canonical synthetic transaction seed. Safe to commit. |
 | `bootstrap_demo_ledger.py` | Regenerates the JSON and materializes `demo/transactions.db`. |
 | `transactions.db` | Gitignored SQLite ledger built from the JSON. |
-| `SETTINGS.md` | Synthetic strategy / language / base-currency / empty-keys profile for the demo. Pass via `--settings demo/SETTINGS.md`. Safe to commit. |
+| `SETTINGS.md` | Synthetic strategy / language / base-currency profile for the demo. Pass via `--settings demo/SETTINGS.md`. Safe to commit. |
 | `market_data_cache.db` | Optional gitignored cache created when you pass `--cache demo/market_data_cache.db` during demo history runs. |
 | `reports/` | Optional output directory for demo-only HTML (gitignored); create as needed. |
 
@@ -60,7 +60,7 @@ python3 demo/bootstrap_demo_ledger.py --apply
 Follow the normal report workflow exactly as if generating a real report, with **four** differences from a default root run:
 
 1. **Transaction DB:** anywhere the workflow reads the transaction database, use `demo/transactions.db` instead of the root `transactions.db`.
-2. **Settings profile:** pass **`--settings demo/SETTINGS.md`** to `fetch_prices.py`, `fetch_history.py`, **`transactions.py snapshot`**, and `generate_report.py` so demo runs do not read the user's real strategy / language / API keys. (The snapshot step is the one that bakes locale + base currency into `report_snapshot.json`; the renderer reads them from the snapshot, not from its own `--settings` flag.)
+2. **Settings profile:** pass **`--settings demo/SETTINGS.md`** to `fetch_prices.py`, `fetch_history.py`, **`transactions.py snapshot`**, and `generate_report.py` so demo runs do not read the user's real strategy / language / base currency. (The snapshot step is the one that bakes locale + base currency into `report_snapshot.json`; the renderer reads them from the snapshot, not from its own `--settings` flag.)
 3. **Market-data cache:** pass **`--cache demo/market_data_cache.db`** to `fetch_history.py` and to `fill_history_gap.py` so the root `market_data_cache.db` is not used.
 4. **Report type:** pass `--report-type daily_report` or `--report-type portfolio_report` to `validate_report_context.py` and `generate_report.py`, and author only the context keys that render for that type.
 

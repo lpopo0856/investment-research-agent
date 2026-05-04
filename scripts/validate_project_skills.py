@@ -55,12 +55,20 @@ EXPECTED_SKILLS = {
             "docs/transactions_agent_guidelines.md",
         ],
         "commands": [
+            "python3 --version",
+            "python3 -m pip install yfinance requests",
             "python scripts/transactions.py account detect",
             "python scripts/transactions.py account migrate --yes",
             "python scripts/transactions.py account create <name>",
         ],
         "phrases": [
             ["router", "not", "absorber"],
+            ["Environment Preflight"],
+            ["agent owns the technical setup check"],
+            ["Python", "missing", "older than 3.11"],
+            ["installing or updating", "Python 3.11+"],
+            ["explicit", "same-turn", "yes"],
+            ["dependencies are missing", "install"],
             ["/tmp"],
             ["temp-researcher"],
             ["batch", "confirmation"],
@@ -149,7 +157,7 @@ EXPECTED_SKILLS = {
             ["unified diff"],
             ["same-turn", "yes"],
             ["never invent strategy"],
-            ["masked diff"],
+            ["Never store", "strategy", "outside SETTINGS.md"],
             ["target account before reading or editing settings"],
             ["active account", "default"],
         ],
@@ -228,6 +236,45 @@ EXPECTED_SKILLS = {
             ["parent reads artifacts lazily"],
             ["No artifact", "no drop"],
             ["portfolio_report", "news"],
+        ],
+    },
+    "upgrade-management": {
+        "path": "skills/upgrade-management/SKILL.md",
+        "docs": [
+            "skills/account-management/SKILL.md",
+            "skills/report-management/SKILL.md",
+            "demo/README.md",
+        ],
+        "commands": [
+            "git status --short",
+            "git remote -v",
+            "git branch --show-current",
+            "git describe --tags --exact-match",
+            "python scripts/transactions.py account detect",
+            "git fetch --tags --prune",
+            "git pull --ff-only",
+            "git checkout <latest-stable-tag>",
+            "python3 -m pip install --upgrade yfinance requests",
+            "python scripts/validate_project_skills.py",
+            "python scripts/transactions.py account list",
+        ],
+        "phrases": [
+            ["upgrade code", "without overwriting private account data"],
+            ["must not edit or delete", "SETTINGS.md", "transactions.db"],
+            ["tracked source files", "uncommitted changes", "do not pull"],
+            ["partial", "hard stop"],
+            ["migrate", "migration requires the account-management gate"],
+            ["clean", "demo_only_at_root", "do not migrate"],
+            ["backup", "path"],
+            ["fast-forward-only"],
+            ["Preserve the user's installation channel"],
+            ["Git branch install", "main"],
+            ["Git detached at a release tag", "latest stable release tag"],
+            ["Release zip/archive install", "do not auto-update"],
+            ["independent archive/zip copy"],
+            ["Recommend", "Git", "future"],
+            ["latest non-prerelease semantic-version tag"],
+            ["validation", "smoke-check"],
         ],
     },
 }
@@ -446,7 +493,6 @@ def validate_settings_write_gates(path: str, text: str) -> list[ValidationError]
         ["unified diff"],
         ["explicit", "same-turn", "yes"],
         ["backup"],
-        ["masked diff"],
     ]
     return require_terms(path, text, required_groups, "settings write gate")
 
@@ -546,6 +592,9 @@ description: Route onboarding through source docs and canonical gated commands.
 # Onboarding
 This skill is a router, not an absorber. Use docs/onboarding_agent_guidelines.md,
 docs/settings_agent_guidelines.md, and docs/transactions_agent_guidelines.md.
+Environment Preflight: the agent owns the technical setup check. Run `python3 --version`.
+If Python is missing or older than 3.11, ask before installing or updating Python 3.11+ and require explicit same-turn yes.
+If dependencies are missing, install with `python3 -m pip install yfinance requests`.
 Run layout preflight: `python scripts/transactions.py account detect`.
 Run `python scripts/transactions.py account migrate --yes` only when detect prints exactly `migrate`.
 `partial` is a hard stop. On `clean` or `demo_only_at_root`, do not migrate and must not trigger migration.
@@ -615,8 +664,7 @@ Detect the target account before reading or editing settings using account comma
 Bootstrap from SETTINGS.example.md only under the settings workflow.
 Before confirmed edits run `cp accounts/<active>/SETTINGS.md accounts/<active>/SETTINGS.md.bak`.
 Show proposed full content or unified diff. Require explicit same-turn yes.
-Backup except first creation. Never invent strategy. Never store keys or strategy outside SETTINGS.md.
-API key edits show masked diff only.
+Backup except first creation. Never invent strategy. Never store strategy outside SETTINGS.md.
 """,
         "report-management": """---
 name: report-management
@@ -669,6 +717,28 @@ Do not paste raw findings back into the parent context.
 Artifacts live under /tmp and validate JSON with `jq . <path>`.
 The parent reads artifacts lazily. No artifact, no drop.
 If portfolio_report forbids news research, skip the phase rather than delegating.
+""",
+        "upgrade-management": """---
+name: upgrade-management
+description: Safely upgrade or update this repo without risking private portfolio data.
+---
+# Upgrade management
+Upgrade code without overwriting private account data. Must not edit or delete SETTINGS.md or transactions.db.
+Route migrations to skills/account-management/SKILL.md and optional demo smoke checks to skills/report-management/SKILL.md; respect demo/README.md isolation.
+Inspect code with `git status --short` and `git remote -v`.
+Also inspect `git branch --show-current` and `git describe --tags --exact-match`.
+If tracked source files have uncommitted changes, do not pull.
+Before account backup or checks run `python scripts/transactions.py account detect`.
+partial is a hard stop. If detect says migrate, migration requires the account-management gate.
+For clean or demo_only_at_root, do not migrate.
+Create a backup and report its path when private artifacts exist.
+Preserve the user's installation channel: Git branch install on main updates main, Git detached at a release tag moves to the latest stable release tag, and Release zip/archive install must stop; do not auto-update because it is an independent archive/zip copy.
+Recommend Git for future updates.
+Prefer the latest non-prerelease semantic-version tag.
+Use a fast-forward-only update with `git fetch --tags --prune` and `git pull --ff-only`, or `git checkout <latest-stable-tag>` for tag installs.
+Refresh dependencies with `python3 -m pip install --upgrade yfinance requests`.
+Validate with `python scripts/validate_project_skills.py` and inspect with `python scripts/transactions.py account list`.
+Report validation and smoke-check results.
 """,
     }
     return fixtures[skill_key] + USER_FACING_EXECUTION_RULE
@@ -752,7 +822,7 @@ Reference docs/settings_agent_guidelines.md.
 Use SETTINGS.md for settings. Bootstrap from SETTINGS.example.md.
 Run `cp accounts/<active>/SETTINGS.md accounts/<active>/SETTINGS.md.bak`.
 Detect active account with active account commands.
-Never invent strategy. API key edits show masked diff only.
+Never invent strategy. Never store strategy outside SETTINGS.md.
 """,
             "settings write gate",
         ),
