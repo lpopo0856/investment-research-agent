@@ -11,7 +11,12 @@ Accounts are separate ledgers — a bookkeeping container, not a market label. U
 
 ## Core Rule
 
-Account management changes repository layout and active-account resolution. Follow `docs/onboarding_agent_guidelines.md` and `docs/transactions_agent_guidelines.md`; classify side effects before every command.
+Account management changes repository layout and active-account resolution.
+Follow `docs/onboarding_agent_guidelines.md` and
+`docs/transactions_agent_guidelines.md`; classify side effects before every
+command. Creating an account is a bootstrap step only: any `SETTINGS.md`
+created from `SETTINGS.example.md` is a scaffold/draft until the settings
+workflow collects or confirms the required account settings.
 
 ## Natural-Language User Interface
 
@@ -46,7 +51,12 @@ python scripts/transactions.py account migrate --yes
 ```
 
 - `python scripts/transactions.py account use <name>` writes `accounts/.active`; run it only when switching active account is the user's requested outcome.
-- `python scripts/transactions.py account create <name>` scaffolds account files and initializes that account's DB; use it only after confirming the desired account name and creation intent.
+- `python scripts/transactions.py account create <name>` scaffolds account
+  files and initializes that account's DB; use it only after confirming the
+  desired account name and creation intent. The copied settings file is not
+  usable account settings until `skills/settings-management/SKILL.md` has
+  collected or confirmed Account description, Language, Investment Style And
+  Strategy, and Base currency.
 - `python scripts/transactions.py account migrate --yes` migrates a legacy root layout; run it only when `python scripts/transactions.py account detect` printed exactly `migrate` in the same workflow.
 
 ### Forbidden without explicit user-approved workflow
@@ -86,3 +96,5 @@ python scripts/transactions.py verify --account <name>
 ```
 
 After `account use`, confirm the active account through `python scripts/transactions.py account list` and report that `accounts/.active` changed by request. After migration, follow `docs/onboarding_agent_guidelines.md` verification and stop immediately on any mismatch.
+
+After account creation, guide the user to settings completion before any account-sensitive workflow treats the new account as ready. Safe account detection/listing remains allowed as bootstrap evidence.

@@ -101,6 +101,13 @@ Before gathering editorial context, compute the effective skipped renderer set w
 - Single-account `portfolio_report`: author math-adjacent / non-daily context only: `theme_sector_html`, `theme_sector_audit`, `strategy_readout`, `data_gaps`, `reviewer_pass`. Do **not** author `news`, `events`, `research_coverage`, `research_targets`, `high_opps`, `adjustments`, `actions`, `trading_psychology`, or holdings action text.
 - `total_account` with either report type: context may be empty or contain only renderer-safe metadata. Do not read per-account strategies, do not author strategy-dependent editorial sections, and do not run news/events/recommendation research.
 
+**Account readiness gate.** Single-account reports require usable settings
+before Phase A; missing, empty, or template-only strategy is a setup blocker,
+not a neutral-fallback case. Total/all-account reports are strategy-free but
+still ledger/account-bound: stop if any real included account lacks usable
+settings unless using an explicit demo/bootstrap path, and use runtime language
+and base-currency prompts instead of per-account strategy.
+
 **History fetch note.** `fetch_history.py` remains in the canonical pipeline because current snapshots compute profit panel / transaction analytics in one pass. It is math/history support, not §10.5 research, and it never authorizes news or event search for `portfolio_report`.
 
 ### Pipeline order (HARD)

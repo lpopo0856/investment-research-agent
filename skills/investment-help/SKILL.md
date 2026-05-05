@@ -48,6 +48,13 @@ python scripts/transactions.py db stats
 
 If those are unavailable during early setup, fall back to lightweight file presence checks described in `docs/help_agent_guidelines.md`. Do not write files, switch accounts, initialize DBs, or migrate from this skill.
 
+If no account is safely resolvable, or the active/default account is missing
+usable settings, lead with onboarding/settings completion instead of presenting
+account-bound research, report, ledger, or account-state-dependent actions as
+ready. Generic non-personalized education/news and repo maintenance remain
+allowed; safe account detection/listing is allowed only to determine the
+onboarding state.
+
 ## Menu Contract
 
 Render the menu exactly as a menu, not as implementation:

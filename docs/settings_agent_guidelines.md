@@ -16,9 +16,10 @@ that the research and report workflows can use, with the
 downstream output sounds like the user wrote it themselves.
 
 This document does **not** replace `SETTINGS.example.md`. That file is
-the canonical template at the repo root; `account create <name>` copies
-it into `accounts/<name>/SETTINGS.md` for each new account. This doc is
-the elicitation contract for filling it in.
+the canonical template/default source at the repo root; `account create <name>`
+copies it into `accounts/<name>/SETTINGS.md` for each new account. The copied
+file is a scaffold/draft, not completed user settings. This doc is the
+elicitation contract for making it usable.
 
 ### Where SETTINGS.md lives
 
@@ -39,7 +40,9 @@ python scripts/transactions.py account use <name>   # switch if needed
 
 `SETTINGS.example.md` at the repo root is the master template. Never
 edit it directly for user settings — it is the source that
-`account create` copies from.
+`account create` copies from. Do not treat copied example values as the user's
+account settings until the required cold-start fields below are collected or
+confirmed.
 
 ---
 
@@ -78,12 +81,19 @@ do **not** start the settings interview. Route to the matching doc.
 
 ## 3. Detection — what state is the file in?
 
-Before starting an interview, resolve the active account and check its
-settings file:
+Before starting an interview or reading account settings, run the canonical
+layout preflight:
 
 ```sh
-# Determine active account
-cat accounts/.active 2>/dev/null || echo "default"
+python scripts/transactions.py account detect
+```
+
+Stop on `partial`. If it prints `migrate`, route to the account/onboarding
+migration path before settings work. Continue on `clean` or
+`demo_only_at_root`, then resolve the active account and check its settings file:
+
+```sh
+python scripts/transactions.py account list
 
 # Check for the account's settings and the repo template
 ls accounts/<active>/SETTINGS.md SETTINGS.example.md 2>/dev/null
@@ -100,6 +110,15 @@ Map the result:
 Always read `accounts/<active>/SETTINGS.md` if it exists before asking
 anything — do not re-interview the user on fields they already filled in.
 
+Canonical usable-settings heuristic: settings are usable only when
+`SETTINGS.md` exists and the user has either provided or explicitly confirmed
+the cold-start fields: Account description, Language, Investment Style And
+Strategy, and Base currency. Account description may be blank, but only after
+the blank value is explicitly confirmed. If the file appears template-only, the
+strategy is still the example/default block, or confirmation is uncertain, run
+a short settings confirmation review before account-sensitive workflows rely on
+it.
+
 ## 4. Cold start interview
 
 Run when `SETTINGS.md` is being created from scratch.
@@ -114,13 +133,15 @@ cp SETTINGS.example.md accounts/<active>/SETTINGS.md
 ```
 
 Tell the user what just happened: "Created `accounts/<active>/SETTINGS.md`
-from the template. It is gitignored — your answers stay local. I'll walk
-you through the sections that matter most."
+as a local template draft. It is gitignored — your answers stay local. I'll
+walk you through the sections that make it usable."
 
 ### 4.2 Light fields (one batch, conversational)
 
-Ask these together in one short message. Use defaults if the user does
-not answer or says "use defaults". Confirm before writing.
+Ask these together in one short message with a brief introduction for why each
+field matters. Show the default next to each field to reduce friction. Use
+defaults only when the user explicitly accepts them or says "use defaults".
+Confirm before writing.
 
 | Field | Default | Notes |
 |-------|---------|-------|
@@ -131,7 +152,9 @@ not answer or says "use defaults". Confirm before writing.
 
 Do **not** ask about reporting cadence or sample sizing rails
 in this batch. The defaults in `SETTINGS.example.md` are reasonable; the
-user can edit them later (§5).
+user can edit them later (§5). Keep track of any remaining values carried
+forward from `SETTINGS.example.md`; they must be shown in the final cold-start
+review.
 
 ### 4.3 Investment Style And Strategy — the main interview
 
@@ -148,6 +171,11 @@ Frame it for the user once, in their language, before asking:
 > review. Sound good?"
 
 Wait for `yes` (or `let me write it myself` → skip to §4.4).
+
+If you show a default/example strategy to help the user decide, keep it brief.
+The default strategy text can be long; summarize it in a few bullets rather
+than pasting the full block unless the user explicitly asks to see the full
+default.
 
 Ask these dimensions, **one or two at a time** (not as a long list).
 Adapt order and skip what the user already volunteered. Quote
@@ -195,8 +223,12 @@ have"):
    not pad with PM defaults silently. If the user explicitly asked for
    defaults, write them and tag with parenthetical `(default — please
    replace when you have a stronger view)`.
-3. Show the **full proposed section** (not a diff — the section is new)
-   and ask: `Confirm and write to SETTINGS.md? (yes / no / edit)`.
+3. Run a final cold-start review before writing. Show the required fields
+   (Account description, Language, Base currency), the full proposed
+   `## Investment Style And Strategy` section, and any remaining values carried
+   forward from `SETTINGS.example.md`. Mention that the user can ask the agent
+   to change any value anytime, then ask:
+   `Confirm and write to SETTINGS.md? (yes / no / edit)`.
 
 Write only on `yes`. On `edit`, ask which bullet to change. On `no`,
 keep the example template intact and move on.

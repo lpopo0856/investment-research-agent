@@ -9,6 +9,14 @@ description: Route new-user setup, legacy-layout migration, statement extraction
 
 Onboarding is a router, not an absorber. Follow `docs/onboarding_agent_guidelines.md` end to end, and route specialist work to `docs/settings_agent_guidelines.md` for settings/strategy and `docs/transactions_agent_guidelines.md` for ledger imports. Do not duplicate or improvise those workflows inside this skill.
 
+Onboarding is mandatory before account-sensitive work when no account is safely
+resolvable or the target account lacks usable settings. Account creation may
+scaffold `SETTINGS.md` from `SETTINGS.example.md`, but that scaffold is not
+completed user settings until the settings workflow has collected or confirmed
+Account description, Language, Investment Style And Strategy, and Base
+currency. Other account-sensitive skills must route here/settings first in that
+state.
+
 ## Natural-Language User Interface
 
 Treat natural language as the only default user interface. Command snippets, flags, paths, and machine formats below are internal agent contracts or audit evidence, not user instructions. Execute eligible steps yourself via tools, summarize results naturally, and collect missing parameters conversationally. Do not ask the user to run commands, choose flags, know canonical command names, assemble files, or write JSON unless they explicitly request CLI/API instructions or execution is blocked by missing authority. Confirmation gates ask for the required decision in natural language and must not delegate command execution or machine formatting to the user.
@@ -70,7 +78,7 @@ Never run `python scripts/transactions.py account migrate --yes` unless `account
 python scripts/transactions.py account create <name>
 ```
 
-3. For language, base currency, time zone, or strategy text, switch to `docs/settings_agent_guidelines.md`. Bootstrap from `SETTINGS.example.md` only under that settings workflow, and keep its diff-confirm gate.
+3. For account description, language, base currency, time zone, or strategy text, switch to `docs/settings_agent_guidelines.md`. Bootstrap from `SETTINGS.example.md` only as a local scaffold/default source under that settings workflow, not as completed account settings, and keep its diff-confirm gate.
 4. For trades, cash, broker CSV/JSON, or converted statement imports, switch to `docs/transactions_agent_guidelines.md`. Keep the transaction confirmation, backup, and verify gates.
 5. After onboarding verification, stop at the user's completed setup state. Do not immediately offer report generation; wait for a separate report request.
 

@@ -48,6 +48,16 @@ python scripts/transactions.py account detect
 
 If it prints `partial`, hard stop and route to onboarding/account reconciliation. If it prints `migrate`, do not repair layout inside the report lane; route to onboarding/account-management before report generation. Do not edit protected account files or ledgers during report generation.
 
+Before generating any account-bound report, also require a safely resolved
+account and usable `SETTINGS.md`. If no account exists, the target account is
+unresolved, or settings are missing/template-only/incomplete, stop before
+creating `REPORT_RUN_DIR`, fetching prices, reading ledger data, or authoring
+context, and guide the user to onboarding/settings completion. Bootstrap
+exceptions are limited to safe account detection/listing and the
+onboarding/settings interview. For total/all-account reports, do not read
+per-account strategies, but stop if any real included account lacks usable
+settings unless running an explicit demo/bootstrap path.
+
 All intermediates must live under one fresh `/tmp` directory:
 
 ```bash

@@ -15,6 +15,15 @@ Do not ask the user to run `python ...`, copy shell snippets, remember canonical
 
 Any account-sensitive workflow must resolve the target account before producing account-bound output or touching account files. Account-sensitive workflows include investment research or advice, portfolio fit/sizing/risk work, reports, transaction or cash-flow changes, ledger inspection, settings review/edit, account split/migration, and help/status replies that depend on account state. If the user does not specify an account, use the current active account; if no active pointer exists but `default` is safely available, use `default`. Stop on `partial` or unsafe detector states and explain the reconciliation need in natural language.
 
+Account-sensitive workflows also require usable account settings. If no
+account is safely resolvable, or the target account is missing `SETTINGS.md` /
+has only template-backed incomplete settings, stop before account-bound output
+and guide the user through onboarding/settings completion first. Bootstrap
+exceptions are limited to generic non-personalized education/news/research,
+repo maintenance that does not read or depend on account files, safe account
+detection/listing, and the onboarding/settings interview needed to finish
+setup.
+
 Generic market education/news and pure repo maintenance do not need account resolution unless the answer becomes personalized, reads `SETTINGS.md`/`transactions.db`, or affects account state. For personalized research, always load the resolved account's strategy and current portfolio/ledger context before making recommendations; if context cannot be resolved, provide only generic research and label it non-personalized.
 
 ## Workflow routing via project skills

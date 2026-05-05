@@ -35,6 +35,12 @@ invocations continue to use explicit `--db demo/transactions.db
 
 When acting as an agent, resolve and name the target account before ledger inspection, write previews, imports, corrections, or confirmations. Use the user-named account when present; otherwise use the active account, falling back to `default` only when safely resolvable. Stop on `partial` or unresolved account state rather than guessing.
 
+If no account is safely resolvable, or the target account is missing usable
+settings, route to onboarding/settings completion before ledger inspection,
+write previews, imports, corrections, or confirmations. A `SETTINGS.md` copied
+from `SETTINGS.example.md` is a scaffold/draft until the settings workflow has
+collected or confirmed the required cold-start fields.
+
 
 **`snapshot --all-accounts`.** The `snapshot` subcommand additionally
 accepts `--all-accounts --base-currency <CCY>` to materialize a unified
@@ -508,4 +514,3 @@ to operate on the active account.
 - Strategy text or research — those live in `SETTINGS.md` and report
   context, not the event log.
 - Backfilled fictional history. Only record events that actually happened.
-

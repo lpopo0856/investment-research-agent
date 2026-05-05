@@ -26,7 +26,21 @@ Stop on `partial`. If the settings workflow needs an account scaffold, route to 
 
 ## Bootstrap Rule
 
-Bootstrap from `SETTINGS.example.md` only under the settings workflow in `docs/settings_agent_guidelines.md`. For first creation, create `accounts/<active>/SETTINGS.md` from the template only after the workflow has established the active account and the user-facing settings path.
+Bootstrap from `SETTINGS.example.md` only under the settings workflow in
+`docs/settings_agent_guidelines.md`. For first creation, create
+`accounts/<active>/SETTINGS.md` from the template only after the workflow has
+established the active account and the user-facing settings path. Treat that
+file as a scaffold/draft, not usable settings, until the user has supplied or
+confirmed Account description, Language, Investment Style And Strategy, and
+Base currency.
+
+During onboarding/account creation, ask for those four fields with short
+introductions and visible defaults. If the default/example Investment Style And
+Strategy text is long, show only a brief summary unless the user asks for the
+full text. Other defaults from `SETTINGS.example.md` may be carried forward,
+but show them at the end and tell the user they can ask the agent to change any
+value anytime. Account description may remain blank only when the user
+explicitly confirms the blank value.
 
 Never store strategy drafts or derived preferences outside SETTINGS.md except transient `/tmp` work files that are cleaned up.
 

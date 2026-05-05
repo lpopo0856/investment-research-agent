@@ -108,7 +108,7 @@ If strategy silent: highest-cost-first, date-neutral. Always name ticker + acqui
 
 ### 15.7 Strategy binding — act as user (HARD)
 
-Single source of truth for user identity. Whole `## Investment Style And Strategy` in `SETTINGS.md` must be read, including late off-limits and tone bullets. No invented preferences; silent dimensions use neutral PM fallback and are tagged. Neutral fallback when missing/empty: medium drawdown, flat sizing, multi-year horizon, medium confirmation, selective contrarian, low hype. User strategy overrides defaults; note overrides in readout.
+Single source of truth for user identity. Whole `## Investment Style And Strategy` in `SETTINGS.md` must be read, including late off-limits and tone bullets. No invented preferences; silent dimensions inside an otherwise usable strategy use neutral PM fallback and are tagged. Missing, empty, or template-only strategy in a single-account report is an onboarding/settings blocker: stop before Phase A and route to settings completion. Total/all-account reports intentionally exclude per-account strategy; see the total-scope policy in `docs/portfolio_report_agent_guidelines.md`.
 
 | Decision | Check strategy bullets |
 |---|---|
@@ -123,7 +123,7 @@ Single source of truth for user identity. Whole `## Investment Style And Strateg
 
 Untraceable judgment → mark readout `inferred — pin to confirm`, downsize/soften, reviewer-note. Strategy drift is a defect.
 
-**Strategy readout:** rendered as the first labeled prose block under §10.11 Sources & data gaps (above the source-audit table and the data-gaps list, not as an item inside the gaps `<ul>`); one paragraph ≤90 words; first person as user; SETTINGS language; covers relevant temperament/drawdown, conviction/sizing, holding period, entry discipline, contrarian appetite, hype tolerance, off-limits; cites SETTINGS bullets. Missing strategy → explicitly say neutral fallback. If recommendation differs under another strategy, state consequence inline. Reviewer notes for `strategy_readout` attach to this block, not to the gaps list.
+**Strategy readout:** rendered as the first labeled prose block under §10.11 Sources & data gaps (above the source-audit table and the data-gaps list, not as an item inside the gaps `<ul>`); one paragraph ≤90 words; first person as user; SETTINGS language; covers relevant temperament/drawdown, conviction/sizing, holding period, entry discipline, contrarian appetite, hype tolerance, off-limits; cites SETTINGS bullets. Missing, empty, or template-only strategy in a single-account report is not a neutral-fallback case; stop and route to settings completion. If recommendation differs under another strategy, state consequence inline. Reviewer notes for `strategy_readout` attach to this block, not to the gaps list.
 
 #### 15.7.1 Translation contract
 

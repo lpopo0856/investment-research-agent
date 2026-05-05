@@ -18,6 +18,14 @@ Treat natural language as the only default user interface. Command snippets, fla
 
 Before parsing a write plan, previewing resulting state, importing broker data, recording cash flows, inspecting ledger state, or correcting transactions, resolve the target account. Use the user-named account when provided; otherwise use the current active account, falling back to `default` only when safely resolvable. Stop on `partial` or unresolved account state. Include the resolved account name in every natural-language write plan and confirmation gate.
 
+If no account is safely resolvable, or the target account is missing usable
+`SETTINGS.md`, route to onboarding/settings completion before ledger
+inspection, write previews, imports, or corrections. Do not treat a
+template-copied settings file as completed account settings until the settings
+workflow has collected or confirmed the required cold-start fields. Safe
+account detection/listing and onboarding/settings interview are the only
+account-related bootstrap exceptions.
+
 ## Canonical Commands
 
 Single canonical JSON insert:

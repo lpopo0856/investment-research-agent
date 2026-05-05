@@ -33,7 +33,22 @@ python scripts/transactions.py account detect
 python scripts/transactions.py account list
 ```
 
-`partial` is a hard stop; run project onboarding/migration guidance before continuing. Continue on `clean`.
+`partial` is a hard stop; run project onboarding/migration guidance before
+continuing. Continue on `clean` only when the source account has usable
+settings, because split decisions depend on source-account intent and ledger
+context. If the source account is unresolved or its settings are
+missing/template-only/incomplete, route to onboarding/settings completion before
+dry-run or ledger inspection.
+
+Do not require target account settings before `--apply` when the canonical
+split script will create or replace the target account. By default, apply copies
+source `SETTINGS.md` into the target as a starting scaffold; guide the user
+through target settings completion after a successful split. If the target
+account already has user-confirmed settings that must be preserved, run apply
+with `--no-copy-settings` and call out that any target `SETTINGS.md` overwrite
+is a settings write requiring the settings-management diff-confirm gate. Safe
+account detection/listing and onboarding/settings interview are the bootstrap
+exceptions.
 
 2. Define the split selector.
 
@@ -61,6 +76,13 @@ Proceed only when `verify_issues.source`, `verify_issues.target`, and `verify_is
 Show the user the selector, selected tickers/assets, target account name, backup path, and the dry-run verification result. If the project has a confirm-before-write rule for transaction DBs, get explicit same-turn confirmation before `--apply`.
 
 5. Apply.
+
+Before applying, check whether the target already has a user-confirmed
+`SETTINGS.md`. If it does, either use `--no-copy-settings` or complete the
+settings-management diff-confirm gate for any overwrite before running the
+default apply. Without `--no-copy-settings`, the split script copies source
+settings into the target as a scaffold and target settings completion happens
+after a successful split.
 
 ```bash
 python scripts/split_asset_account.py \

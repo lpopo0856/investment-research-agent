@@ -54,6 +54,10 @@ Tailor the reply:
   `transactions.db`) — lead with onboarding. Tell the user the other
   workflows depend on having those two artifacts in place. Point at
   `docs/onboarding_agent_guidelines.md`.
+- **Missing or incomplete settings** (account exists but `SETTINGS.md` is
+  absent, template-only, or not yet confirmed) — lead with settings/onboarding
+  completion. Do not present account-bound research, reports, transaction
+  inspection, or account-state-dependent help as ready yet.
 - **Legacy layout detected** (root `SETTINGS.md` or `transactions.db`
   present, no `accounts/`) — note that migration is needed and any script
   run will prompt for it automatically.

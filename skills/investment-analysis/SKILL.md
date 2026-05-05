@@ -35,7 +35,16 @@ Internal preflight contract:
 python scripts/transactions.py account detect
 ```
 
-Then read the resolved account `SETTINGS.md`, especially the full `## Investment Style And Strategy`, and load enough current portfolio/ledger context to judge fit: holdings, cash/rails where available, concentration, correlated themes, and existing exposure to the idea. Internalize temperament, drawdown tolerance, sizing approach, holding-period bias, entry discipline, contrarian appetite, hype tolerance, off-limits zones, and language/tone. If strategy or portfolio context is missing, label the gap and downgrade to generic/non-personalized research; never invent strategy, holdings, cash, rails, or sizing.
+Then read the resolved account `SETTINGS.md`, especially the full `## Investment Style And Strategy`, and load enough current portfolio/ledger context to judge fit: holdings, cash/rails where available, concentration, correlated themes, and existing exposure to the idea. Internalize temperament, drawdown tolerance, sizing approach, holding-period bias, entry discipline, contrarian appetite, hype tolerance, off-limits zones, and language/tone.
+
+If no account is safely resolvable, or the target account is missing usable
+settings, stop before personalized analysis and guide the user to
+onboarding/settings completion first. Usable settings means the settings
+workflow has collected or confirmed the required cold-start fields, not merely
+that `SETTINGS.example.md` was copied into place. You may still provide
+generic/non-personalized research, clearly labeled as generic market
+education/news, but do not answer account-bound buy/sell/hold, sizing,
+portfolio-fit, or risk questions until onboarding/settings are complete.
 
 Only skip account context when the user explicitly asks for generic market education/news or non-personalized background. If a generic answer turns into “should I buy/sell/hold/add/trim?” or “fit for me?”, resolve the account before answering.
 
