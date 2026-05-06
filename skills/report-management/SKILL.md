@@ -99,7 +99,7 @@ Include the gap-specific arguments from the structured gap list and `--merge-int
 
 Run `scripts/report_mode_policy.py` or the report spec's section table before authoring context. Author only keys for sections that render.
 
-- Single-account `daily_report`: may author daily/editorial keys (`alerts`, `today_summary`, `news`, `events`, `research_coverage`, `high_opps`, `adjustments`, `actions`, `trading_psychology`, theme/sector audit, strategy readout, data gaps, reviewer notes, and optional holdings actions). Use temp-researcher/context-drop rules for research-heavy §10.5 work.
+- Single-account `daily_report`: may author daily/editorial keys (`alerts`, `today_summary`, `news`, `events`, `research_coverage`, `high_opps`, `adjustments`, `actions`, `trading_psychology`, theme/sector audit, strategy readout, data gaps, reviewer notes, and optional holdings actions). Phase B action guidance is authored as the SETTINGS user persona; PM reviewer voice appears only in Phase C notes. Use temp-researcher/context-drop rules for research-heavy §10.5 work.
 - Single-account `portfolio_report`: math/position only. `portfolio_report` must not author or trigger `news`, `events`, `research_coverage`, `research_targets`, `high_opps`, `adjustments`, `actions`, `trading_psychology`, or holdings Action text.
 - Total scope: keep context empty or renderer-safe only; do not read per-account strategies, do not run news/events/recommendation research, and do not author strategy-dependent editorial sections.
 
