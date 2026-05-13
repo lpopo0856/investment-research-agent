@@ -2,9 +2,10 @@
 """
 Historical daily close retrieval for the profit panel.
 
-Companion to scripts/fetch_prices.py. Reads projected positions/cash from
-transactions.db, fetches up to N days of daily closes for every non-cash
-position and every required FX pair, and writes the result to a JSON file.
+Companion to scripts/fetch_prices.py. Reads projected positions/cash from the
+active Markdown ledger store, fetches up to N days of
+daily closes for every non-cash position and every required FX pair, and writes
+the result to a JSON file.
 The output is suitable for merging into prices.json (or referencing alongside
 it) as `_history` and `_fx_history`.
 
@@ -43,19 +44,18 @@ CLI
     python scripts/fetch_history.py \\
         --settings SETTINGS.md \\
         [--output /tmp/prices_history.json] [--lookback-days 400] [--merge-into prices.json]
-        [--cache market_data_cache.db] [--no-cache]
+        [--cache market_data_cache.json] [--no-cache]
 
 With ``--merge-into`` and **no** ``--output``, the script does **not** write a
 separate history-only JSON (history is merged into the merge target only).
 Without ``--merge-into``, the default standalone output is under the system
 temp directory, not the repository root.
 
-By default the script uses `market_data_cache.db` (in the current working
+By default the script uses `market_data_cache.json` (in the current working
 directory) as a cache-first store for daily closes and FX rates.
-`transactions.db` remains the canonical user-action ledger; the market-data
-cache is derived and disposable. **Demo runs** (`--db demo/transactions.db`)
-should pass ``--cache demo/market_data_cache.db`` so the repo-root cache is not
-shared with production; see ``demo/README.md``.
+The Markdown ledger is the live user-action ledger; the market-data cache is
+derived and disposable. Demo runs should pass a demo-local JSON cache so root
+and demo caches stay separate; see ``demo/README.md``.
 """
 
 from __future__ import annotations
@@ -65,7 +65,6 @@ import datetime as _dt
 import json
 import logging
 import random
-import sqlite3
 import sys
 import tempfile
 import time
@@ -157,42 +156,37 @@ def _dedupe_rows(rows: List[Dict[str, Any]], value_key: str = "close") -> List[D
 # Market-data cache
 # --------------------------------------------------------------------------- #
 
-DEFAULT_CACHE_PATH = Path("market_data_cache.db")
+DEFAULT_CACHE_PATH = Path("market_data_cache.json")
+
+
+def _empty_cache() -> Dict[str, Any]:
+    return {"price_history": {}, "fx_history": {}}
+
+
+def _read_cache(path: Path) -> Dict[str, Any]:
+    if not path.exists():
+        return _empty_cache()
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return _empty_cache()
+    if not isinstance(data, dict):
+        return _empty_cache()
+    data.setdefault("price_history", {})
+    data.setdefault("fx_history", {})
+    return data
+
+
+def _write_cache(path: Path, data: Dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.tmp")
+    tmp.write_text(json.dumps(data, indent=2, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8")
+    tmp.replace(path)
 
 
 def cache_init(path: Path) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with sqlite3.connect(path) as conn:
-        # WAL + 30s busy_timeout: lets a second pipeline run share the cache
-        # without "database is locked" under typical agent parallelism.
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA synchronous=NORMAL")
-        conn.execute("PRAGMA busy_timeout=30000")
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS price_history (
-                ticker     TEXT NOT NULL,
-                market     TEXT NOT NULL,
-                date       TEXT NOT NULL,
-                close      REAL NOT NULL,
-                currency   TEXT,
-                source     TEXT NOT NULL,
-                fetched_at TEXT NOT NULL,
-                PRIMARY KEY (ticker, market, date)
-            )
-        """)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS fx_history (
-                base       TEXT NOT NULL,
-                quote      TEXT NOT NULL,
-                date       TEXT NOT NULL,
-                rate       REAL NOT NULL,
-                source     TEXT NOT NULL,
-                fetched_at TEXT NOT NULL,
-                PRIMARY KEY (base, quote, date)
-            )
-        """)
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_price_history_lookup ON price_history(ticker, market, date)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_fx_history_lookup ON fx_history(base, quote, date)")
+    if not path.exists():
+        _write_cache(path, _empty_cache())
 
 
 def _cache_cutoff(lookback_days: int) -> str:
@@ -217,26 +211,17 @@ def _cache_rows_fresh(
         latest = _dt.date.fromisoformat(dates[-1])
     except ValueError:
         return False
-    # Allow a few non-trading days at the beginning of the requested range.
     return first <= start + _dt.timedelta(days=7) and latest >= latest_ok
 
 
 def cache_get_price_rows(path: Path, ticker: str, market: MarketType, lookback_days: int) -> List[Dict[str, Any]]:
-    if not path.exists():
-        return []
     cutoff = _cache_cutoff(lookback_days)
-    with sqlite3.connect(path) as conn:
-        conn.row_factory = sqlite3.Row
-        rows = conn.execute(
-            """
-            SELECT date, close
-            FROM price_history
-            WHERE ticker = ? AND market = ? AND date >= ?
-            ORDER BY date ASC
-            """,
-            (ticker, market.value, cutoff),
-        ).fetchall()
-    return [{"date": r["date"], "close": round(float(r["close"]), 6)} for r in rows]
+    rows = _read_cache(path).get("price_history", {}).get(f"{ticker}|{market.value}", [])
+    return [
+        {"date": str(row["date"]), "close": round(float(row["close"]), 6)}
+        for row in rows
+        if str(row.get("date", "")) >= cutoff and row.get("close") is not None
+    ]
 
 
 def cache_put_price_rows(
@@ -250,80 +235,49 @@ def cache_put_price_rows(
 ) -> None:
     if not rows:
         return
-    cache_init(path)
+    data = _read_cache(path)
+    key = f"{ticker}|{market.value}"
+    existing = {str(row.get("date")): row for row in data.setdefault("price_history", {}).get(key, [])}
     fetched_at = _utc_iso()
-    with sqlite3.connect(path) as conn:
-        conn.executemany(
-            """
-            INSERT INTO price_history (ticker, market, date, close, currency, source, fetched_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(ticker, market, date) DO UPDATE SET
-                close      = CASE WHEN price_history.source = 'agent_web_search'
-                                   AND excluded.source != 'agent_web_search'
-                                  THEN price_history.close ELSE excluded.close END,
-                currency   = COALESCE(excluded.currency, price_history.currency),
-                source     = CASE WHEN price_history.source = 'agent_web_search'
-                                   AND excluded.source != 'agent_web_search'
-                                  THEN price_history.source ELSE excluded.source END,
-                fetched_at = CASE WHEN price_history.source = 'agent_web_search'
-                                   AND excluded.source != 'agent_web_search'
-                                  THEN price_history.fetched_at ELSE excluded.fetched_at END
-            """,
-            [
-                (ticker, market.value, r["date"], float(r["close"]), currency, source, fetched_at)
-                for r in rows
-                if r.get("date") and r.get("close") is not None
-            ],
-        )
+    for row in rows:
+        if row.get("date") and row.get("close") is not None:
+            existing[str(row["date"])] = {
+                "date": str(row["date"]),
+                "close": round(float(row["close"]), 6),
+                "currency": currency,
+                "source": source,
+                "fetched_at": fetched_at,
+            }
+    data["price_history"][key] = [existing[d] for d in sorted(existing)]
+    _write_cache(path, data)
 
 
 def cache_get_fx_rows(path: Path, pair: str, lookback_days: int) -> List[Dict[str, Any]]:
-    if not path.exists():
-        return []
-    base, quote = pair.split("/")
     cutoff = _cache_cutoff(lookback_days)
-    with sqlite3.connect(path) as conn:
-        conn.row_factory = sqlite3.Row
-        rows = conn.execute(
-            """
-            SELECT date, rate
-            FROM fx_history
-            WHERE base = ? AND quote = ? AND date >= ?
-            ORDER BY date ASC
-            """,
-            (base, quote, cutoff),
-        ).fetchall()
-    return [{"date": r["date"], "rate": round(float(r["rate"]), 8)} for r in rows]
+    rows = _read_cache(path).get("fx_history", {}).get(pair, [])
+    return [
+        {"date": str(row["date"]), "rate": round(float(row["rate"]), 8)}
+        for row in rows
+        if str(row.get("date", "")) >= cutoff and row.get("rate") is not None
+    ]
 
 
 def cache_put_fx_rows(path: Path, pair: str, rows: List[Dict[str, Any]], *, source: str) -> None:
     if not rows:
         return
-    base, quote = pair.split("/")
-    cache_init(path)
+    data = _read_cache(path)
+    existing = {str(row.get("date")): row for row in data.setdefault("fx_history", {}).get(pair, [])}
     fetched_at = _utc_iso()
-    with sqlite3.connect(path) as conn:
-        conn.executemany(
-            """
-            INSERT INTO fx_history (base, quote, date, rate, source, fetched_at)
-            VALUES (?, ?, ?, ?, ?, ?)
-            ON CONFLICT(base, quote, date) DO UPDATE SET
-                rate       = CASE WHEN fx_history.source = 'agent_web_search'
-                                   AND excluded.source != 'agent_web_search'
-                                  THEN fx_history.rate ELSE excluded.rate END,
-                source     = CASE WHEN fx_history.source = 'agent_web_search'
-                                   AND excluded.source != 'agent_web_search'
-                                  THEN fx_history.source ELSE excluded.source END,
-                fetched_at = CASE WHEN fx_history.source = 'agent_web_search'
-                                   AND excluded.source != 'agent_web_search'
-                                  THEN fx_history.fetched_at ELSE excluded.fetched_at END
-            """,
-            [
-                (base, quote, r["date"], float(r["rate"]), source, fetched_at)
-                for r in rows
-                if r.get("date") and r.get("rate") is not None
-            ],
-        )
+    for row in rows:
+        if row.get("date") and row.get("rate") is not None:
+            existing[str(row["date"])] = {
+                "date": str(row["date"]),
+                "rate": round(float(row["rate"]), 8),
+                "source": source,
+                "fetched_at": fetched_at,
+            }
+    data["fx_history"][pair] = [existing[d] for d in sorted(existing)]
+    _write_cache(path, data)
 
 
 # --------------------------------------------------------------------------- #
@@ -742,7 +696,7 @@ def collect_history(
     cache_path: Optional[Path] = DEFAULT_CACHE_PATH,
     cache_max_stale_days: int = 5,
 ) -> Dict[str, Any]:
-    """Collect history for lots loaded from transactions.db."""
+    """Collect history for lots loaded from the Markdown ledger."""
     base = parse_base_currency(settings) if (settings is not None and settings.exists()) else "USD"
     benchmark_config = load_benchmark_config(settings if (settings is not None and settings.exists()) else None)
     benchmark_lots: List[Lot] = []
@@ -952,7 +906,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     autodetect_and_migrate_or_exit()
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--db", default=None, type=Path,
-                   help="Path to transactions.db; default: resolved from --account / accounts/.active / 'default'")
+                   help="legacy path override used only to locate account ledger")
     p.add_argument("--settings", default=None, type=Path,
                    help="Path to SETTINGS.md; default: resolved from --account / accounts/.active / 'default'")
     add_account_args(p, support_all_accounts=True)
@@ -968,7 +922,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     p.add_argument("--lookback-days", default=400, type=int,
                    help="How many trading days of history to fetch (default: 400)")
     p.add_argument("--cache", default=DEFAULT_CACHE_PATH, type=Path,
-                   help="SQLite market-data cache path (default: market_data_cache.db)")
+                   help="JSON market-data cache path")
     p.add_argument("--no-cache", action="store_true",
                    help="Disable cache reads/writes for this run")
     p.add_argument("--cache-max-stale-days", default=5, type=int,
@@ -997,17 +951,16 @@ def main(argv: Optional[List[str]] = None) -> int:
             return 2
         from account import resolve_all_accounts  # type: ignore[import-not-found]
         all_paths = resolve_all_accounts()
-        # Skip the demo-db / cache-pairing warning block (single-account-only).
-        from transactions import load_fetch_universe_lots  # type: ignore[import-not-found]
+        # Skip the demo/cache pairing warning block (single-account-only).
+        import transactions as tx_runtime  # type: ignore[import-not-found]
         lots: List[Lot] = []
         for ap in all_paths:
-            if ap.db.exists():
-                lots.extend(load_fetch_universe_lots(ap.db))
+            if ap.ledger.exists():
+                lots.extend(tx_runtime.load_fetch_universe_lots(ap.db))
         if not lots:
             print(
                 f"ERROR: no lots resolved across {len(all_paths)} account(s). "
-                "Run `python scripts/transactions.py db init` and import "
-                "transactions in at least one account first.",
+                "Import or append Markdown ledger events in at least one account first.",
                 file=sys.stderr,
             )
             return 2
@@ -1020,7 +973,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         db_path = args.db if args.db is not None else paths.db
         settings_path = args.settings if args.settings is not None else paths.settings
 
-        # Defense-in-depth: warn if a demo db is paired with the root cache or
+        # Defense-in-depth: warn if a demo ledger is paired with the root cache or
         # with a non-demo SETTINGS.md.
         db_under_demo = Path(db_path).resolve().parent.name == "demo"
         if (
@@ -1030,7 +983,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         ):
             print(
                 f"WARNING: --db {db_path} appears to be a demo ledger but --cache is the "
-                f"root default ({DEFAULT_CACHE_PATH}). Pass --cache demo/market_data_cache.db "
+                f"root default ({DEFAULT_CACHE_PATH}). Pass --cache demo/market_data_cache.json "
                 "to keep demo and production caches separate.",
                 file=sys.stderr,
             )
@@ -1038,15 +991,16 @@ def main(argv: Optional[List[str]] = None) -> int:
         if warn:
             print(f"WARNING: {warn}", file=sys.stderr)
 
-        if db_path and db_path.exists():
+        ledger_dir = Path(db_path).parent / "ledger" if db_path else None
+        if ledger_dir is not None and ledger_dir.exists():
             # Use the fetch *universe* (current holdings + sold-off tickers) so
             # historical-boundary valuations in compute_profit_panel can resolve
             # closes for tickers that have since been fully sold.
-            from transactions import load_fetch_universe_lots  # type: ignore[import-not-found]
-            lots = load_fetch_universe_lots(db_path)
+            import transactions as tx_runtime  # type: ignore[import-not-found]
+            lots = tx_runtime.load_fetch_universe_lots(db_path)
         else:
-            print(f"ERROR: no source found at --db {db_path}. "
-                  f"Run `python scripts/transactions.py db init` and import transactions first.",
+            print(f"ERROR: no Markdown ledger found for --db {db_path}. "
+                  f"Import or append ledger events first.",
                   file=sys.stderr)
             return 2
     history = collect_history(

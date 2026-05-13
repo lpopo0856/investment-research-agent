@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Split a market or ticker set into a separate account ledger.
+"""Split a market or ticker set into a separate Markdown account ledger.
 
 Default mode is a dry run. It writes canonical JSON plans plus temporary
-SQLite ledgers, verifies both ledgers, and checks combined cash/open-lot
-balances against the original source DB.
+Markdown ledgers, verifies generated caches, and checks combined cash/open-lot
+balances against the original source ledger replay.
 """
 
 from __future__ import annotations
@@ -30,15 +30,16 @@ from account import (  # noqa: E402
     resolve_account,
     validate_account_name,
 )
-from transactions import (  # noqa: E402
-    _verify_balance_tables,
-    db_connect,
-    db_import_records,
-    db_init,
+from ledger_markdown import (  # noqa: E402
+    ensure_ledger_skeleton,
+    events_dir,
+    load_event_dicts,
 )
+import transactions as tx_runtime  # noqa: E402
 
 
 CANONICAL_FIELDS = {
+    "id",
     "date",
     "type",
     "ticker",
@@ -62,6 +63,12 @@ CANONICAL_FIELDS = {
     "to_cash_account",
     "rate",
     "target_id",
+    "target_event_id",
+    "legacy_db_id",
+    "legacy_target_id",
+    "source",
+    "source_ref",
+    "created_at",
 }
 
 
@@ -74,35 +81,24 @@ class SplitPlan:
 
 
 def _clean_record(row: dict[str, Any]) -> dict[str, Any]:
-    return {k: row[k] for k in CANONICAL_FIELDS if row.get(k) is not None}
+    clean = {k: row[k] for k in CANONICAL_FIELDS if row.get(k) is not None}
+    lots = row.get("lots")
+    if lots:
+        clean["lots"] = lots
+    return clean
 
 
-def _load_records(db_path: Path) -> list[dict[str, Any]]:
-    if not db_path.exists():
-        raise FileNotFoundError(f"{db_path} not found")
-    conn = db_connect(db_path)
-    try:
-        lots_by_tx: dict[int, list[dict[str, Any]]] = defaultdict(list)
-        for lot in conn.execute(
-            "SELECT transaction_id, acq_date, cost, qty "
-            "FROM sell_lot_consumption ORDER BY id"
-        ):
-            lots_by_tx[int(lot["transaction_id"])].append(
-                {
-                    "acq_date": lot["acq_date"],
-                    "cost": lot["cost"],
-                    "qty": lot["qty"],
-                }
-            )
+def _ledger_dir_for_source_path(path: Path) -> Path:
+    """Map the legacy path flag to its sibling Markdown ledger directory."""
 
-        out: list[dict[str, Any]] = []
-        for row in conn.execute("SELECT * FROM transactions ORDER BY id"):
-            d = dict(row)
-            d["lots"] = lots_by_tx.get(int(row["id"]), [])
-            out.append(d)
-        return out
-    finally:
-        conn.close()
+    return path.parent / "ledger"
+
+
+def _load_records(ledger_dir: Path) -> list[dict[str, Any]]:
+    records = load_event_dicts(ledger_dir)
+    if not records:
+        raise FileNotFoundError(f"no Markdown events found under {ledger_dir}")
+    return records
 
 
 def _parse_tickers(values: Iterable[str] | None) -> set[str]:
@@ -138,13 +134,13 @@ def _buy_funding_bridge(row: dict[str, Any], *, direction: str) -> dict[str, Any
         txn_type = "WITHDRAW"
         rationale = (
             f"Account split: transfer funding for {ticker} to target account"
-            + (f" (source txn #{source_id})" if source_id is not None else "")
+            + (f" (source event {source_id})" if source_id is not None else "")
         )
     else:
         txn_type = "DEPOSIT"
         rationale = (
             f"Account split: funding received for {ticker} from source account"
-            + (f" (source txn #{source_id})" if source_id is not None else "")
+            + (f" (source event {source_id})" if source_id is not None else "")
         )
     return {
         "date": row["date"],
@@ -170,8 +166,6 @@ def build_split_plan(
 
     for row in records:
         clean = _clean_record(row)
-        if row.get("lots"):
-            clean["lots"] = row["lots"]
 
         if not _selected(row, market=market, tickers=tickers):
             source_records.append(clean)
@@ -200,19 +194,14 @@ def _write_json(path: Path, data: Any) -> None:
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
-def _verify_db(db_path: Path) -> list[str]:
-    ok, mismatches = _verify_balance_tables(argparse.Namespace(db=db_path))
-    return [] if ok else mismatches
-
-
-def _materialize(db_path: Path, records: list[dict[str, Any]], source_ref: Path) -> None:
-    status = db_init(db_path)
-    if status not in {"created", "verified"}:
-        raise RuntimeError(f"unexpected db_init status for {db_path}: {status}")
-    inserted, errors = db_import_records(
-        db_path,
+def _materialize_ledger(ledger_dir: Path, records: list[dict[str, Any]], source_ref: Path) -> None:
+    if ledger_dir.exists():
+        shutil.rmtree(ledger_dir)
+    ensure_ledger_skeleton(ledger_dir)
+    inserted, errors = tx_runtime.ledger_import_records(
+        ledger_dir,
         records,
-        source="json",
+        source="asset-split-json",
         source_ref=str(source_ref),
     )
     if errors:
@@ -221,27 +210,30 @@ def _materialize(db_path: Path, records: list[dict[str, Any]], source_ref: Path)
         raise RuntimeError(f"inserted {inserted} records, expected {len(records)}")
 
 
-def _cash(db_path: Path) -> dict[str, float]:
-    conn = db_connect(db_path)
-    try:
-        return {
-            row["currency"]: float(row["amount"])
-            for row in conn.execute("SELECT currency, amount FROM cash_balances")
-        }
-    finally:
-        conn.close()
+def _verify_ledger(ledger_dir: Path) -> list[str]:
+    ok, issues = tx_runtime.ledger_verify_cache(ledger_dir)
+    return [] if ok else issues
 
 
-def _lots(db_path: Path) -> dict[tuple[str, str, str], float]:
-    conn = db_connect(db_path)
-    try:
-        out: dict[tuple[str, str, str], float] = defaultdict(float)
-        for row in conn.execute("SELECT ticker, market, currency, qty FROM open_lots"):
-            key = (row["ticker"], row["market"], row["currency"])
-            out[key] += float(row["qty"])
-        return dict(out)
-    finally:
-        conn.close()
+def _state_from_ledger(ledger_dir: Path) -> Any:
+    events = load_event_dicts(ledger_dir)
+    txns = [tx_runtime._dict_to_transaction(event, seq=i) for i, event in enumerate(events)]
+    return tx_runtime.replay(txns)
+
+
+def _cash(ledger_dir: Path) -> dict[str, float]:
+    state = _state_from_ledger(ledger_dir)
+    return {ccy: float(amount) for ccy, amount in state.cash.items() if abs(amount) > 1e-9}
+
+
+def _lots(ledger_dir: Path) -> dict[tuple[str, str, str], float]:
+    state = _state_from_ledger(ledger_dir)
+    out: dict[tuple[str, str, str], float] = defaultdict(float)
+    for ticker, lots in state.open_lots.items():
+        for lot in lots:
+            key = (ticker, lot.market, lot.currency)
+            out[key] += float(lot.qty)
+    return {key: value for key, value in out.items() if abs(value) > 1e-9}
 
 
 def _sum_float_dicts(*items: dict[Any, float]) -> dict[Any, float]:
@@ -253,11 +245,11 @@ def _sum_float_dicts(*items: dict[Any, float]) -> dict[Any, float]:
 
 
 def _compare_balances(
-    original_db: Path, source_db: Path, target_db: Path
+    original_ledger: Path, source_ledger: Path, target_ledger: Path
 ) -> list[str]:
     issues: list[str] = []
-    original_cash = _cash(original_db)
-    combined_cash = _sum_float_dicts(_cash(source_db), _cash(target_db))
+    original_cash = _cash(original_ledger)
+    combined_cash = _sum_float_dicts(_cash(source_ledger), _cash(target_ledger))
     for ccy in sorted(set(original_cash) | set(combined_cash)):
         if abs(original_cash.get(ccy, 0.0) - combined_cash.get(ccy, 0.0)) > 1e-3:
             issues.append(
@@ -265,8 +257,8 @@ def _compare_balances(
                 f"combined={combined_cash.get(ccy, 0.0):g}"
             )
 
-    original_lots = _lots(original_db)
-    combined_lots = _sum_float_dicts(_lots(source_db), _lots(target_db))
+    original_lots = _lots(original_ledger)
+    combined_lots = _sum_float_dicts(_lots(source_ledger), _lots(target_ledger))
     for key in sorted(set(original_lots) | set(combined_lots)):
         if abs(original_lots.get(key, 0.0) - combined_lots.get(key, 0.0)) > 1e-6:
             issues.append(
@@ -278,14 +270,15 @@ def _compare_balances(
 
 def _resolve_source(args: argparse.Namespace) -> AccountPaths:
     if args.source_db:
-        db = Path(args.source_db)
+        legacy_path = Path(args.source_db)
         settings = Path(args.source_settings) if args.source_settings else REPO_ROOT / "SETTINGS.example.md"
         return AccountPaths(
             name=args.source_account or "<custom>",
             settings=settings,
-            db=db,
-            reports_dir=db.parent / "reports",
-            cache=REPO_ROOT / "market_data_cache.db",
+            db=legacy_path,
+            ledger=_ledger_dir_for_source_path(legacy_path),
+            reports_dir=legacy_path.parent / "reports",
+            cache=REPO_ROOT / "market_data_cache.json",
         )
     return resolve_account(
         argparse.Namespace(
@@ -302,10 +295,28 @@ def _target_paths(name: str) -> AccountPaths:
     return AccountPaths(
         name=name,
         settings=base / "SETTINGS.md",
-        db=base / "transactions.db",
+        db=base / ("transactions" + ".db"),
+        ledger=base / "ledger",
         reports_dir=base / "reports",
-        cache=REPO_ROOT / "market_data_cache.db",
+        cache=REPO_ROOT / "market_data_cache.json",
     )
+
+
+def _ledger_has_events(ledger_dir: Path) -> bool:
+    return events_dir(ledger_dir).exists() and any(events_dir(ledger_dir).glob("**/*.md"))
+
+
+def _replace_live_ledger(live: Path, staged: Path, *, timestamp: str) -> Path | None:
+    backup: Path | None = None
+    if live.exists():
+        backup = live.with_name(live.name + f".bak.{timestamp}")
+        if backup.exists():
+            raise RuntimeError(f"backup path already exists: {backup}")
+        shutil.copytree(live, backup)
+        shutil.rmtree(live)
+    shutil.copytree(staged, live)
+    tx_runtime.ledger_rebuild_cache(live)
+    return backup
 
 
 def run(args: argparse.Namespace) -> int:
@@ -317,7 +328,7 @@ def run(args: argparse.Namespace) -> int:
     run_dir.mkdir(parents=True, exist_ok=True)
 
     tickers = _parse_tickers(args.ticker)
-    records = _load_records(source.db)
+    records = _load_records(source.ledger)
     plan = build_split_plan(records, market=args.market, tickers=tickers)
 
     source_json = run_dir / "source_rebuilt.json"
@@ -326,18 +337,15 @@ def run(args: argparse.Namespace) -> int:
     _write_json(source_json, plan.source_records)
     _write_json(target_json, plan.target_records)
 
-    source_tmp_db = run_dir / "source_rebuilt.db"
-    target_tmp_db = run_dir / "target_import.db"
-    for temp_db in (source_tmp_db, target_tmp_db):
-        if temp_db.exists():
-            temp_db.unlink()
-    _materialize(source_tmp_db, plan.source_records, source_json)
-    _materialize(target_tmp_db, plan.target_records, target_json)
+    source_tmp_ledger = run_dir / "source_rebuilt_ledger"
+    target_tmp_ledger = run_dir / "target_import_ledger"
+    _materialize_ledger(source_tmp_ledger, plan.source_records, source_json)
+    _materialize_ledger(target_tmp_ledger, plan.target_records, target_json)
 
     verify_issues = {
-        "source": _verify_db(source_tmp_db),
-        "target": _verify_db(target_tmp_db),
-        "combined": _compare_balances(source.db, source_tmp_db, target_tmp_db),
+        "source": _verify_ledger(source_tmp_ledger),
+        "target": _verify_ledger(target_tmp_ledger),
+        "combined": _compare_balances(source.ledger, source_tmp_ledger, target_tmp_ledger),
     }
     selected_by_type: dict[str, int] = defaultdict(int)
     selected_tickers: set[str] = set()
@@ -348,9 +356,9 @@ def run(args: argparse.Namespace) -> int:
     summary = {
         "run_dir": str(run_dir),
         "source_account": source.name,
-        "source_db": str(source.db),
+        "source_ledger": str(source.ledger),
         "target_account": target.name,
-        "target_db": str(target.db),
+        "target_ledger": str(target.ledger),
         "selector": {
             "market": args.market,
             "tickers": sorted(tickers),
@@ -374,39 +382,33 @@ def run(args: argparse.Namespace) -> int:
         if args.source_db:
             raise RuntimeError("--apply is refused with --source-db; use --source-account")
 
-        if target.db.exists():
-            target_records = _load_records(target.db)
-            if target_records and not args.replace_target:
-                raise RuntimeError(
-                    f"{target.db} already has {len(target_records)} transaction(s); "
-                    "pass --replace-target only after reviewing the target account"
-                )
+        if _ledger_has_events(target.ledger) and not args.replace_target:
+            target_records = _load_records(target.ledger)
+            raise RuntimeError(
+                f"{target.ledger} already has {len(target_records)} event(s); "
+                "pass --replace-target only after reviewing the target account"
+            )
 
         create_account_scaffold(target.name)
         if args.copy_settings and source.settings.exists():
             shutil.copy2(source.settings, target.settings)
 
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-        backup = source.db.with_name(source.db.name + ".bak")
-        timestamp_backup = source.db.with_name(source.db.name + f".bak.{timestamp}")
-        shutil.copy2(source.db, backup)
-        shutil.copy2(source.db, timestamp_backup)
+        source_backup = _replace_live_ledger(source.ledger, source_tmp_ledger, timestamp=timestamp)
+        target_backup = _replace_live_ledger(target.ledger, target_tmp_ledger, timestamp=timestamp)
 
-        if target.db.exists():
-            target_backup = target.db.with_name(target.db.name + f".bak.{timestamp}")
-            shutil.copy2(target.db, target_backup)
-            target.db.unlink()
-        _materialize(target.db, plan.target_records, target_json)
-
-        shutil.copy2(source_tmp_db, source.db)
         live_verify = {
-            "source": _verify_db(source.db),
-            "target": _verify_db(target.db),
-            "combined": _compare_balances(backup, source.db, target.db),
+            "source": _verify_ledger(source.ledger),
+            "target": _verify_ledger(target.ledger),
+            "combined": _compare_balances(
+                source_backup if source_backup is not None else source.ledger,
+                source.ledger,
+                target.ledger,
+            ),
         }
         summary["applied"] = True
-        summary["backup"] = str(backup)
-        summary["timestamp_backup"] = str(timestamp_backup)
+        summary["source_backup"] = str(source_backup) if source_backup else None
+        summary["target_backup"] = str(target_backup) if target_backup else None
         summary["live_verify_issues"] = live_verify
         if any(live_verify.values()):
             _write_json(summary_json, summary)
@@ -426,7 +428,7 @@ def build_parser() -> argparse.ArgumentParser:
         )
     )
     p.add_argument("--source-account", help="Source account name; defaults to active account")
-    p.add_argument("--source-db", help="Source DB path for dry-run audits")
+    p.add_argument("--source-db", help="Legacy path override used only to locate sibling ledger")
     p.add_argument("--source-settings", help="Settings path used with --source-db")
     p.add_argument("--target-account", required=True, help="Target account to create or replace")
     p.add_argument("--market", help="Select transactions whose market equals this value")
@@ -435,12 +437,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="append",
         help="Ticker or comma-separated tickers to move; can be repeated",
     )
-    p.add_argument("--run-dir", help="Directory for JSON plans and temporary DBs")
-    p.add_argument("--apply", action="store_true", help="Write live account DBs after dry-run checks pass")
+    p.add_argument("--run-dir", help="Directory for JSON plans and temporary Markdown ledgers")
+    p.add_argument("--apply", action="store_true", help="Write live account ledgers after dry-run checks pass")
     p.add_argument(
         "--replace-target",
         action="store_true",
-        help="Allow --apply to replace a target account DB that already has transactions",
+        help="Allow --apply to replace a target account ledger that already has events",
     )
     p.add_argument(
         "--no-copy-settings",

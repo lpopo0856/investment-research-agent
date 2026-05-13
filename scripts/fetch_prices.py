@@ -5,7 +5,9 @@ fetch_prices.py — Latest-price retrieval template for the portfolio report age
 
 Implements `docs/portfolio_report_agent_guidelines.md` §8 (Latest-price retrieval pipeline):
 
-  1. Load projected positions/cash from transactions.db (§4.1)
+  1. Load projected positions/cash from the active ledger store (§4.1);
+     runtime data comes from the account Markdown ledger; legacy migration uses
+     generated/replayed ledger data.
   2. Group tickers by market type and resolve the market-native primary source path (§8.5)
   3. **PRIMARY**: Stooq (no-token) for listed securities — `.us`/`.uk`/`.jp`/`.hk`/`.tw` suffixes
   4. **SECONDARY**: yfinance per-ticker history (skip crypto) — used only when Stooq misses (§8.3)
@@ -97,6 +99,7 @@ import argparse
 import contextlib
 import json
 import logging
+import math
 import os
 import random
 import re
@@ -338,7 +341,7 @@ SUFFIX_TO_MARKET: Dict[str, MarketType] = {
 
 @dataclass
 class Lot:
-    """Legacy lot shape. Runtime rows are projected from transactions.db."""
+    """Legacy lot shape. Runtime rows are projected from Markdown ledger replay."""
     raw_line: str
     bucket: str               # "Long Term", "Mid Term", "Short Term", "Cash Holdings"
     ticker: str               # canonicalized, no market suffix here
@@ -1004,6 +1007,69 @@ def _try_no_token_twse_mis_dual(
     return None
 
 
+def _try_no_token_twse_stock_day(raw_ticker: str, session: Any) -> Optional[Dict[str, Any]]:
+    """TWSE official daily-close fallback for listed Taiwan securities."""
+    raw = raw_ticker.lower().strip()
+    bare = raw[:-3] if raw.endswith(".tw") else raw
+    if not bare or not bare.isdigit():
+        return None
+    try:
+        today = datetime.now()
+        anchors: List[datetime] = []
+        year, month = today.year, today.month
+        for _ in range(3):
+            anchors.append(datetime(year, month, 1))
+            month -= 1
+            if month == 0:
+                year -= 1
+                month = 12
+        for anchor in anchors:
+            r = session.get(
+                "https://www.twse.com.tw/rwd/en/afterTrading/STOCK_DAY",
+                params={
+                    "date": anchor.strftime("%Y%m01"),
+                    "stockNo": bare,
+                    "response": "json",
+                },
+                timeout=YF_HTTP_TIMEOUT_SEC,
+                headers={"User-Agent": "portfolio-report-agent/1.0"},
+            )
+            if r.status_code != 200:
+                continue
+            data = r.json() or {}
+            if data.get("stat") != "OK":
+                continue
+            closes: List[Tuple[str, float]] = []
+            for row in data.get("data") or []:
+                if not isinstance(row, list) or len(row) < 7:
+                    continue
+                date_text = str(row[0]).replace("/", "-")
+                close_text = str(row[6]).replace(",", "").strip()
+                try:
+                    close = float(close_text)
+                except ValueError:
+                    continue
+                if math.isfinite(close) and close > 0:
+                    closes.append((date_text, close))
+            if not closes:
+                continue
+            date_text, latest = closes[-1]
+            prior = closes[-2][1] if len(closes) >= 2 else None
+            move_pct = round(((latest - prior) / prior) * 100.0, 4) if prior else None
+            return {
+                "latest_price": latest,
+                "prior_close": prior,
+                "move_pct": move_pct,
+                "price_source": "no_token:twse_stock_day",
+                "price_as_of": f"{date_text}T13:30:00+08:00",
+                "currency": "TWD",
+                "exchange": "TWSE",
+            }
+    except Exception:                                             # noqa: BLE001
+        return None
+    return None
+
+
 # Per-asset fallback order (§8.5). Each entry is a callable that returns dict | None.
 # The caller loops the list and stops on the first success.
 #
@@ -1049,6 +1115,8 @@ def _build_fallback_chain(
         # stocks misclassified as TWO are caught via the `tse_` channel).
         prefer = "tse" if market == MarketType.TW else "otc"
         chain.append(("no_token:twse_mis", lambda: _try_no_token_twse_mis_dual(raw_ticker, session, prefer=prefer)))
+        if market == MarketType.TW:
+            chain.append(("no_token:twse_stock_day", lambda: _try_no_token_twse_stock_day(raw_ticker, session)))
     elif market == MarketType.JP:
         # Primary: Stooq covers `.jp` codes like `7203.jp`
         chain.append(("no_token:stooq", lambda: _try_no_token_stooq(f"{raw_ticker.lower()}.jp", session)))
@@ -1235,6 +1303,14 @@ def _verify_currency_via_internet(
 # Top-level orchestration
 # ----------------------------------------------------------------------------- #
 
+def _is_valid_latest_price(value: Any) -> bool:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return False
+    return math.isfinite(number) and number > 0
+
+
 def fetch_all_prices(
     lots: List[Lot],
     *,
@@ -1310,7 +1386,7 @@ def fetch_all_prices(
             out = callable_()
             if label == "yfinance" and yf_started_mono is not None:
                 pr.yfinance_request_latency_ms = int((time.monotonic() - yf_started_mono) * 1000)
-            if out and out.get("latest_price") is not None:
+            if out and _is_valid_latest_price(out.get("latest_price")):
                 pr.latest_price = out.get("latest_price")
                 pr.prior_close = out.get("prior_close")
                 pr.move_pct = out.get("move_pct")
@@ -1326,7 +1402,7 @@ def fetch_all_prices(
             else:
                 pr.fallback_chain.append(f"{label}:miss")
                 if label == "yfinance":
-                    pr.yfinance_failure_reason = "yfinance_per_ticker_miss"
+                    pr.yfinance_failure_reason = "yfinance_per_ticker_empty_or_invalid_latest"
         if not tried_any:
             pr.fallback_chain.append("primary_chain:no_endpoints_for_market")
 
@@ -1551,7 +1627,7 @@ def format_todo_required_hard_failures(failures: List[Dict[str, Any]]) -> str:
 def _cli_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--db", default=None, type=Path,
-                   help="Path to transactions.db; default: resolved from --account / accounts/.active / 'default'")
+                   help="legacy path override used only to locate account ledger")
     p.add_argument("--settings", default=None, type=Path,
                    help="Path to SETTINGS.md; default: resolved from --account / accounts/.active / 'default'")
     add_account_args(p, support_all_accounts=True)
@@ -1574,19 +1650,20 @@ def _cli_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
 
 
 def _load_lots_from_db(db: Path) -> Tuple[List[Lot], str]:
-    """Resolve lots from transactions.db.
+    """Resolve lots from the Markdown ledger next to the legacy path flag.
 
     Returns the price-fetch *universe* — currently open lots + cash UNION stub
     lots for every ticker that ever transacted but is no longer in
-    ``open_lots``. The profit panel replays state to historical boundaries
+    current open lots. The profit panel replays state to historical boundaries
     where sold-off tickers reappear; without their prices/history, every
     boundary valuation drops "no historical close + no latest price" audits
     that ultimately drive §10.1.5 boundary-score to 0.
     """
-    if db and db.exists():
+    ledger_dir = db.parent / "ledger" if db else None
+    if ledger_dir is not None and ledger_dir.exists():
         # Lazy import to avoid circular dependency.
-        from transactions import load_fetch_universe_lots  # type: ignore[import-not-found]
-        return load_fetch_universe_lots(db), str(db)
+        import transactions as tx_runtime  # type: ignore[import-not-found]
+        return tx_runtime.load_fetch_universe_lots(db), str(ledger_dir)
     return [], str(db)
 
 

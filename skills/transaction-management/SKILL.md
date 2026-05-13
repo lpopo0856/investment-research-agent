@@ -7,7 +7,7 @@ description: Safely record, import, correct, and verify investment ledger transa
 
 ## Core Rule
 
-`transactions.db` is the canonical ledger. Follow `docs/transactions_agent_guidelines.md` end to end, keep all live writes confirmation-gated, and never edit projected tables directly.
+`accounts/<name>/ledger/` is the live canonical Markdown ledger. Legacy SQLite evidence is import/archive-only after the migration flow. Follow `docs/transactions_agent_guidelines.md` end to end, keep all live writes confirmation-gated, never edit generated caches or projected tables directly, and never treat parity success as legacy-store retirement approval.
 
 ## Natural-Language User Interface
 
@@ -28,7 +28,9 @@ account-related bootstrap exceptions.
 
 ## Canonical Commands
 
-Single canonical JSON insert:
+Live writes use the Markdown ledger compatibility commands below. The legacy-named `db` subcommands append/read Markdown events; the confirmation gate is unchanged.
+
+Single canonical JSON append:
 
 ```bash
 python scripts/transactions.py db add --json '<canonical-json>' --account <name>
@@ -54,9 +56,23 @@ python scripts/transactions.py db stats --account <name>
 python scripts/transactions.py self-check
 ```
 
+Legacy migration/audit commands for the non-destructive migration path:
+
+```bash
+python scripts/transactions.py ledger export-db --account <name> --out accounts/<name>/ledger --dry-run
+python scripts/transactions.py ledger rebuild-cache --account <name>
+python scripts/transactions.py ledger verify-parity --account <name>
+```
+
+If the user asks to remove legacy SQLite usage, migrate legacy SQLite evidence to
+Markdown, archive legacy evidence, or verify no-SQLite readiness, route to
+`skills/migration-flow/SKILL.md`. Do not treat parity success as permission to
+archive legacy evidence; `migration archive-db` has a separate protected-file
+gate.
+
 ## Exact Pre-Write Gate
 
-Before any `db add`, `db import-csv`, or `db import-json`, show the user all six blocks below and get an explicit same-turn `yes`:
+Before any live ledger write (`db add`, `db import-csv`, `db import-json`, or a future confirmed Markdown write command), show the user all six blocks below and get an explicit same-turn `yes`:
 
 1. Parsed trades / cash flows.
 2. Write plan.
@@ -69,7 +85,7 @@ If the answer is `edit`, revise the plan and repeat the full gate. If the answer
 
 ## Write Safety
 
-Before a confirmed write, create the required backup of the target account database, normally `accounts/<name>/transactions.db.bak` unless the source guideline specifies a stronger timestamped backup. After the write, run:
+Before a confirmed write, create the required backup of the live target store; it must include the ledger event directory and generated caches. After the write, run:
 
 ```bash
 python scripts/transactions.py verify --account <name>
@@ -83,7 +99,7 @@ python scripts/transactions.py db stats --account <name>
 
 ## Forbidden Paths
 
-Do not use SQL `UPDATE` or SQL `DELETE` on ledger tables during normal transaction management. Do not directly edit `open_lots` or `cash_balances`; they are derived state rebuilt by the canonical replay/import path. Do not patch `transactions.db` manually, bypass the confirmation gate, or skip backup/verify to save time.
+Do not use SQL `UPDATE` or SQL `DELETE` on ledger tables during normal transaction management. Do not directly edit `open_lots`, `cash_balances`, or `ledger/generated/*`; they are derived state rebuilt by the canonical replay/import path. Do not patch `ledger/` or Markdown event files manually, bypass the confirmation gate, or skip backup/verify to save time.
 
 ## Context Discipline
 

@@ -1,12 +1,14 @@
 ## 4. Inputs
 
-### 4.1 `transactions.db` — positions and cash
+### 4.1 Active ledger store — positions and cash
 
-**Path resolution:** `transactions.db` lives under the active account directory (`accounts/<active>/transactions.db`). Pass `--account <name>` to target a specific account; omitting it resolves in order: `accounts/.active` pointer → `accounts/default/` → hard error. Explicit `--db <path>` overrides `--account` for that flag (escape hatch; used by demo runs).
+**Path resolution:** the canonical Markdown ledger lives under the active account directory (`accounts/<active>/ledger/`). Pass `--account <name>` to target a specific account; omitting it resolves in order: `accounts/.active` pointer → `accounts/default/` → hard error. Explicit `--db <path>` is a legacy-named path override retained for demo/escape-hatch runs and overrides `--account` for that flag.
 
-Positions are loaded via `transactions.load_holdings_lots(db_path)` which
-returns the materialized `open_lots` + `cash_balances` tables as a
-`List[Lot]` compatible with the report renderer's lot shape. Each row carries:
+Positions are loaded via the account-aware ledger store helpers. The
+legacy-named `db_path` parameters are compatibility path inputs that resolve to
+the Markdown ledger; they do not imply a SQLite runtime. The helpers return a
+`List[Lot]` compatible with the report
+renderer's lot shape. Each row carries:
 
 | Column     | Meaning |
 |------------|---------|
@@ -30,11 +32,11 @@ Routing per market tag:
 | `LSE`    | London / UCITS | `<code>.L` |
 | `crypto` | Crypto | Binance `<SYM>USDT`; CoinGecko id |
 | `FX`     | Currency pair | `<PAIR>=X` |
-| `cash`   | Cash/equivalent | no price fetch (one row per currency in `cash_balances`) |
+| `cash`   | Cash/equivalent | no price fetch (one row per currency in the derived cash view/cache) |
 
 Drift between the materialized tables and a fresh log replay is caught by
-`transactions.py verify`; on mismatch run `db rebuild`. The renderer must
-not invent or hard-code holdings — always read fresh from the DB.
+`transactions.py verify`; on mismatch run the generated-cache rebuild/verify path. The renderer must
+not invent or hard-code holdings — always read fresh from the Markdown ledger.
 
 ### 4.2 `SETTINGS.md`
 
@@ -46,20 +48,20 @@ Read every run for account description, language, tone, `## Investment Style And
 
 Auto-read all positions every run; never hard-code holdings or assume tickers. Re-classify by asset class/sector/theme from current data. Buckets flexible: ETF, single stock, crypto, cash, semiconductor, AI, energy, aerospace, financials, healthcare, consumer, industrial, optical/data center, defense, other.
 
-### 4.4 Demo ledger (isolated `transactions.db` + cache)
+### 4.4 Demo ledger (isolated `ledger/` + cache)
 
 The repo ships a **non-production** transaction ledger under `demo/` for
-generating demo HTML reports without touching the root `transactions.db`:
+generating demo HTML reports without touching the root `ledger/`:
 
 | Artifact | Role |
 |----------|------|
 | `demo/transactions_history.json` | Canonical JSON seed (multi-year synthetic flow); safe to commit. |
-| `demo/bootstrap_demo_ledger.py` | Regenerates the JSON from code (replay-validated) and **`--apply`** rebuilds `demo/transactions.db`. |
-| `demo/transactions.db` | Gitignored SQLite store — **not** the user’s root `transactions.db`. |
-| `demo/market_data_cache.db` | Optional gitignored cache — use with **`--cache demo/market_data_cache.db`** on `fetch_history.py` / `fill_history_gap.py` so demo runs do **not** use the root `market_data_cache.db`. |
+| `demo/bootstrap_demo_ledger.py` | Regenerates the JSON from code (replay-validated) and **`--apply`** rebuilds `demo/ledger`. |
+| `demo/ledger` | Gitignored Markdown event ledger — **not** the user’s root `ledger/`. |
+| `demo/market_data_cache.json` | Optional gitignored cache — use with **`--cache demo/market_data_cache.json`** on `fetch_history.py` / `fill_history_gap.py` so demo runs do **not** use the root `market_data_cache.json`. |
 | `demo/reports/` | Optional directory for demo-only HTML output (gitignored); keeps deliverables out of user `reports/`. |
 
-**Safety:** `scripts/transactions.py` resolves the active account via `--account` / `accounts/.active` / `accounts/default/` when `--db` is omitted. For demo work, always pass **`--db demo/transactions.db`** (or an absolute path to that file) to every pipeline step that reads transactions — this is the intentional explicit-path escape hatch; do **not** use `--account` for demo runs. `scripts/account.py` `check_pairing()` validates that `--db` and `--settings` point to the same account directory when both are supplied; mismatched explicit paths produce a pairing error. **`fetch_history.py` and `fill_history_gap.py` default to `market_data_cache.db` in the current working directory** when `--cache` is omitted — for demo work, always pass **`--cache demo/market_data_cache.db`** on those two scripts so the repository root cache is not mixed with the synthetic ledger. Do not run demo bootstrap commands against production paths.
+**Safety:** `scripts/transactions.py` resolves the active account via `--account` / `accounts/.active` / `accounts/default/` when `--db` is omitted. For demo work, always pass **`--db demo/ledger-anchor`** (or an absolute path to that file) to every pipeline step that reads transactions — this is the intentional explicit-path escape hatch; do **not** use `--account` for demo runs. `scripts/account.py` `check_pairing()` validates that `--db` and `--settings` point to the same account directory when both are supplied; mismatched explicit paths produce a pairing error. **`fetch_history.py` and `fill_history_gap.py` default to `market_data_cache.json` in the current working directory** when `--cache` is omitted — for demo work, always pass **`--cache demo/market_data_cache.json`** on those two scripts so the repository root cache is not mixed with the synthetic ledger. Do not run demo bootstrap commands against production paths.
 Full runbook: [`demo/README.md`](../../demo/README.md).
 
 There is no demo-specific report pipeline, no committed demo
@@ -152,7 +154,7 @@ Search rendered HTML for stray non-SETTINGS-language text; every non-allow-liste
 
 ## 6. File output
 
-Write exactly one HTML file whose filename encodes both axes: `accounts/<active>/reports/YYYY-MM-DD_HHMM_single_account_<daily_report|portfolio_report>.html` for single-account runs, or `accounts/_total/reports/YYYY-MM-DD_HHMM_total_account_<daily_report|portfolio_report>.html` for total-account scope. The active account is resolved via `--account <name>` or `accounts/.active`; omitting `--account` defaults to `accounts/default/`. For **demo-ledger-only** runs (`--db demo/transactions.db`), write the same type/scope filename pattern under **`demo/reports/`** instead so the artifact stays under `demo/` and does not sit beside user reports. No Markdown summary or companion files in the repo.
+Write exactly one HTML file whose filename encodes both axes: `accounts/<active>/reports/YYYY-MM-DD_HHMM_single_account_<daily_report|portfolio_report>.html` for single-account runs, or `accounts/_total/reports/YYYY-MM-DD_HHMM_total_account_<daily_report|portfolio_report>.html` for total-account scope. The active account is resolved via `--account <name>` or `accounts/.active`; omitting `--account` defaults to `accounts/default/`. For **demo-ledger-only** runs (`--db demo/ledger-anchor`), write the same type/scope filename pattern under **`demo/reports/`** instead so the artifact stays under `demo/` and does not sit beside user reports. No Markdown summary or companion files in the repo.
 
 **Pipeline intermediates (HARD):** `fetch_prices` / `fetch_history` / `fill_history_gap` / `transactions.py snapshot` / `report_context.json` / optional `--ui-dict` JSON for the report run **must** use paths under `$REPORT_RUN_DIR` in `/tmp` only (see main `portfolio_report_agent_guidelines.md` — Intermediate files and cleanup). After successful render + Appendix A, delete the whole directory.
 

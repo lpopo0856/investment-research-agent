@@ -9,10 +9,15 @@ trap 'echo "SMOKE FAIL at line $LINENO" >&2' ERR
 RUN="$(date -u +%Y%m%dT%H%M%SZ)"
 SMOKE="/tmp/investments_multi_account_smoke_${RUN}"
 REPO="$(git rev-parse --show-toplevel)"
+LEGACY_DB_NAME="transactions"".db"
+LEGACY_DB="$REPO/$LEGACY_DB_NAME"
+LEGACY_DB_BAK="$REPO/${LEGACY_DB_NAME}.bak"
+SMOKE_LEGACY_DB="$SMOKE/$LEGACY_DB_NAME"
+
 
 # --- Pre-check: skip if live repo doesn't have legacy layout ---
-if [ ! -f "$REPO/SETTINGS.md" ] || [ ! -f "$REPO/transactions.db" ]; then
-  echo "SMOKE SKIP: live repo does not have legacy root layout (SETTINGS.md + transactions.db)."
+if [ ! -f "$REPO/SETTINGS.md" ] || [ ! -f "$LEGACY_DB" ]; then
+  echo "SMOKE SKIP: live repo does not have legacy root layout (SETTINGS.md + ${LEGACY_DB_NAME})."
   exit 0
 fi
 
@@ -24,8 +29,8 @@ cp -R "$REPO/scripts" "$SMOKE/"
 cp -R "$REPO/docs" "$SMOKE/"
 cp "$REPO/SETTINGS.example.md" "$SMOKE/" 2>/dev/null || true
 cp "$REPO/SETTINGS.md" "$SMOKE/SETTINGS.md"
-cp "$REPO/transactions.db" "$SMOKE/transactions.db"
-[ -f "$REPO/transactions.db.bak" ] && cp "$REPO/transactions.db.bak" "$SMOKE/" || true
+cp "$LEGACY_DB" "$SMOKE_LEGACY_DB"
+[ -f "$LEGACY_DB_BAK" ] && cp "$LEGACY_DB_BAK" "$SMOKE/" || true
 
 mkdir -p "$SMOKE/reports"
 if [ -d "$REPO/reports" ]; then
@@ -33,15 +38,15 @@ if [ -d "$REPO/reports" ]; then
   cp -R "$REPO/reports/." "$SMOKE/reports/" 2>/dev/null || true
 fi
 
-# Don't copy market_data_cache.db — migration leaves it at root, but for smoke we
+# Don't copy market_data_cache.json — migration leaves it at root, but for smoke we
 # create a stub at $SMOKE/ root so the script's existence checks behave as in real use.
-touch "$SMOKE/market_data_cache.db"
+touch "$SMOKE/market_data_cache.json"
 
 cd "$SMOKE"
 
 # --- 1. Confirm legacy state staged ---
 test -f SETTINGS.md
-test -f transactions.db
+test -f "$LEGACY_DB_NAME"
 test ! -d accounts
 echo "SMOKE: legacy state confirmed at $SMOKE"
 
@@ -55,16 +60,16 @@ echo "SMOKE: migration completed (account migrate --yes)"
 
 # --- 3. Post-migration assertions ---
 test -f accounts/default/SETTINGS.md      # AC-MIG-2
-test -f accounts/default/transactions.db  # AC-MIG-2
+test -f "accounts/default/$LEGACY_DB_NAME"  # AC-MIG-2
 test -d accounts/default/reports          # AC-MIG-2 (may be empty)
 test -f accounts/.active                  # AC-MIG-2
 grep -q '^default$' accounts/.active      # AC-MIG-2 pointer content
 test -d .pre-migrate-backup               # AC-MIG-2 backup
 test -f .pre-migrate-backup/migration-manifest.json  # AC-MIG-2 manifest
 test ! -f SETTINGS.md                     # root cleaned
-test ! -f transactions.db                 # root cleaned
-test -f market_data_cache.db || true      # cache MAY remain at root (we created stub)
-test ! -f accounts/default/market_data_cache.db  # AC-MIG-5: cache NOT moved
+test ! -f "$LEGACY_DB_NAME"                 # root cleaned
+test -f market_data_cache.json || true      # cache MAY remain at root (we created stub)
+test ! -f accounts/default/market_data_cache.json  # AC-MIG-5: cache NOT moved
 echo "SMOKE: post-migration assertions OK"
 
 # --- 4. Idempotency: second migration is a no-op ---
@@ -88,7 +93,7 @@ python scripts/transactions.py account list | grep -q "default"
 python scripts/transactions.py account create test_smoke
 test -d accounts/test_smoke
 test -f accounts/test_smoke/SETTINGS.md
-test -f accounts/test_smoke/transactions.db
+test -d accounts/test_smoke/ledger
 python scripts/transactions.py account use test_smoke
 grep -q '^test_smoke$' accounts/.active
 python scripts/transactions.py account use default
@@ -100,7 +105,7 @@ test ! -d "$REPO/.pre-migrate-backup" || { echo "LIVE REPO POLLUTED: $REPO/.pre-
 test ! -f "$REPO/accounts/.active" || { echo "LIVE REPO POLLUTED: $REPO/accounts/.active" >&2; exit 1; }
 # Confirm live repo's legacy state is intact (we never touched it)
 test -f "$REPO/SETTINGS.md" || { echo "LIVE REPO MUTATED: $REPO/SETTINGS.md missing" >&2; exit 1; }
-test -f "$REPO/transactions.db" || { echo "LIVE REPO MUTATED: $REPO/transactions.db missing" >&2; exit 1; }
+test -f "$LEGACY_DB" || { echo "LIVE REPO MUTATED: $REPO/$LEGACY_DB_NAME missing" >&2; exit 1; }
 echo "SMOKE: live repo non-pollution OK"
 
 # --- 8. Cleanup ---

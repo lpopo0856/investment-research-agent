@@ -10,13 +10,13 @@ something like "help me get started", "onboard me", "I'm new — how do I
 use this", "import my transactions", or hands you a statement file.
 
 The goal: take a cold-start user from an empty repo to a working
-`accounts/default/SETTINGS.md` + `accounts/default/transactions.db` that
+`accounts/default/SETTINGS.md` + `accounts/default/ledger/` that
 the research / report / transaction workflows in `README.md` can run against.
 Onboarding also owns the basic local environment check, so the public README
 can stay user-facing instead of teaching users Python or pip commands.
 
 This document does **not** replace `docs/transactions_agent_guidelines.md`.
-Once the DB exists and the user is recording flows, that file is the
+Once the ledger exists and the user is recording flows, that file is the
 authoritative contract. Onboarding is the on-ramp.
 
 ---
@@ -25,7 +25,7 @@ authoritative contract. Onboarding is the on-ramp.
 
 Trigger on any of:
 
-- Repo state shows no `SETTINGS.md` and/or no `transactions.db` at the
+- Repo state shows no `SETTINGS.md` and/or no `ledger/` at the
   repo root **and** no `accounts/` directory, OR `accounts/` exists with
   no account directories inside it.
 - Any account-sensitive workflow is requested but no account is safely
@@ -40,16 +40,16 @@ Trigger on any of:
 For net-new users (no root files, no `accounts/`), onboarding creates
 `accounts/default/` directly — **never** the legacy root layout. New users
 skip migration entirely; the migration path is only for users who already
-have root-level `SETTINGS.md` / `transactions.db` from an earlier version.
+have root-level `SETTINGS.md` / `ledger/` from an earlier version.
 
 > **Non-interactive agents (C-8):** Agents running non-interactively MUST
 > run `python scripts/transactions.py account detect` BEFORE any script that
-> reads SETTINGS.md or transactions.db. Invoke
+> reads SETTINGS.md or Markdown ledger. Invoke
 > `python scripts/transactions.py account migrate --yes` only when the detector
 > prints `migrate`. If it prints `clean` or `demo_only_at_root`, do not run
 > migration. If it prints `partial`, stop for manual reconciliation.
 
-If `transactions.db` already exists and has rows (in `accounts/<name>/` or
+If `ledger/` already exists and has rows (in `accounts/<name>/` or
 at the root — see §3), **do not** re-run onboarding. Route to
 `docs/transactions_agent_guidelines.md` §3 (natural-language workflow) or
 §4 (bulk ingestion) instead.
@@ -59,14 +59,14 @@ at the root — see §3), **do not** re-run onboarding. Route to
 These mirror `docs/transactions_agent_guidelines.md` §1 and apply during
 onboarding too.
 
-1. **Never** write to `transactions.db` without first showing a parsed
+1. **Never** write to `ledger/` without first showing a parsed
    plan + the canonical JSON blob(s) + receiving an explicit `yes` in the
    same turn.
-2. **Always** back up to `transactions.db.bak` before any write
-   (`db init` is the one exception — there is nothing to back up yet).
+2. **Always** back up to `ledger backup` before any write
+   (`db init` is the legacy-named compatibility alias for Markdown ledger init; it is the one exception because there is nothing to back up yet).
 3. **Always** run `python scripts/transactions.py verify` after every
    write batch and report the result. On mismatch, restore
-   `transactions.db.bak` and tell the user.
+   `ledger backup` and tell the user.
 4. **Never** invent fields the user did not provide. Tag every defaulted
    field as `(assumed)` in the plan. Do not interrogate for `rationale`
    / `tags` — leave them `NULL` if not volunteered.
@@ -132,44 +132,43 @@ repo into one of four states. Run these as plain shell:
 ```sh
 ls accounts/.active 2>/dev/null
 ls accounts/ 2>/dev/null
-ls SETTINGS.md transactions.db 2>/dev/null
-python scripts/transactions.py db stats 2>/dev/null
+ls SETTINGS.md Markdown ledger 2>/dev/null
+python scripts/transactions.py db stats 2>/dev/null  # legacy-named compatibility alias; reads Markdown
 ```
 
 Map the result to one of:
 
 | Detector state | Condition | Action |
 |----------------|-----------|--------|
-| **`clean`** | `accounts/` exists with ≥ 1 account directory; no root `SETTINGS.md` / `transactions.db` | Normal operation — check `accounts/.active` for the active account, then inspect that account's DB |
-| **`migrate`** | Root `SETTINGS.md` or `transactions.db` present AND `accounts/` does not exist (or has no account dirs) | DO NOT onboard; trigger migration via `account migrate --yes` (or any interactive script). See §N. |
+| **`clean`** | `accounts/` exists with ≥ 1 account directory; no root legacy layout files | Normal operation — check `accounts/.active` for the active account, then inspect that account's Markdown ledger |
+| **`migrate`** | Root `SETTINGS.md` or `ledger/` present AND `accounts/` does not exist (or has no account dirs) | DO NOT onboard; trigger migration via `account migrate --yes` (or any interactive script). See §N. |
 | **`partial`** | Both root files AND `accounts/` dirs exist | Warn the user of the dual-source-of-truth; run migration or let them sort it out manually before proceeding |
 | **`demo_only_at_root`** | Only `demo/` exists at root; no user account files | New user — continue this guide, targeting `accounts/default/` |
 
 For the common **new-user case** (no root files, no `accounts/`), map to
 `clean` (or `demo_only_at_root`) and proceed through the bootstrap path:
-scaffold `accounts/default/` when needed, complete settings, initialize the DB,
-then import. The scaffold/DB init may happen as a bootstrap exception, but
+scaffold `accounts/default/` when needed, complete settings, initialize the Markdown ledger,
+then import. The scaffold/ledger init may happen as a bootstrap exception, but
 account readiness waits for settings completion.
 
 For the **existing-user case** (`migrate` state), stop here and follow §N
 before any other step.
 
-Within a clean `accounts/` setup, check the per-account DB state exactly
-as before:
+Within a clean `accounts/` setup, check the per-account Markdown ledger state:
 
-| State | `SETTINGS.md` | `transactions.db` | Action |
+| State | `SETTINGS.md` | `ledger/` | Action |
 |-------|---------------|-------------------|--------|
-| A. Cold start | missing | missing | Run the §4/§5 bootstrap path: scaffold account files if needed, complete settings, init DB, then import |
+| A. Cold start | missing | missing | Run the §4/§5 bootstrap path: scaffold account files if needed, complete settings, init ledger, then import |
 | B. Settings only | present | missing | Run §5 → §6 |
-| C. DB only | missing | present, has rows | Run §4, then route to `docs/transactions_agent_guidelines.md` |
+| C. Ledger only | missing | present, has events | Run §4, then route to `docs/transactions_agent_guidelines.md` |
 | D. Both ready | present | present, has rows | Stop. Tell the user onboarding is already done; offer the three normal workflows from `README.md` |
-| E1. Empty DB, no usable settings | missing / incomplete | present, 0 rows | Run §4, skip §5 because DB exists, then go to §6 |
-| E2. Empty DB, usable settings | present | present, 0 rows | Skip §5; go to §6 |
+| E1. Empty ledger, no usable settings | missing / incomplete | present, 0 rows | Run §4, skip §5 because ledger exists, then go to §6 |
+| E2. Empty ledger, usable settings | present | present, 0 rows | Skip §5; go to §6 |
 
 If `SETTINGS.md` is missing, appears template-only, or the user has not yet
 confirmed Account description, Language, Investment Style And Strategy, and
 Base currency, treat settings as incomplete and run §4 before any
-account-sensitive output. A pre-existing empty DB only lets you skip §5 DB init;
+account-sensitive output. A pre-existing empty ledger only lets you skip §5 ledger init;
 it never skips settings completion.
 
 State the detected state to the user in one sentence before proceeding.
@@ -195,7 +194,7 @@ workflow collects or confirms the required fields.
 
 Onboarding does not duplicate the interview — it hands off **after** the
 posture in §4.1 is satisfied (user has been given a clear chance to write
-strategy in their own words first). Account scaffold/DB init may happen as
+strategy in their own words first). Account scaffold/ledger init may happen as
 bootstrap plumbing, but the account is not ready for account-sensitive
 workflows until the settings doc has completed its final confirmation gate.
 Then proceed to §5/§6 when the user signals the settings step is complete
@@ -240,7 +239,7 @@ because the default is for the agent to construct their philosophy for them.
 to the template — always **diff-and-confirm** and **never invent** convictions,
 rails, or off-limits they did not state (see §2 rule 5 and §8).
 
-## 5. Database init
+## 5. Markdown ledger init
 
 First, create the account directory if it does not exist:
 
@@ -250,25 +249,23 @@ python scripts/transactions.py account create default
 
 This scaffolds `accounts/default/` (copying `SETTINGS.example.md` →
 `accounts/default/SETTINGS.md` as a template draft), creates the `reports/`
-subdirectory, and runs `db init` to create
-`accounts/default/transactions.db`. This is bootstrap plumbing, not readiness:
+subdirectory, and initializes
+`accounts/default/ledger/`. This is bootstrap plumbing, not readiness:
 the account remains incomplete until settings completion. It also writes
 `accounts/.active` = `default` so subsequent commands resolve without
 `--account`.
 
-If the directory already exists but `transactions.db` is missing, run init
+If the directory already exists but `ledger/` is missing, run init
 directly:
 
 ```sh
 python scripts/transactions.py db init --account default
 ```
 
-`db init` is idempotent and creates the schema (event log + materialized
-`open_lots` / `cash_balances` + `schema_meta`). No backup needed; nothing
-exists yet.
+`db init` is a legacy-named compatibility alias that idempotently creates the Markdown ledger skeleton (`events/` plus generated-cache directories). No backup needed; nothing exists yet.
 
 After init, run `python scripts/transactions.py db stats --account default`
-and show the user the empty result so they see the schema is in place.
+and show the user the empty result so they see the ledger is in place.
 
 ## 6. Import — accept any format
 
@@ -367,7 +364,7 @@ and import the batches one at a time.
    under `/tmp/`, never the repo tree. Example:
    `/tmp/onboarding_<broker>_<timestamp>.json`.
 
-### 6.3 Confirmation transcript (required before INSERT)
+### 6.3 Confirmation transcript (required before ledger append)
 
 Same shape as `docs/transactions_agent_guidelines.md` §3.6, scaled to a
 batch:
@@ -389,15 +386,14 @@ batch:
 ### 6.4 Write procedure
 
 ```sh
-cp accounts/default/transactions.db accounts/default/transactions.db.bak   # only if the DB has rows
+cp -R accounts/default/ledger accounts/default/ledger.backup   # only if the ledger already has events
 python scripts/transactions.py db import-json \
     --input /tmp/onboarding_<...>.json --account default
 python scripts/transactions.py verify --account default
 python scripts/transactions.py db stats --account default
 ```
 
-`db init` already ran in §5, so `db import-json` writes against the live
-schema and the auto-rebuild populates `open_lots` + `cash_balances`. On
+`db init` already ran in §5, so `db import-json` (legacy-named compatibility alias) appends Markdown events and auto-rebuilds generated caches. On
 verify failure, restore the backup (if one was taken) and surface the
 error — do not retry silently.
 
@@ -417,10 +413,10 @@ to `docs/transactions_agent_guidelines.md` §3.
 After successful onboarding:
 
 1. Run `python scripts/transactions.py db stats --account default` and
-   show the totals.
+   show the ledger totals.
 2. Remind the user of the three normal workflows from `README.md`:
    research questions, portfolio report, transaction recording.
-3. Mention that `accounts/default/SETTINGS.md`, `accounts/default/transactions.db`,
+3. Mention that `accounts/default/SETTINGS.md`, `accounts/default/ledger/`,
    and generated reports are gitignored and stay local. Portfolio-report
    runs also keep pipeline JSON under `/tmp` only
    (`docs/portfolio_report_agent_guidelines.md` — Intermediate files);
@@ -449,7 +445,7 @@ explicitly per `README.md` §2.
 ## N. Multi-account migration
 
 This section applies to **existing users** whose repo has the pre-multi-account
-layout (root-level `SETTINGS.md` / `transactions.db` / `reports/`). It does
+layout (root-level `SETTINGS.md` / `ledger/` / `reports/`). It does
 NOT apply to net-new users, who are routed to `accounts/default/` directly via
 §4 – §6.
 
@@ -461,7 +457,7 @@ of four states:
 | State | Meaning | Agent action |
 |-------|---------|-------------|
 | **`clean`** | `accounts/` exists with ≥ 1 account directory; no root user files | Normal multi-account operation. No migration needed. |
-| **`migrate`** | Root `SETTINGS.md` or `transactions.db` present AND `accounts/` has no account dirs | Migration required before any other operation. |
+| **`migrate`** | Root `SETTINGS.md` or `ledger/` present AND `accounts/` has no account dirs | Migration required before any other operation. |
 | **`partial`** | Both root files AND `accounts/` account dirs exist | Dual-source-of-truth warning. Resolve before continuing. |
 | **`demo_only_at_root`** | Only `demo/` at root; no user account files | Treated as a fresh install. Proceed to §4. |
 
@@ -478,10 +474,10 @@ $ python scripts/generate_report.py
 ⚠  Detected pre-multi-account layout.
    I will move:
      SETTINGS.md       → accounts/default/SETTINGS.md
-     transactions.db   → accounts/default/transactions.db
+     Markdown ledger   → accounts/default/ledger/
      reports/          → accounts/default/reports/
    And set accounts/.active = default.
-   (market_data_cache.db stays at root, shared.)
+   (market_data_cache.json stays at root, shared.)
    Backup written to .pre-migrate-backup/.
 Migrate now? [y/N]: y
 ✓ Migrated. Verify passed. Continuing with --account default.
@@ -489,7 +485,7 @@ Migrate now? [y/N]: y
 
 What migration does on `y`:
 
-1. Moves `SETTINGS.md`, `transactions.db`, `transactions.db.bak` (if
+1. Moves `SETTINGS.md`, `ledger/`, `ledger backup` (if
    present), and `reports/` into `accounts/default/`.
 2. Writes `accounts/.active` = `default`.
 3. Writes `.pre-migrate-backup/` with copies of every moved file plus a
@@ -499,7 +495,7 @@ What migration does on `y`:
 5. Continues the original command (e.g., generates the report) without
    re-prompting.
 
-**`market_data_cache.db` stays at the repo root — it is shared across all
+**`market_data_cache.json` stays at the repo root — it is shared across all
 accounts and is never moved.**
 
 ### N.3 Refusal cases
@@ -527,7 +523,7 @@ python scripts/transactions.py account list
 # Switch the active account
 python scripts/transactions.py account use <name>
 
-# Create a new account (scaffolds directory + template-draft SETTINGS.md + db init)
+# Create a new account (scaffolds directory + template-draft SETTINGS.md + Markdown ledger init)
 python scripts/transactions.py account create <name>
 
 # Preflight migration state non-interactively (agents / CI)

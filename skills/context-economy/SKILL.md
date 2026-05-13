@@ -1,6 +1,6 @@
 ---
 name: context-economy
-description: Enforce context-drop and temp-researcher discipline for large extraction, research, PDF/OCR, web-search, multi-file, or broad database phases. Use when a workflow will produce more than about 5K tokens of raw tool output, needs a result artifact or short summary, or mentions context economy, context drop, temp-researcher, subagent isolation, compaction, or keeping research data out of the parent context.
+description: Enforce context-drop and temp-researcher discipline for large extraction, research, PDF/OCR, web-search, multi-file, or broad ledger/data phases. Use when a workflow will produce more than about 5K tokens of raw tool output, needs a result artifact or short summary, or mentions context economy, context drop, temp-researcher, subagent isolation, compaction, or keeping research data out of the parent context.
 ---
 
 # Context Economy
@@ -9,7 +9,7 @@ description: Enforce context-drop and temp-researcher discipline for large extra
 
 This skill is the context hygiene gate. Follow `docs/context_drop_protocol.md` and `docs/temp_researcher_contract.md`; this skill is only the trigger and checklist.
 
-Use it whenever a phase's internal work is likely to produce > 5K tokens of raw tool output and the deliverable is a file or short summary. Typical cases: daily-report §10.5 news/events research, onboarding statement extraction, large broker imports, PDF/OCR/image parsing, broad web research, broad multi-file reads, and broad transaction/database scans.
+Use it whenever a phase's internal work is likely to produce > 5K tokens of raw tool output and the deliverable is a file or short summary. Typical cases: daily-report §10.5 news/events research, onboarding statement extraction, large broker imports, PDF/OCR/image parsing, broad web research, broad multi-file reads, and broad transaction/ledger scans.
 
 ## Natural-Language User Interface
 
@@ -20,7 +20,7 @@ Treat natural language as the only default user interface. Command snippets, fla
 Before starting a tool-heavy phase, classify it:
 
 - **Small / local**: ≤ a few thousand tokens, no repeated large reads, no result artifact needed → stay in parent.
-- **Research-class / temporary**: > 5K raw tool-output tokens, or large WebSearch/WebFetch/PDF/OCR/multi-file/DB output, and a compact artifact can represent the result → isolate it.
+- **Research-class / temporary**: > 5K raw tool-output tokens, or large WebSearch/WebFetch/PDF/OCR/multi-file/ledger output, and a compact artifact can represent the result → isolate it.
 - **Forbidden by mode**: if the active report/account/workflow policy says the phase must not run (for example `portfolio_report` news/events/actions research), skip it instead of delegating.
 
 ## Temp-Researcher Contract

@@ -4,8 +4,8 @@
 portfolio_snapshot.py — pure-compute pipeline stage for the portfolio report.
 
 This module owns every deterministic numeric / structural computation that
-turns `transactions.db` + `prices.json` + `SETTINGS.md` into the report-ready
-data the HTML renderer consumes:
+turns Markdown ledger replay data + `prices.json` + `SETTINGS.md` into the report-ready data
+the HTML renderer consumes:
 
   - Per-ticker aggregation (`aggregate`, `merge_prices`, `_fx_to_base`)
   - Hold period & pacing (`book_pacing`, `hold_period_label`)
@@ -1174,7 +1174,7 @@ def _compute_snapshot_core(
     pre-refactor outer-try graceful-degradation behavior on a corrupted txn
     log.
 
-    Lazy imports ``transactions`` / ``report_accuracy`` so this module can
+    Lazy imports the transaction runtime / ``report_accuracy`` so this module can
     be used in environments where they may not be on ``sys.path`` yet.
     """
     today = today or _dt.date.today()
@@ -1182,11 +1182,7 @@ def _compute_snapshot_core(
     # Lazy imports to avoid import-time circularity.
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     from report_accuracy import compute_report_accuracy       # noqa: WPS433
-    from transactions import (                               # noqa: WPS433
-        compute_profit_panel,
-        compute_realized_unrealized,
-        compute_transaction_analytics,
-    )
+    import transactions as tx_runtime                         # noqa: WPS433
 
     base = settings.base_currency
     config: Dict[str, float] = {**DEFAULTS, **settings.config_overrides}
@@ -1213,15 +1209,15 @@ def _compute_snapshot_core(
         profit_panel_error = realized_unrealized_error = analytics_error = txn_load_error
     else:
         try:
-            profit_panel = compute_profit_panel(txns, prices, base=base, today=today)
+            profit_panel = tx_runtime.compute_profit_panel(txns, prices, base=base, today=today)
         except Exception as e:                                # noqa: BLE001
             profit_panel_error = str(e)
         try:
-            realized_unrealized_data = compute_realized_unrealized(txns, prices, base=base)
+            realized_unrealized_data = tx_runtime.compute_realized_unrealized(txns, prices, base=base)
         except Exception as e:                                # noqa: BLE001
             realized_unrealized_error = str(e)
         try:
-            analytics = compute_transaction_analytics(txns, prices, base=base, today=today)
+            analytics = tx_runtime.compute_transaction_analytics(txns, prices, base=base, today=today)
         except Exception as e:                                # noqa: BLE001
             analytics_error = str(e)
 
@@ -1291,19 +1287,16 @@ def compute_snapshot(
     wrapped (a Lot-load failure propagates exactly as in the pre-refactor
     code).
 
-    Lazy imports ``transactions`` so this module can be used in environments
-    where ``transactions.py`` may not be on ``sys.path`` yet.
+    Lazy imports the transaction runtime so this module can be used in
+    environments where the sibling script may not be on ``sys.path`` yet.
     """
     # Lazy imports to avoid import-time circularity.
     sys.path.insert(0, str(Path(__file__).resolve().parent))
-    from transactions import (                               # noqa: WPS433
-        load_holdings_lots,
-        load_transactions_db,
-    )
+    import transactions as tx_runtime                         # noqa: WPS433
 
-    lots = load_holdings_lots(db_path)
+    lots = tx_runtime.load_holdings_lots(db_path)
     try:
-        txns = load_transactions_db(db_path)
+        txns = tx_runtime.load_transactions_db(db_path)
         txn_load_error: Optional[str] = None
     except Exception as e:                                    # noqa: BLE001
         txns = []

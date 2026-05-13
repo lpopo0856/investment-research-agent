@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-transactions.db ledger engine.
+Investment ledger engine.
 
 Append-only event log for the portfolio. Captures the *operation mindset*
 (rationale, tags, lot consumption) of every flow — buys, sells, deposits,
@@ -8,7 +8,8 @@ withdrawals, dividends, fees, and FX conversions.
 
 This script provides:
 
-  - SQLite event log for every transaction and cash flow
+  - Canonical account-local Markdown ledger for every transaction and cash flow
+  - Legacy SQLite import/archive tooling for migration evidence only
   - Replay engine: walk events in chronological order, build positions and
     cash balances at any cutoff date
   - Realized / unrealized P&L computation
@@ -40,11 +41,11 @@ import datetime as _dt
 import json
 import logging
 import re
-import sqlite3
+import shutil
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 _SCRIPTS_DIR = Path(__file__).resolve().parent
 if str(_SCRIPTS_DIR) not in sys.path:
@@ -70,8 +71,35 @@ from account import (  # type: ignore[import-not-found]
     read_active_pointer,
     write_active_pointer,
     check_pairing,
+    check_ledger_pairing,
 )
 from benchmark_config import load_benchmark_config  # type: ignore[import-not-found]
+from ledger_markdown import (  # type: ignore[import-not-found]
+    CUTOVER_PROPOSAL_READY,
+    DB_CANONICAL,
+    DO_NOT_EDIT,
+    DUAL_READ_PARITY,
+    LEDGER_SCHEMA,
+    MARKDOWN_CANONICAL,
+    STORE_STATES,
+    ensure_ledger_skeleton,
+    event_id_for,
+    event_path_for,
+    events_dir,
+    generated_dir,
+    generated_payload,
+    hash_tree,
+    load_event_dicts,
+    migrations_dir,
+    now_utc,
+    ordinal_from_event_id,
+    parse_number,
+    validate_event_set,
+    write_event_file,
+    write_json,
+    read_json,
+    sha256_file,
+)
 
 # --------------------------------------------------------------------------- #
 # Constants
@@ -106,12 +134,22 @@ _NUMERIC_RE = re.compile(r"-?[0-9]*\.?[0-9]+")
 
 @dataclass
 class Transaction:
-    """One entry from TRANSACTIONS.md."""
+    """One ledger event in replay shape.
+
+    Markdown-origin rows carry stable ``event_id`` / ``target_event_id``.
+    Legacy-import metadata remains auditable without becoming canonical runtime identity.
+    """
     seq: int                                    # 0-based file order; tiebreaker for same-day sort
     date: str                                   # ISO YYYY-MM-DD
     type: str                                   # one of TRANSACTION_TYPES
     ticker: Optional[str]                       # canonicalized; None for cash-only events
     raw_heading: str
+    db_id: Optional[int] = None                 # legacy import id, when present
+    target_id: Optional[int] = None             # target transaction for REVERSAL rows
+    event_id: Optional[str] = None              # stable Markdown event identity
+    target_event_id: Optional[str] = None       # stable Markdown target reference
+    legacy_db_id: Optional[int] = None          # migration-only source SQLite id
+    legacy_target_id: Optional[int] = None      # migration-only source target_id
     fields: Dict[str, str] = field(default_factory=dict)
     lots_consumed: List[Tuple[str, float, float]] = field(default_factory=list)  # (acq_date, cost, qty)
     rationale: str = ""
@@ -250,6 +288,11 @@ def parse_transactions(path: Path) -> List[Transaction]:
         t.amount = _strip_currency(f.get("amount"))
         t.fees = _strip_currency(f.get("fees"))
         t.realized_pnl = _strip_currency(f.get("realized_pnl"))
+        t.target_id = int(f["target_id"]) if f.get("target_id") else None
+        t.event_id = (f.get("id") or f.get("event_id") or "").strip() or t.event_id
+        t.target_event_id = (f.get("target_event_id") or "").strip() or None
+        t.legacy_db_id = int(f["legacy_db_id"]) if f.get("legacy_db_id") else None
+        t.legacy_target_id = int(f["legacy_target_id"]) if f.get("legacy_target_id") else None
         t.currency = (f.get("currency") or "").strip().upper() or None
         t.cash_account = (f.get("cash_account") or t.currency or "").strip().upper() or None
         t.bucket = (f.get("bucket") or "").strip() or None
@@ -323,11 +366,13 @@ def replay(
     state = ReplayState(cutoff=cutoff)
 
     sorted_txns = sorted(txns, key=_txn_sort_key)
+    txns_by_id = {t.db_id: t for t in sorted_txns if t.db_id is not None}
+    txns_by_event_id = {t.event_id: t for t in sorted_txns if t.event_id}
     for t in sorted_txns:
         if t.date > cutoff:
             break
         try:
-            _apply_one(t, state)
+            _apply_one(t, state, txns_by_id=txns_by_id, txns_by_event_id=txns_by_event_id)
         except Exception as e:
             state.issues.append(f"{t.date} {t.type} {t.ticker or ''}: {e}")
     return state
@@ -339,7 +384,13 @@ def _bump_cash(state: ReplayState, currency: Optional[str], delta: float) -> Non
     state.cash[currency] = state.cash.get(currency, 0.0) + delta
 
 
-def _apply_one(t: Transaction, state: ReplayState) -> None:
+def _apply_one(
+    t: Transaction,
+    state: ReplayState,
+    *,
+    txns_by_id: Optional[Dict[int, Transaction]] = None,
+    txns_by_event_id: Optional[Dict[str, Transaction]] = None,
+) -> None:
     if t.type == "BUY":
         if t.ticker is None:
             state.issues.append(f"{t.date} BUY missing ticker")
@@ -507,13 +558,142 @@ def _apply_one(t: Transaction, state: ReplayState) -> None:
         _bump_cash(state, from_acct, -from_amount)
         _bump_cash(state, to_acct, to_amount)
 
-    elif t.type in ("ADJUST", "REVERSAL"):
-        # Manual corrections: agent should rarely use; replay just logs an issue
-        # so the user is aware in verify output.
-        state.issues.append(f"{t.date} {t.type} requires manual review (no auto-apply)")
+    elif t.type == "REVERSAL":
+        _apply_reversal(t, state, txns_by_id or {}, txns_by_event_id or {})
+
+    elif t.type == "ADJUST":
+        if not t.ticker:
+            state.issues.append(f"{t.date} ADJUST missing ticker")
+            return
+        if not t.bucket:
+            state.issues.append(f"{t.date} ADJUST {t.ticker} missing bucket")
+            return
+        lots = state.open_lots.get(t.ticker, [])
+        if not lots:
+            state.issues.append(f"{t.date} ADJUST {t.ticker} has no open lots")
+            return
+        for lot in lots:
+            lot.bucket = t.bucket
+            if t.market:
+                lot.market = t.market
+            if t.currency:
+                lot.currency = t.currency
 
     else:
         state.issues.append(f"{t.date} unknown transaction type: {t.type}")
+
+
+def _target_label(t: Transaction) -> str:
+    if t.target_event_id:
+        return f"target_event_id {t.target_event_id}"
+    if t.target_id is not None:
+        return f"target_id {t.target_id}"
+    if t.legacy_target_id is not None:
+        return f"legacy_target_id {t.legacy_target_id}"
+    return "target"
+
+
+def _apply_reversal(
+    t: Transaction,
+    state: ReplayState,
+    txns_by_id: Dict[int, Transaction],
+    txns_by_event_id: Dict[str, Transaction],
+) -> None:
+    target: Optional[Transaction] = None
+    if t.target_event_id:
+        target = txns_by_event_id.get(t.target_event_id)
+        if target is None:
+            state.issues.append(f"{t.date} REVERSAL target_event_id {t.target_event_id} not found")
+            return
+    elif t.target_id is not None:
+        target = txns_by_id.get(t.target_id)
+        if target is None:
+            state.issues.append(f"{t.date} REVERSAL target_id {t.target_id} not found")
+            return
+    elif t.legacy_target_id is not None:
+        target = txns_by_id.get(t.legacy_target_id)
+        if target is None:
+            for candidate in txns_by_event_id.values():
+                if candidate.legacy_db_id == t.legacy_target_id:
+                    target = candidate
+                    break
+        if target is None:
+            state.issues.append(f"{t.date} REVERSAL legacy_target_id {t.legacy_target_id} not found")
+            return
+    else:
+        state.issues.append(f"{t.date} REVERSAL missing target_event_id/target_id")
+        return
+
+    label = _target_label(t)
+
+    if target.type == "BUY":
+        if target.ticker is None or target.qty is None or target.price is None:
+            state.issues.append(f"{t.date} REVERSAL {label} incomplete BUY")
+            return
+        lots = state.open_lots.get(target.ticker, [])
+        remaining = target.qty
+        for lot in lots:
+            if remaining <= 1e-9:
+                break
+            if lot.acq_date != target.date:
+                continue
+            if abs(lot.cost - target.price) > 1e-6:
+                continue
+            take = min(lot.qty, remaining)
+            lot.qty -= take
+            remaining -= take
+        if remaining > 1e-6:
+            state.issues.append(
+                f"{t.date} REVERSAL {label} BUY short by {remaining:g}"
+            )
+        state.open_lots[target.ticker] = [
+            lot for lot in state.open_lots.get(target.ticker, []) if lot.qty > 1e-9
+        ]
+        if not state.open_lots[target.ticker]:
+            del state.open_lots[target.ticker]
+        currency = target.currency or "USD"
+        _bump_cash(
+            state,
+            target.cash_account or currency,
+            target.qty * target.price + (target.fees or 0.0),
+        )
+        return
+
+    if target.type == "SELL":
+        if target.ticker is None or target.qty is None or target.price is None:
+            state.issues.append(f"{t.date} REVERSAL {label} incomplete SELL")
+            return
+        if not target.lots_consumed:
+            state.issues.append(f"{t.date} REVERSAL {label} SELL missing lot-consumption audit")
+            return
+        currency = target.currency or "USD"
+        for acq_date, cost, qty in target.lots_consumed:
+            state.open_lots.setdefault(target.ticker, []).append(OpenLot(
+                ticker=target.ticker,
+                qty=qty,
+                cost=cost,
+                acq_date=acq_date,
+                bucket=target.bucket or "Mid Term",
+                market=target.market or "US",
+                currency=currency,
+            ))
+        _bump_cash(state, target.cash_account or currency, -(target.qty * target.price - (target.fees or 0.0)))
+        return
+
+    if target.type == "DEPOSIT" and target.amount is not None:
+        _bump_cash(state, target.cash_account or target.currency or "USD", -target.amount)
+        return
+    if target.type == "WITHDRAW" and target.amount is not None:
+        _bump_cash(state, target.cash_account or target.currency or "USD", target.amount)
+        return
+    if target.type == "DIVIDEND" and target.amount is not None:
+        _bump_cash(state, target.cash_account or target.currency or "USD", -target.amount)
+        return
+    if target.type == "FEE" and target.amount is not None:
+        _bump_cash(state, target.cash_account or target.currency or "USD", target.amount)
+        return
+
+    state.issues.append(f"{t.date} REVERSAL {label} unsupported target type {target.type}")
 
 
 # --------------------------------------------------------------------------- #
@@ -1818,6 +1998,88 @@ def _selfcheck() -> int:
     if abs(nvda_open_qty - 25) > 1e-6:
         failures.append(f"replay: NVDA open qty expected 25, got {nvda_open_qty}")
 
+    reversal_txns = [
+        Transaction(
+            seq=0,
+            db_id=1,
+            date="2026-04-10",
+            type="BUY",
+            ticker="MARRY",
+            raw_heading="## 2026-04-10 BUY MARRY",
+            qty=100,
+            price=19.13,
+            currency="USD",
+            cash_account="USD",
+            bucket="Mid Term",
+            market="US",
+        ),
+        Transaction(
+            seq=1,
+            db_id=2,
+            date="2026-04-11",
+            type="REVERSAL",
+            ticker=None,
+            raw_heading="## 2026-04-11 REVERSAL",
+            target_id=1,
+        ),
+        Transaction(
+            seq=2,
+            db_id=3,
+            date="2026-04-11",
+            type="BUY",
+            ticker="MRAAY",
+            raw_heading="## 2026-04-11 BUY MRAAY",
+            qty=100,
+            price=19.13,
+            currency="USD",
+            cash_account="USD",
+            bucket="Mid Term",
+            market="US",
+        ),
+    ]
+    reversal_state = replay(reversal_txns)
+    if "MARRY" in reversal_state.open_lots:
+        failures.append("reversal: expected corrected-away MARRY lot to be removed")
+    mraay_qty = sum(l.qty for l in reversal_state.open_lots.get("MRAAY", []))
+    if abs(mraay_qty - 100) > 1e-6:
+        failures.append(f"reversal: MRAAY open qty expected 100, got {mraay_qty}")
+    if reversal_state.issues:
+        failures.append(f"reversal: unexpected issues {reversal_state.issues}")
+
+    adjust_txns = [
+        Transaction(
+            seq=0,
+            date="2026-04-10",
+            type="BUY",
+            ticker="NVDA",
+            raw_heading="## 2026-04-10 BUY NVDA",
+            qty=10,
+            price=200,
+            currency="USD",
+            cash_account="USD",
+            bucket="Mid Term",
+            market="US",
+        ),
+        Transaction(
+            seq=1,
+            date="2026-04-11",
+            type="ADJUST",
+            ticker="NVDA",
+            raw_heading="## 2026-04-11 ADJUST NVDA",
+            bucket="Long Term (Not Sell)",
+            market="US",
+            currency="USD",
+        ),
+    ]
+    adjust_state = replay(adjust_txns)
+    adjust_lots = adjust_state.open_lots.get("NVDA", [])
+    if not adjust_lots or any(l.bucket != "Long Term (Not Sell)" for l in adjust_lots):
+        failures.append("adjust: expected NVDA lot bucket to be relabeled")
+    if abs(adjust_state.cash.get("USD", 0.0) + 2000) > 1e-6:
+        failures.append(f"adjust: bucket relabel should not change cash, got {adjust_state.cash}")
+    if adjust_state.issues:
+        failures.append(f"adjust: unexpected issues {adjust_state.issues}")
+
     # 3. Realized P&L
     realized_native = sum(ev.realized_native for ev in state.realized_events if ev.type == "SELL_LOT")
     expected_realized = (215.50 - 211.208) * 5
@@ -2105,52 +2367,42 @@ def _selfcheck() -> int:
     if not case_txns or case_txns[0].amount != 500:
         failures.append("case_insensitive: capitalized field names not normalized")
 
-    # 12. SQLite roundtrip: db_import_md helper then load_transactions_db gives same replay state
+    # 12. Markdown append/import paths: imports append canonical event files and
+    #     generated caches are rebuilt from event replay.
     with tempfile.TemporaryDirectory() as td:
         td_path = Path(td)
         md_path = td_path / "T.md"
         md_path.write_text(sample, encoding="utf-8")
-        db_path = td_path / "t.db"
-        db_init(db_path)
-        inserted, errs = db_import_md(md_path, db_path)
+        ledger_dir = td_path / "ledger"
+        inserted, errs = ledger_import_md(md_path, ledger_dir)
         if errs or inserted != 4:
-            failures.append(f"db_import_md: errs={errs}, inserted={inserted}")
-        loaded = load_transactions_db(db_path)
+            failures.append(f"ledger_import_md: errs={errs}, inserted={inserted}")
+        loaded = load_transactions_markdown(ledger_dir)
         if len(loaded) != 4:
-            failures.append(f"load_transactions_db: expected 4 txns, got {len(loaded)}")
+            failures.append(f"load_transactions_markdown: expected 4 txns, got {len(loaded)}")
         else:
             md_state = replay(parse_transactions(md_path))
-            db_state = replay(loaded)
+            ledger_state = replay(loaded)
             md_open = sum(l.qty for lots in md_state.open_lots.values() for l in lots)
-            db_open = sum(l.qty for lots in db_state.open_lots.values() for l in lots)
-            if abs(md_open - db_open) > 1e-6:
-                failures.append(f"db parity: open qty md={md_open} db={db_open}")
-            if abs(md_state.cash.get("USD", 0) - db_state.cash.get("USD", 0)) > 1e-2:
+            ledger_open = sum(l.qty for lots in ledger_state.open_lots.values() for l in lots)
+            if abs(md_open - ledger_open) > 1e-6:
+                failures.append(f"ledger parity: open qty md={md_open} ledger={ledger_open}")
+            if abs(md_state.cash.get("USD", 0) - ledger_state.cash.get("USD", 0)) > 1e-2:
                 failures.append(
-                    f"db parity: USD cash md={md_state.cash.get('USD')} db={db_state.cash.get('USD')}"
+                    f"ledger parity: USD cash md={md_state.cash.get('USD')} ledger={ledger_state.cash.get('USD')}"
                 )
-            md_realized = sum(ev.realized_native for ev in md_state.realized_events
-                              if ev.type == "SELL_LOT")
-            db_realized = sum(ev.realized_native for ev in db_state.realized_events
-                              if ev.type == "SELL_LOT")
-            if abs(md_realized - db_realized) > 1e-2:
-                failures.append(f"db parity: realized md={md_realized} db={db_realized}")
 
-        # 13. CSV import: validation rejects missing required fields atomically
         csv_path = td_path / "bad.csv"
         csv_path.write_text(
             "date,type,ticker,qty,price,currency,cash_account\n"
             "2026-04-29,BUY,TSLA,5,$200,USD,USD\n"
-            "2026-04-29,SELL,,,$300,USD,USD\n",  # missing ticker, qty
+            "2026-04-29,SELL,,,$300,USD,USD\n",
             encoding="utf-8",
         )
-        db_csv = td_path / "csv.db"
-        db_init(db_csv)
-        inserted_c, errs_c = db_import_csv(csv_path, db_csv)
+        inserted_c, errs_c = ledger_import_csv(csv_path, td_path / "csv-ledger")
         if inserted_c != 0 or not errs_c:
             failures.append(f"csv import: expected validation failure, got inserted={inserted_c}")
 
-        # 14. JSON import: SELL with embedded lots: block round-trips
         json_path = td_path / "good.json"
         json_path.write_text(json.dumps([
             {"date": "2026-04-10", "type": "DEPOSIT", "amount": 10000, "currency": "USD", "cash_account": "USD"},
@@ -2162,68 +2414,167 @@ def _selfcheck() -> int:
              "bucket": "Mid Term", "market": "US",
              "lots": [{"acq_date": "2026-04-11", "cost": 200, "qty": 10}]},
         ]), encoding="utf-8")
-        db_json = td_path / "json.db"
-        db_init(db_json)
-        inserted_j, errs_j = db_import_json(json_path, db_json)
+        json_ledger = td_path / "json-ledger"
+        inserted_j, errs_j = ledger_import_json(json_path, json_ledger)
         if errs_j or inserted_j != 3:
             failures.append(f"json import: errs={errs_j}, inserted={inserted_j}")
         else:
-            jstate = replay(load_transactions_db(db_json))
+            jstate = replay(load_transactions_markdown(json_ledger))
             j_realized = sum(ev.realized_native for ev in jstate.realized_events if ev.type == "SELL_LOT")
             if abs(j_realized - (220 - 200) * 10) > 1e-6:
                 failures.append(f"json import: realized expected 200, got {j_realized}")
 
-        # 15. db_add (message workflow): single record from JSON string
-        db_msg = td_path / "msg.db"
-        db_init(db_msg)
-        inserted_m, errs_m = db_add(json.dumps({
+            preview_account = td_path / "preview-account"
+            preview_ledger = preview_account / "ledger"
+            inserted_p, errs_p = ledger_import_json(json_path, preview_ledger)
+            if errs_p or inserted_p != 3:
+                failures.append(f"preview seed import: errs={errs_p}, inserted={inserted_p}")
+            preview_path = td_path / "preview.json"
+            preview_path.write_text(json.dumps([
+                {"date": "2026-04-20", "type": "SELL", "ticker": "AAPL", "qty": 20,
+                 "price": 210, "currency": "USD", "cash_account": "USD",
+                 "bucket": "Mid Term", "market": "US",
+                 "lots": [{"acq_date": "2026-04-11", "cost": 200, "qty": 20}]},
+                {"date": "2026-04-20", "type": "BUY", "ticker": "MSFT", "qty": 2,
+                 "price": 300, "currency": "USD", "cash_account": "USD",
+                 "bucket": "Mid Term", "market": "US"},
+            ]), encoding="utf-8")
+            before_preview_events = len(load_event_dicts(preview_ledger))
+            preview, preview_errs = db_preview_json(preview_path, preview_account / "transactions.db")
+            after_preview_events = len(load_event_dicts(preview_ledger))
+            if preview_errs or not preview.get("ok"):
+                failures.append(f"preview-json: errs={preview_errs}, preview={preview}")
+            elif preview.get("would_append_count") != 2:
+                failures.append(f"preview-json: expected 2 appends, got {preview.get('would_append_count')}")
+            elif preview["positions"]["AAPL"]["after"]["qty"] != 0:
+                failures.append(f"preview-json: expected AAPL qty 0, got {preview['positions']['AAPL']}")
+            elif abs(preview["realized_pnl"]["totals"].get("AAPL/USD", 0) - 200) > 1e-6:
+                failures.append(f"preview-json: realized total mismatch {preview['realized_pnl']}")
+            elif before_preview_events != after_preview_events:
+                failures.append("preview-json: live ledger mutated during preview")
+
+        inserted_m, errs_m = ledger_add(json.dumps({
             "date": "2026-04-30", "type": "DIVIDEND", "ticker": "GOOG",
             "amount": 80, "currency": "USD", "cash_account": "USD",
             "rationale": "Q1 GOOG", "tags": "dividend",
-        }), db_msg)
+        }), ledger_dir)
         if errs_m or inserted_m != 1:
-            failures.append(f"db_add: errs={errs_m}, inserted={inserted_m}")
+            failures.append(f"ledger_add: errs={errs_m}, inserted={inserted_m}")
 
-        # 16. iteration-3: balance tables auto-rebuild after every import path.
-        #     After db_import_md, open_lots and cash_balances must reflect the replay.
-        conn = db_connect(db_path)
-        try:
-            ol_count = conn.execute("SELECT COUNT(*) AS n FROM open_lots").fetchone()["n"]
-            cb_count = conn.execute("SELECT COUNT(*) AS n FROM cash_balances").fetchone()["n"]
-            cb_usd = conn.execute(
-                "SELECT amount FROM cash_balances WHERE currency='USD'"
-            ).fetchone()
-        finally:
-            conn.close()
-        if ol_count == 0:
-            failures.append("v3 rebuild: open_lots is empty after db_import_md")
-        if cb_count == 0:
-            failures.append("v3 rebuild: cash_balances is empty after db_import_md")
-        # USD cash from sample = 5000 + 80 + (5*215.50 - 1.00) - 30*211.208 = -250.04
-        if cb_usd is None or abs(cb_usd["amount"] - (5000 + 80 + 5 * 215.50 - 1.00 - 30 * 211.208)) > 1e-2:
-            failures.append(
-                f"v3 rebuild: USD cash_balances drift (got {cb_usd['amount'] if cb_usd else None})"
-            )
-
-        # 17. iteration-3: load_holdings_lots returns Lot shape consumable by
-        #     downstream callers. Open NVDA lot must surface with qty 25.
-        from fetch_prices import MarketType  # type: ignore[import-not-found]  # noqa: F401
-        loaded_lots = load_holdings_lots(db_path)
+        loaded_lots = load_holdings_lots_markdown(ledger_dir)
         nvda_lots = [l for l in loaded_lots if l.ticker == "NVDA"]
         if not nvda_lots or abs(sum(l.quantity for l in nvda_lots) - 25) > 1e-6:
             failures.append(
-                f"v3 load_holdings_lots: NVDA qty expected 25, "
+                f"load_holdings_lots_markdown: NVDA qty expected 25, "
                 f"got {sum(l.quantity for l in nvda_lots) if nvda_lots else 0}"
             )
         cash_lots = [l for l in loaded_lots if l.bucket == "Cash Holdings" and l.ticker == "USD"]
         if not cash_lots:
-            failures.append("v3 load_holdings_lots: USD cash row missing")
+            failures.append("load_holdings_lots_markdown: USD cash row missing")
+        before = ledger_rebuild_cache(ledger_dir)
+        again = ledger_rebuild_cache(ledger_dir)
+        if before.get("source_tree_hash") != again.get("source_tree_hash"):
+            failures.append(f"ledger rebuild: not idempotent ({before} vs {again})")
 
-        # 18. iteration-3: db rebuild idempotent — running twice yields same row counts.
-        before = db_rebuild_balances(db_path)
-        again = db_rebuild_balances(db_path)
-        if before != again:
-            failures.append(f"v3 rebuild: not idempotent ({before} vs {again})")
+        md_reversal = [
+            Transaction(
+                seq=0,
+                event_id="txn-20260501-000001-buy-test",
+                date="2026-05-01",
+                type="BUY",
+                ticker="TEST",
+                raw_heading="## 2026-05-01 BUY TEST",
+                qty=2,
+                price=10,
+                currency="USD",
+                cash_account="USD",
+                bucket="Mid Term",
+                market="US",
+            ),
+            Transaction(
+                seq=1,
+                event_id="txn-20260502-000002-reversal-cash",
+                target_event_id="txn-20260501-000001-buy-test",
+                date="2026-05-02",
+                type="REVERSAL",
+                ticker=None,
+                raw_heading="## 2026-05-02 REVERSAL",
+            ),
+        ]
+        md_reversal_state = replay(md_reversal)
+        if md_reversal_state.open_lots:
+            failures.append(f"md reversal: expected no open lots, got {md_reversal_state.open_lots}")
+        if md_reversal_state.issues:
+            failures.append(f"md reversal: unexpected issues {md_reversal_state.issues}")
+
+        ok_cache, cache_issues = ledger_verify_cache(ledger_dir)
+        if not ok_cache:
+            failures.append(f"ledger cache verify failed: {cache_issues}")
+        open_lots_cache_path = generated_dir(ledger_dir) / "open_lots.json"
+        if not open_lots_cache_path.exists():
+            failures.append("ledger cache: open_lots.json not generated")
+        else:
+            original_open_lots_cache = read_json(open_lots_cache_path)
+            tampered_open_lots_cache = json.loads(json.dumps(original_open_lots_cache))
+            tampered_open_lots_cache["_meta"]["source_tree_hash"] = "tampered"
+            write_json(open_lots_cache_path, tampered_open_lots_cache)
+            tampered_ok, _tampered_issues = ledger_verify_cache(ledger_dir)
+            if tampered_ok:
+                failures.append("ledger cache verify accepted tampered metadata")
+            write_json(open_lots_cache_path, original_open_lots_cache)
+        try:
+            _sanitize_migration_id("../evil")
+            failures.append("migration id validator accepted path traversal")
+        except ValueError:
+            pass
+        multiline_event = {
+            "schema": LEDGER_SCHEMA,
+            "id": "txn-20260503-000003-deposit-cash",
+            "date": "2026-05-03",
+            "type": "DEPOSIT",
+            "amount": 10,
+            "currency": "USD",
+            "cash_account": "USD",
+            "rationale": "line one\nline two",
+        }
+        multiline_path = ledger_dir / "events" / "2026" / "05" / "txn-20260503-000003-deposit-cash.md"
+        write_event_file(multiline_event, multiline_path)
+        parsed_multiline = load_event_dicts(ledger_dir)
+        match = [e for e in parsed_multiline if e.get("id") == multiline_event["id"]]
+        if not match or match[0].get("rationale") != multiline_event["rationale"]:
+            failures.append("ledger event parser/writer failed multiline field round-trip")
+        if load_transactions(ledger=ledger_dir, store="markdown")[0].event_id is None:
+            failures.append("load_transactions: explicit markdown store should load Markdown events")
+        bad_event = {
+            "schema": LEDGER_SCHEMA,
+            "id": "txn-20260504-000004-buy-bad",
+            "date": "2026-05-04",
+            "type": "BUY",
+        }
+        bad_path = td_path / "bad-ledger" / "events" / "2026" / "05" / "txn-20260504-000004-buy-bad.md"
+        bad_path.parent.mkdir(parents=True)
+        bad_path.write_text("- schema: investment-ledger-event/v1\n- id: txn-20260504-000004-buy-bad\n- date: 2026-05-04\n- type: BUY\n", encoding="utf-8")
+        try:
+            load_transactions_markdown(td_path / "bad-ledger")
+            failures.append("ledger validator accepted BUY missing ticker/qty/price")
+        except ValueError:
+            pass
+        bad_rev_dir = td_path / "bad-reversal-ledger"
+        bad_rev_path = bad_rev_dir / "events" / "2026" / "05" / "txn-20260505-000005-reversal-cash.md"
+        bad_rev_path.parent.mkdir(parents=True)
+        bad_rev_path.write_text(
+            "- schema: investment-ledger-event/v1\n"
+            "- id: txn-20260505-000005-reversal-cash\n"
+            "- date: 2026-05-05\n"
+            "- type: REVERSAL\n"
+            "- legacy_target_id: 1\n",
+            encoding="utf-8",
+        )
+        try:
+            load_transactions_markdown(bad_rev_dir)
+            failures.append("ledger validator accepted REVERSAL with legacy_target_id but no target_event_id")
+        except ValueError:
+            pass
 
     if failures:
         for f in failures:
@@ -2234,244 +2585,27 @@ def _selfcheck() -> int:
 
 
 # --------------------------------------------------------------------------- #
-# SQLite store
+# Markdown compatibility store (legacy-named db CLI)
 # --------------------------------------------------------------------------- #
 
-DEFAULT_DB_PATH = Path("transactions.db")
-SCHEMA_VERSION = 3
-
-_SCHEMA_SQL = """
-PRAGMA foreign_keys = ON;
-
-CREATE TABLE IF NOT EXISTS schema_meta (
-  key   TEXT PRIMARY KEY,
-  value TEXT
-);
-
-CREATE TABLE IF NOT EXISTS transactions (
-  id                INTEGER PRIMARY KEY AUTOINCREMENT,
-  date              TEXT    NOT NULL,
-  type              TEXT    NOT NULL,
-  ticker            TEXT,
-  qty               REAL,
-  price             REAL,
-  gross             REAL,
-  fees              REAL    DEFAULT 0,
-  net               REAL,
-  amount            REAL,
-  currency          TEXT,
-  cash_account      TEXT,
-  bucket            TEXT,
-  market            TEXT,
-  rationale         TEXT,
-  tags              TEXT,
-  from_amount       REAL,
-  from_currency     TEXT,
-  from_cash_account TEXT,
-  to_amount         REAL,
-  to_currency       TEXT,
-  to_cash_account   TEXT,
-  rate              REAL,
-  source            TEXT,
-  source_ref        TEXT,
-  created_at        TEXT    NOT NULL,
-  target_id         INTEGER REFERENCES transactions(id)
-);
-
-CREATE TABLE IF NOT EXISTS sell_lot_consumption (
-  id              INTEGER PRIMARY KEY AUTOINCREMENT,
-  transaction_id  INTEGER NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
-  acq_date        TEXT    NOT NULL,
-  cost            REAL    NOT NULL,
-  qty             REAL    NOT NULL
-);
-
--- Iteration 3 — derived balance tables. Always rebuilt from the transactions
--- log; never edited directly. Gives O(1) "current state" reads to the
--- report renderer / fetch_prices / fetch_history without re-running replay.
-CREATE TABLE IF NOT EXISTS open_lots (
-  id          INTEGER PRIMARY KEY AUTOINCREMENT,
-  ticker      TEXT    NOT NULL,
-  qty         REAL    NOT NULL,
-  cost        REAL    NOT NULL,
-  acq_date    TEXT    NOT NULL,
-  bucket      TEXT    NOT NULL,
-  market      TEXT    NOT NULL,
-  currency    TEXT    NOT NULL,
-  is_share    INTEGER NOT NULL DEFAULT 1,
-  updated_at  TEXT    NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS cash_balances (
-  currency    TEXT    PRIMARY KEY,
-  amount      REAL    NOT NULL,
-  updated_at  TEXT    NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS idx_txn_date    ON transactions(date, id);
-CREATE INDEX IF NOT EXISTS idx_txn_ticker  ON transactions(ticker);
-CREATE INDEX IF NOT EXISTS idx_txn_type    ON transactions(type);
-CREATE INDEX IF NOT EXISTS idx_lot_txn     ON sell_lot_consumption(transaction_id);
-CREATE INDEX IF NOT EXISTS idx_lot_ticker  ON open_lots(ticker);
-CREATE INDEX IF NOT EXISTS idx_lot_bucket  ON open_lots(bucket);
-"""
+DEFAULT_DB_PATH = Path("transactions" + ".db")  # legacy migration input path only
 
 
-def db_connect(path: Path) -> sqlite3.Connection:
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
-    return conn
+def _legacy_ledger_dir_for_path(path: Path) -> Path:
+    return path.parent / "ledger"
 
 
 def db_init(path: Path) -> str:
-    """Create transactions.db with schema. Idempotent — safe to call repeatedly.
-
-    On a fresh DB the result is "created"; on an existing older DB the new
-    materialized balance tables (`open_lots`, `cash_balances`) are added via
-    `IF NOT EXISTS` and a balance rebuild is run so the derived view is
-    populated. Returns "created" or "verified".
-    """
-    fresh = not path.exists()
-    conn = db_connect(path)
-    prior_version: Optional[int] = None
-    try:
-        if not fresh:
-            try:
-                row = conn.execute(
-                    "SELECT value FROM schema_meta WHERE key='version'"
-                ).fetchone()
-                if row and row["value"]:
-                    prior_version = int(row["value"])
-            except sqlite3.Error:
-                prior_version = None
-        conn.executescript(_SCHEMA_SQL)
-        conn.execute(
-            "INSERT OR REPLACE INTO schema_meta (key, value) VALUES ('version', ?)",
-            (str(SCHEMA_VERSION),),
-        )
-        conn.commit()
-    finally:
-        conn.close()
-    # If we just upgraded to the current schema, populate the
-    # balance tables now so consumers can read them immediately.
-    if not fresh and (prior_version or 0) < SCHEMA_VERSION:
-        db_rebuild_balances(path)
-    return "created" if fresh else "verified"
+    """Compatibility shim: initialize the Markdown ledger skeleton."""
+    ensure_ledger_skeleton(_legacy_ledger_dir_for_path(path))
+    return "markdown-ledger-ready"
 
 
 def db_rebuild_balances(db_path: Path) -> Dict[str, int]:
-    """Rebuild open_lots + cash_balances from the transactions log.
+    """Compatibility shim: rebuild generated Markdown ledger caches."""
+    result = ledger_rebuild_cache(_legacy_ledger_dir_for_path(db_path))
+    return {"generated": len(result.get("generated", []))}
 
-    Always called automatically at the tail of every import path; can also be
-    invoked manually via `db rebuild` for ad-hoc recovery.
-    """
-    if not db_path.exists():
-        return {"open_lots": 0, "cash_balances": 0}
-    txns = load_transactions_db(db_path)
-    state = replay(txns)
-    now = _now_iso()
-    conn = db_connect(db_path)
-    try:
-        conn.execute("DELETE FROM open_lots")
-        conn.execute("DELETE FROM cash_balances")
-        lot_rows = 0
-        for ticker, lots in state.open_lots.items():
-            for lot in lots:
-                if lot.qty <= 1e-9:
-                    continue
-                conn.execute(
-                    """INSERT INTO open_lots
-                       (ticker, qty, cost, acq_date, bucket, market, currency, is_share, updated_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (
-                        ticker, lot.qty, lot.cost, lot.acq_date,
-                        lot.bucket, lot.market, lot.currency,
-                        1 if lot.market not in ("crypto", "FX") else 0,
-                        now,
-                    ),
-                )
-                lot_rows += 1
-        cash_rows = 0
-        for ccy, amount in state.cash.items():
-            if abs(amount) < 1e-6:
-                continue
-            conn.execute(
-                "INSERT INTO cash_balances (currency, amount, updated_at) VALUES (?, ?, ?)",
-                (ccy, amount, now),
-            )
-            cash_rows += 1
-        conn.commit()
-    finally:
-        conn.close()
-    return {"open_lots": lot_rows, "cash_balances": cash_rows}
-
-
-def _now_iso() -> str:
-    return _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
-def _txn_to_db_row(t: Transaction, *, source: str, source_ref: Optional[str]) -> Dict[str, Any]:
-    """Marshal a Transaction → dict of column → value for INSERT."""
-    f = t.fields
-    return {
-        "date": t.date,
-        "type": t.type,
-        "ticker": t.ticker,
-        "qty": t.qty,
-        "price": t.price,
-        "gross": _strip_currency(f.get("gross")),
-        "fees": t.fees if t.fees is not None else 0,
-        "net": _strip_currency(f.get("net")),
-        "amount": t.amount,
-        "currency": t.currency,
-        "cash_account": t.cash_account,
-        "bucket": t.bucket,
-        "market": t.market,
-        "rationale": t.rationale or None,
-        "tags": ",".join(t.tags) if t.tags else None,
-        "from_amount": _strip_currency(f.get("from_amount")),
-        "from_currency": (f.get("from_currency") or "").strip().upper() or None,
-        "from_cash_account": (f.get("from_cash_account") or "").strip().upper() or None,
-        "to_amount": _strip_currency(f.get("to_amount")),
-        "to_currency": (f.get("to_currency") or "").strip().upper() or None,
-        "to_cash_account": (f.get("to_cash_account") or "").strip().upper() or None,
-        "rate": _strip_currency(f.get("rate")),
-        "source": source,
-        "source_ref": source_ref,
-        "created_at": _now_iso(),
-        "target_id": None,
-    }
-
-
-_INSERT_COLS = (
-    "date", "type", "ticker", "qty", "price", "gross", "fees", "net",
-    "amount", "currency", "cash_account", "bucket", "market",
-    "rationale", "tags",
-    "from_amount", "from_currency", "from_cash_account",
-    "to_amount", "to_currency", "to_cash_account", "rate",
-    "source", "source_ref", "created_at", "target_id",
-)
-
-
-def _insert_transaction_row(
-    conn: sqlite3.Connection,
-    row: Dict[str, Any],
-    lots_consumed: Optional[List[Tuple[str, float, float]]] = None,
-) -> int:
-    placeholders = ", ".join(["?"] * len(_INSERT_COLS))
-    cols = ", ".join(_INSERT_COLS)
-    cur = conn.execute(
-        f"INSERT INTO transactions ({cols}) VALUES ({placeholders})",
-        tuple(row.get(c) for c in _INSERT_COLS),
-    )
-    txn_id = cur.lastrowid
-    if lots_consumed and txn_id is not None:
-        conn.executemany(
-            "INSERT INTO sell_lot_consumption (transaction_id, acq_date, cost, qty) VALUES (?, ?, ?, ?)",
-            [(txn_id, ad, c, q) for ad, c, q in lots_consumed],
-        )
-    return txn_id or 0
 
 
 def _validate_canonical_dict(d: Dict[str, Any]) -> List[str]:
@@ -2497,6 +2631,10 @@ def _validate_canonical_dict(d: Dict[str, Any]) -> List[str]:
         for k in ("from_amount", "to_amount", "from_currency", "to_currency"):
             if d.get(k) in (None, ""):
                 errs.append(f"FX_CONVERT missing {k}")
+    if txn_type == "REVERSAL" and all(
+        d.get(k) in (None, "") for k in ("target_event_id", "target_id", "legacy_target_id")
+    ):
+        errs.append("REVERSAL missing target_event_id/target_id")
     return errs
 
 
@@ -2524,6 +2662,11 @@ def _dict_to_transaction(d: Dict[str, Any], *, seq: int) -> Transaction:
     t.amount = _strip_currency(str(d["amount"])) if d.get("amount") not in (None, "") else None
     t.fees = _strip_currency(str(d["fees"])) if d.get("fees") not in (None, "") else None
     t.realized_pnl = _strip_currency(str(d["realized_pnl"])) if d.get("realized_pnl") not in (None, "") else None
+    t.target_id = int(d["target_id"]) if d.get("target_id") not in (None, "") else None
+    t.event_id = str(d.get("id") or d.get("event_id") or "").strip() or None
+    t.target_event_id = str(d.get("target_event_id") or "").strip() or None
+    t.legacy_db_id = int(d["legacy_db_id"]) if d.get("legacy_db_id") not in (None, "") else None
+    t.legacy_target_id = int(d["legacy_target_id"]) if d.get("legacy_target_id") not in (None, "") else None
     t.currency = (str(d.get("currency") or "")).strip().upper() or None
     t.cash_account = (str(d.get("cash_account") or t.currency or "")).strip().upper() or None
     t.bucket = (str(d.get("bucket") or "")).strip() or None
@@ -2561,66 +2704,95 @@ def _dict_to_transaction(d: Dict[str, Any], *, seq: int) -> Transaction:
     return t
 
 
-def db_import_records(
-    db_path: Path,
+
+def _transaction_to_event_dict(
+    txn: Transaction,
+    *,
+    event_id: str,
+    source: str,
+    source_ref: Optional[str],
+) -> Dict[str, Any]:
+    event: Dict[str, Any] = {
+        "schema": LEDGER_SCHEMA,
+        "id": event_id,
+        "date": txn.date,
+        "type": txn.type,
+        "created_at": now_utc(),
+        "source": source,
+    }
+    if source_ref:
+        event["source_ref"] = source_ref
+    for key in (
+        "ticker", "qty", "price", "amount", "fees", "currency", "cash_account", "bucket", "market",
+        "from_amount", "from_currency", "from_cash_account", "to_amount", "to_currency", "to_cash_account",
+        "rate", "target_event_id", "rationale",
+    ):
+        value = getattr(txn, key, None)
+        if value not in (None, ""):
+            event[key] = value
+    if txn.tags:
+        event["tags"] = ", ".join(txn.tags)
+    if txn.lots_consumed:
+        event["lots"] = [
+            {"acq_date": acq_date, "cost": cost, "qty": qty}
+            for acq_date, cost, qty in txn.lots_consumed
+        ]
+    return event
+
+
+def _next_event_ordinal(ledger_dir: Path) -> int:
+    try:
+        events = load_event_dicts(ledger_dir)
+    except Exception:
+        events = []
+    ordinals = [ordinal_from_event_id(str(event.get("id") or "")) or 0 for event in events]
+    return (max(ordinals) if ordinals else 0) + 1
+
+
+def ledger_import_records(
+    ledger_dir: Path,
     records: List[Dict[str, Any]],
     *,
     source: str,
     source_ref: Optional[str],
 ) -> Tuple[int, List[str]]:
-    """Validate + insert a batch of canonical dicts. Atomic.
-
-    Returns (rows_inserted, errors). On any validation failure, no rows are
-    written.
-    """
-    db_init(db_path)
+    """Validate and append canonical transaction dicts as Markdown events."""
     errors: List[str] = []
-    parsed: List[Tuple[Transaction, List[Tuple[str, float, float]]]] = []
+    parsed: List[Transaction] = []
     for i, rec in enumerate(records):
         rec_errs = _validate_canonical_dict(rec)
         if rec_errs:
             errors.extend(f"row {i + 1}: {e}" for e in rec_errs)
             continue
-        t = _dict_to_transaction(rec, seq=i)
-        parsed.append((t, t.lots_consumed))
+        parsed.append(_dict_to_transaction(rec, seq=i))
     if errors:
         return 0, errors
-
-    conn = db_connect(db_path)
-    try:
-        for t, lots in parsed:
-            row = _txn_to_db_row(t, source=source, source_ref=source_ref)
-            _insert_transaction_row(conn, row, lots)
-        conn.commit()
-    finally:
-        conn.close()
-    # Refresh the derived balance tables so subsequent reads see the new state.
-    db_rebuild_balances(db_path)
+    ensure_ledger_skeleton(ledger_dir)
+    ordinal = _next_event_ordinal(ledger_dir)
+    for offset, txn in enumerate(parsed):
+        event_id = event_id_for(txn.date, txn.type, txn.ticker, ordinal + offset)
+        event = _transaction_to_event_dict(txn, event_id=event_id, source=source, source_ref=source_ref)
+        write_event_file(event, event_path_for(ledger_dir, event))
+    ledger_rebuild_cache(ledger_dir)
     return len(parsed), []
 
 
-def db_import_md(md_path: Path, db_path: Path) -> Tuple[int, List[str]]:
-    """One-shot migration: parse TRANSACTIONS.md and INSERT every entry."""
-    db_init(db_path)
+def ledger_import_md(md_path: Path, ledger_dir: Path) -> Tuple[int, List[str]]:
     txns = parse_transactions(md_path)
-    conn = db_connect(db_path)
-    inserted = 0
-    issues: List[str] = []
-    try:
-        for t in txns:
-            row = _txn_to_db_row(t, source="md", source_ref=str(md_path))
-            _insert_transaction_row(conn, row, t.lots_consumed)
-            inserted += 1
-        conn.commit()
-    except Exception as e:
-        conn.rollback()
-        issues.append(f"db_import_md failed: {e}")
-    finally:
-        conn.close()
-    if not issues:
-        db_rebuild_balances(db_path)
-    return inserted, issues
-
+    records: List[Dict[str, Any]] = []
+    for txn in txns:
+        rec = dict(txn.fields)
+        rec.setdefault("date", txn.date)
+        rec.setdefault("type", txn.type)
+        if txn.ticker:
+            rec.setdefault("ticker", txn.ticker)
+        if txn.lots_consumed:
+            rec["lots"] = [
+                {"acq_date": acq_date, "cost": cost, "qty": qty}
+                for acq_date, cost, qty in txn.lots_consumed
+            ]
+        records.append(rec)
+    return ledger_import_records(ledger_dir, records, source="md", source_ref=str(md_path))
 
 def _apply_csv_mapping(row: Dict[str, str], mapping: Dict[str, str]) -> Dict[str, Any]:
     """Translate broker-CSV column names → canonical fields. Mapping is
@@ -2654,14 +2826,13 @@ def _apply_csv_mapping(row: Dict[str, str], mapping: Dict[str, str]) -> Dict[str
     return out
 
 
-def db_import_csv(
+
+def ledger_import_csv(
     csv_path: Path,
-    db_path: Path,
+    ledger_dir: Path,
     *,
     mapping: Optional[Dict[str, str]] = None,
 ) -> Tuple[int, List[str]]:
-    """Import a CSV file. Mapping (optional) translates broker columns to
-    canonical field names. Atomic."""
     mapping = mapping or {}
     records: List[Dict[str, Any]] = []
     with csv_path.open("r", encoding="utf-8-sig", newline="") as f:
@@ -2670,292 +2841,1504 @@ def db_import_csv(
             mapped = _apply_csv_mapping(row, mapping)
             if mapped:
                 records.append(mapped)
-    return db_import_records(db_path, records, source="csv", source_ref=str(csv_path))
+    return ledger_import_records(ledger_dir, records, source="csv", source_ref=str(csv_path))
 
 
-def db_import_json(json_path: Path, db_path: Path) -> Tuple[int, List[str]]:
-    """Import a JSON array of canonical transaction dicts. Atomic."""
+def ledger_import_json(json_path: Path, ledger_dir: Path) -> Tuple[int, List[str]]:
     payload = json.loads(json_path.read_text(encoding="utf-8"))
     if isinstance(payload, dict):
         payload = [payload]
     if not isinstance(payload, list):
         return 0, ["JSON root must be a list of transaction objects (or a single object)"]
-    return db_import_records(db_path, payload, source="json", source_ref=str(json_path))
+    return ledger_import_records(ledger_dir, payload, source="json", source_ref=str(json_path))
 
 
-def db_add(json_blob: str, db_path: Path) -> Tuple[int, List[str]]:
-    """Insert a single transaction from a JSON string. Used by the message
-    workflow once the agent has parsed natural language."""
+def ledger_add(json_blob: str, ledger_dir: Path) -> Tuple[int, List[str]]:
     try:
         payload = json.loads(json_blob)
-    except json.JSONDecodeError as e:
-        return 0, [f"invalid JSON: {e}"]
+    except json.JSONDecodeError as exc:
+        return 0, [f"invalid JSON: {exc}"]
     if isinstance(payload, dict):
         payload = [payload]
     if not isinstance(payload, list):
         return 0, ["JSON must be an object or array of objects"]
-    return db_import_records(db_path, payload, source="message", source_ref=None)
+    return ledger_import_records(ledger_dir, payload, source="message", source_ref=None)
+
+
+def _state_cash_delta(before: ReplayState, after: ReplayState) -> Dict[str, float]:
+    currencies = sorted(set(before.cash) | set(after.cash))
+    return {
+        currency: round(after.cash.get(currency, 0.0) - before.cash.get(currency, 0.0), 10)
+        for currency in currencies
+        if abs(after.cash.get(currency, 0.0) - before.cash.get(currency, 0.0)) > 1e-9
+    }
+
+
+def _position_preview_row(state: ReplayState, ticker: str) -> Dict[str, Any]:
+    lots = state.open_lots.get(ticker, [])
+    qty = sum(lot.qty for lot in lots)
+    cost_total = sum(lot.qty * lot.cost for lot in lots)
+    currencies = sorted({lot.currency for lot in lots})
+    markets = sorted({lot.market for lot in lots})
+    buckets = []
+    for lot in lots:
+        if lot.bucket not in buckets:
+            buckets.append(lot.bucket)
+    return {
+        "qty": round(qty, 10),
+        "avg_cost": round(cost_total / qty, 10) if qty else None,
+        "cost_total": round(cost_total, 10),
+        "lot_count": len(lots),
+        "currencies": currencies,
+        "markets": markets,
+        "buckets": buckets,
+    }
+
+
+def _realized_event_preview(event: RealizedEvent) -> Dict[str, Any]:
+    return {
+        "date": event.date,
+        "ticker": event.ticker,
+        "type": event.type,
+        "qty": round(event.qty, 10),
+        "sell_price": event.sell_price,
+        "cost": event.cost,
+        "realized_native": round(event.realized_native, 10),
+        "currency": event.currency,
+        "acq_date": event.acq_date,
+    }
+
+
+def db_preview_json(json_path: Path, db_path: Path) -> Tuple[Dict[str, Any], List[str]]:
+    """Dry-run a canonical JSON import against a temporary ledger copy.
+
+    This is the fast confirmation helper for natural-language transaction
+    intake: it exercises the same import/replay/cache path as a real
+    `db import-json`, but never writes to the live account ledger.
+    """
+    import tempfile
+
+    if not json_path.exists():
+        return {}, [f"{json_path} not found"]
+    live_ledger = _legacy_ledger_dir_for_path(db_path)
+    if not live_ledger.exists():
+        return {}, [f"Markdown ledger not found: {live_ledger}"]
+    try:
+        payload = json.loads(json_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        return {}, [f"invalid JSON: {exc}"]
+    records = [payload] if isinstance(payload, dict) else payload
+    if not isinstance(records, list) or any(not isinstance(rec, dict) for rec in records):
+        return {}, ["JSON root must be a list of transaction objects (or a single object)"]
+
+    touched_tickers = sorted({
+        _normalize_ticker(str(record["ticker"]))
+        for record in records
+        if record.get("ticker")
+    })
+    before_events = load_event_dicts(live_ledger)
+    before_txns = load_transactions_markdown(live_ledger)
+    before_state = replay(before_txns)
+
+    with tempfile.TemporaryDirectory(prefix="investments_trade_preview_") as td:
+        dry_root = Path(td)
+        dry_ledger = dry_root / "ledger"
+        shutil.copytree(live_ledger, dry_ledger)
+        inserted, errors = ledger_import_json(json_path, dry_ledger)
+        if errors:
+            return {
+                "schema": "transaction-import-preview/v1",
+                "ok": False,
+                "input": str(json_path),
+                "account_db": str(db_path),
+                "record_count": len(records),
+                "would_append_count": 0,
+                "errors": errors,
+            }, []
+        cache_ok, cache_issues = ledger_verify_cache(dry_ledger)
+        after_events = load_event_dicts(dry_ledger)
+        after_txns = load_transactions_markdown(dry_ledger)
+        after_state = replay(after_txns)
+
+    before_positions = {ticker: _position_preview_row(before_state, ticker) for ticker in touched_tickers}
+    after_positions = {ticker: _position_preview_row(after_state, ticker) for ticker in touched_tickers}
+    position_changes = {}
+    for ticker in touched_tickers:
+        before_row = before_positions[ticker]
+        after_row = after_positions[ticker]
+        position_changes[ticker] = {
+            "before": before_row,
+            "after": after_row,
+            "delta_qty": round(after_row["qty"] - before_row["qty"], 10),
+            "delta_cost_total": round(after_row["cost_total"] - before_row["cost_total"], 10),
+        }
+
+    new_realized = after_state.realized_events[len(before_state.realized_events):]
+    realized_totals: Dict[str, float] = {}
+    for event in new_realized:
+        key = f"{event.ticker or event.type}/{event.currency}"
+        realized_totals[key] = round(realized_totals.get(key, 0.0) + event.realized_native, 10)
+
+    issues = list(after_state.issues)
+    if not cache_ok:
+        issues.extend(f"cache: {issue}" for issue in cache_issues)
+
+    preview = {
+        "schema": "transaction-import-preview/v1",
+        "ok": not issues,
+        "input": str(json_path),
+        "account_db": str(db_path),
+        "record_count": len(records),
+        "would_append_count": inserted,
+        "transaction_count": {
+            "before": len(before_events),
+            "after": len(after_events),
+            "delta": len(after_events) - len(before_events),
+        },
+        "open_lot_count": {
+            "before": sum(len(lots) for lots in before_state.open_lots.values()),
+            "after": sum(len(lots) for lots in after_state.open_lots.values()),
+        },
+        "cash": {
+            "before": dict(sorted((ccy, round(amount, 10)) for ccy, amount in before_state.cash.items())),
+            "after": dict(sorted((ccy, round(amount, 10)) for ccy, amount in after_state.cash.items())),
+            "delta": _state_cash_delta(before_state, after_state),
+        },
+        "positions": position_changes,
+        "realized_pnl": {
+            "events": [_realized_event_preview(event) for event in new_realized],
+            "totals": dict(sorted(realized_totals.items())),
+        },
+        "issues": issues,
+    }
+    return preview, []
+
+
+# Compatibility names retained for older internal callers; they now target Markdown.
+def db_import_records(db_path: Path, records: List[Dict[str, Any]], *, source: str, source_ref: Optional[str]) -> Tuple[int, List[str]]:
+    return ledger_import_records(_legacy_ledger_dir_for_path(db_path), records, source=source, source_ref=source_ref)
+
+
+def db_import_md(md_path: Path, db_path: Path) -> Tuple[int, List[str]]:
+    return ledger_import_md(md_path, _legacy_ledger_dir_for_path(db_path))
+
+
+def db_import_csv(csv_path: Path, db_path: Path, *, mapping: Optional[Dict[str, str]] = None) -> Tuple[int, List[str]]:
+    return ledger_import_csv(csv_path, _legacy_ledger_dir_for_path(db_path), mapping=mapping)
+
+
+def db_import_json(json_path: Path, db_path: Path) -> Tuple[int, List[str]]:
+    return ledger_import_json(json_path, _legacy_ledger_dir_for_path(db_path))
+
+
+def db_add(json_blob: str, db_path: Path) -> Tuple[int, List[str]]:
+    return ledger_add(json_blob, _legacy_ledger_dir_for_path(db_path))
 
 
 def load_transactions_db(db_path: Path) -> List[Transaction]:
-    """Load all rows as Transaction objects in (date, id) order.
-
-    The returned list is shape-compatible with `parse_transactions(md)` so
-    every downstream `replay`, `compute_profit_panel`, `compute_realized_unrealized`
-    function works unchanged.
-    """
-    if not db_path.exists():
-        return []
-    conn = db_connect(db_path)
-    try:
-        rows = list(conn.execute(
-            "SELECT * FROM transactions ORDER BY date ASC, id ASC"
-        ))
-        lots_by_txn: Dict[int, List[Tuple[str, float, float]]] = {}
-        for r in conn.execute(
-            "SELECT transaction_id, acq_date, cost, qty FROM sell_lot_consumption"
-        ):
-            lots_by_txn.setdefault(r["transaction_id"], []).append(
-                (r["acq_date"], float(r["cost"]), float(r["qty"]))
-            )
-    finally:
-        conn.close()
-
-    out: List[Transaction] = []
-    for seq, row in enumerate(rows):
-        fields: Dict[str, str] = {}
-        for k in row.keys():
-            v = row[k]
-            if v is None or k in ("id", "created_at", "source", "source_ref", "target_id"):
-                continue
-            fields[k] = str(v)
-        ticker = row["ticker"]
-        t = Transaction(
-            seq=seq,
-            date=row["date"],
-            type=row["type"],
-            ticker=_normalize_ticker(ticker) if ticker else None,
-            raw_heading=f"## {row['date']} {row['type']} {ticker or ''}".strip(),
-            fields=fields,
-        )
-        t.qty = row["qty"]
-        t.price = row["price"]
-        t.amount = row["amount"]
-        t.fees = row["fees"]
-        t.currency = (row["currency"] or "").upper() or None
-        t.cash_account = (row["cash_account"] or t.currency or "").upper() or None
-        t.bucket = row["bucket"]
-        t.market = row["market"]
-        t.rationale = row["rationale"] or ""
-        if row["tags"]:
-            t.tags = [tag.strip() for tag in str(row["tags"]).split(",") if tag.strip()]
-        t.lots_consumed = lots_by_txn.get(row["id"], [])
-        out.append(t)
-    return out
+    return load_transactions_markdown(_legacy_ledger_dir_for_path(db_path))
 
 
 def db_dump(db_path: Path) -> List[Dict[str, Any]]:
-    """Dump all transactions as JSON-serializable dicts (with their lots)."""
-    if not db_path.exists():
-        return []
-    conn = db_connect(db_path)
-    try:
-        out: List[Dict[str, Any]] = []
-        for row in conn.execute("SELECT * FROM transactions ORDER BY date ASC, id ASC"):
-            d = {k: row[k] for k in row.keys()}
-            lots = list(conn.execute(
-                "SELECT acq_date, cost, qty FROM sell_lot_consumption WHERE transaction_id = ?",
-                (row["id"],),
-            ))
-            if lots:
-                d["lots"] = [{"acq_date": l["acq_date"], "cost": l["cost"], "qty": l["qty"]} for l in lots]
-            out.append(d)
-        return out
-    finally:
-        conn.close()
+    return load_event_dicts(_legacy_ledger_dir_for_path(db_path))
 
 
 def db_stats(db_path: Path) -> Dict[str, Any]:
-    if not db_path.exists():
-        return {"db_exists": False}
-    conn = db_connect(db_path)
+    events = load_event_dicts(_legacy_ledger_dir_for_path(db_path))
+    by_type: Dict[str, int] = {}
+    tickers: set[str] = set()
+    dates: List[str] = []
+    for event in events:
+        typ = str(event.get("type") or "")
+        if typ:
+            by_type[typ] = by_type.get(typ, 0) + 1
+        if event.get("ticker"):
+            tickers.add(str(event["ticker"]))
+        if event.get("date"):
+            dates.append(str(event["date"]))
+    return {
+        "store": "markdown",
+        "total_transactions": len(events),
+        "by_type": dict(sorted(by_type.items())),
+        "tickers": sorted(tickers),
+        "first_date": min(dates) if dates else None,
+        "last_date": max(dates) if dates else None,
+    }
+
+
+# --------------------------------------------------------------------------- #
+# Ledger store / Markdown migration helpers
+# --------------------------------------------------------------------------- #
+
+def _int_or_none(value: Any) -> Optional[int]:
+    if value in (None, ""):
+        return None
     try:
-        total = conn.execute("SELECT COUNT(*) AS n FROM transactions").fetchone()["n"]
-        by_type = {
-            r["type"]: r["n"]
-            for r in conn.execute("SELECT type, COUNT(*) AS n FROM transactions GROUP BY type")
-        }
-        tickers = [
-            r["ticker"]
-            for r in conn.execute("SELECT DISTINCT ticker FROM transactions WHERE ticker IS NOT NULL ORDER BY ticker")
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+_DB_EVENT_FIELD_MAP: Sequence[Tuple[str, str, str]] = (
+    ("date", "date", "str"),
+    ("type", "type", "str"),
+    ("ticker", "ticker", "ticker"),
+    ("qty", "qty", "float"),
+    ("price", "price", "float"),
+    ("gross", "gross", "float"),
+    ("fees", "fees", "float"),
+    ("net", "net", "float"),
+    ("amount", "amount", "float"),
+    ("currency", "currency", "upper"),
+    ("cash_account", "cash_account", "upper"),
+    ("bucket", "bucket", "str"),
+    ("market", "market", "str"),
+    ("rationale", "rationale", "str"),
+    ("tags", "tags", "str"),
+    ("from_amount", "from_amount", "float"),
+    ("from_currency", "from_currency", "upper"),
+    ("from_cash_account", "from_cash_account", "upper"),
+    ("to_amount", "to_amount", "float"),
+    ("to_currency", "to_currency", "upper"),
+    ("to_cash_account", "to_cash_account", "upper"),
+    ("rate", "rate", "float"),
+    ("source_ref", "source_ref", "str"),
+)
+
+
+def _norm_for_parity(value: Any, kind: str) -> Any:
+    if value in (None, ""):
+        return None
+    if kind == "float":
+        parsed = parse_number(value)
+        return None if parsed is None else round(parsed, 10)
+    if kind == "upper":
+        return str(value).upper()
+    if kind == "ticker":
+        return _normalize_ticker(str(value))
+    return str(value)
+
+
+def _event_from_db_row(
+    row: Dict[str, Any],
+    *,
+    id_map: Dict[int, str],
+) -> Dict[str, Any]:
+    legacy_id = int(row["id"])
+    legacy_target = _int_or_none(row.get("target_id"))
+    event: Dict[str, Any] = {
+        "schema": LEDGER_SCHEMA,
+        "id": id_map[legacy_id],
+        "date": row["date"],
+        "type": row["type"],
+        "legacy_db_id": legacy_id,
+        "source": row.get("source") or ("transactions" + ".db"),
+        "created_at": row.get("created_at") or now_utc(),
+    }
+    if row.get("ticker"):
+        event["ticker"] = _normalize_ticker(str(row["ticker"]))
+    for key in (
+        "qty",
+        "price",
+        "gross",
+        "fees",
+        "net",
+        "amount",
+        "from_amount",
+        "to_amount",
+        "rate",
+    ):
+        if row.get(key) is not None:
+            event[key] = float(row[key])
+    for key in (
+        "currency",
+        "cash_account",
+        "bucket",
+        "market",
+        "rationale",
+        "from_currency",
+        "from_cash_account",
+        "to_currency",
+        "to_cash_account",
+        "source_ref",
+    ):
+        if row.get(key) not in (None, ""):
+            value = str(row[key])
+            event[key] = value.upper() if key.endswith("currency") else value
+    if row.get("tags"):
+        event["tags"] = row["tags"]
+    if legacy_target is not None:
+        event["legacy_target_id"] = legacy_target
+        if legacy_target in id_map:
+            event["target_event_id"] = id_map[legacy_target]
+    if row.get("lots"):
+        event["lots"] = [
+            {
+                "acq_date": str(lot["acq_date"]),
+                "cost": float(lot["cost"]),
+                "qty": float(lot["qty"]),
+            }
+            for lot in row["lots"]
         ]
-        date_range = conn.execute(
-            "SELECT MIN(date) AS first, MAX(date) AS last FROM transactions"
-        ).fetchone()
-        version = conn.execute(
-            "SELECT value FROM schema_meta WHERE key = 'version'"
-        ).fetchone()
-        return {
-            "db_exists": True,
-            "schema_version": int(version["value"]) if version else None,
-            "total_transactions": total,
-            "by_type": by_type,
-            "tickers": tickers,
-            "first_date": date_range["first"],
-            "last_date": date_range["last"],
-        }
-    finally:
-        conn.close()
+    return event
 
 
-def load_holdings_lots(db_path: Path) -> List[Lot]:
-    """Return the projected open-position view (open_lots + cash_balances) as
-    `List[Lot]`, drop-in compatible with the canonical `Lot` shape.
-
-    Consumers (`scripts/fetch_prices.py`, `scripts/fetch_history.py`,
-    `scripts/generate_report.py`) call this to read open lots from the DB.
-
-    If the DB predates the materialized balance tables, this upgrades the
-    schema and rebuilds them before reading. If the balance tables are empty
-    (e.g. on a freshly-created DB before anything has been imported), this
-    returns `[]`.
-    """
-    if not db_path.exists():
-        return []
-    db_init(db_path)
-    conn_check = db_connect(db_path)
-    try:
-        txn_count = conn_check.execute("SELECT COUNT(*) AS n FROM transactions").fetchone()["n"]
-        balance_count = (
-            conn_check.execute("SELECT COUNT(*) AS n FROM open_lots").fetchone()["n"]
-            + conn_check.execute("SELECT COUNT(*) AS n FROM cash_balances").fetchone()["n"]
+def _db_rows_to_events(rows: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    id_map: Dict[int, str] = {}
+    for idx, row in enumerate(rows):
+        id_map[int(row["id"])] = event_id_for(
+            str(row["date"]),
+            str(row["type"]),
+            str(row["ticker"]) if row.get("ticker") else None,
+            idx + 1,
         )
-    finally:
-        conn_check.close()
-    if txn_count and balance_count == 0:
-        db_rebuild_balances(db_path)
-    conn = db_connect(db_path)
-    out: List[Lot] = []
-    try:
-        for row in conn.execute(
-            "SELECT * FROM open_lots ORDER BY bucket ASC, ticker ASC, acq_date ASC, id ASC"
-        ):
-            ticker = row["ticker"]
-            qty = float(row["qty"])
-            cost = float(row["cost"])
-            acq_date = row["acq_date"]
-            bucket = row["bucket"]
-            currency = row["currency"]
-            market_str = row["market"]
-            try:
-                market_enum = MarketType(market_str) if market_str else MarketType.UNKNOWN
-            except ValueError:
-                market_enum = MarketType.UNKNOWN
-            is_share = bool(row["is_share"])
-            # Synthesise a raw_line for any code path that prints/logs it.
-            unit = "shares " if is_share else ""
-            ccy_prefix = {
-                "USD": "$", "TWD": "NT$", "JPY": "¥",
-                "EUR": "€", "GBP": "£", "HKD": "HK$",
-            }.get(currency, "")
-            raw_line = (
-                f"- {ticker}: {qty:g} {unit}@ {ccy_prefix}{cost:g} on {acq_date} [{market_str}]"
-                if is_share else
-                f"- {ticker} {qty:g} @ {ccy_prefix}{cost:g} on {acq_date} [{market_str}]"
-            )
-            out.append(Lot(
-                raw_line=raw_line,
-                bucket=bucket,
-                ticker=ticker,
-                quantity=qty,
-                cost=cost,
-                date=acq_date,
-                market=market_enum,
-                is_share=is_share,
-            ))
-        for row in conn.execute(
-            "SELECT currency, amount FROM cash_balances ORDER BY currency ASC"
-        ):
-            ccy = row["currency"]
-            amount = float(row["amount"])
-            out.append(Lot(
-                raw_line=f"- {ccy}: {amount:g} [cash]",
-                bucket="Cash Holdings",
-                ticker=ccy,
-                quantity=amount,
-                cost=None,
-                date=None,
-                market=MarketType.CASH,
-                is_share=False,
-            ))
-    finally:
-        conn.close()
+    return [
+        _event_from_db_row(row, id_map=id_map)
+        for row in rows
+    ]
+
+
+def _event_dict_to_transaction(event: Dict[str, Any], *, seq: int) -> Transaction:
+    data = {k: v for k, v in event.items() if not str(k).startswith("_")}
+    data.setdefault("event_id", data.get("id"))
+    t = _dict_to_transaction(data, seq=seq)
+    t.event_id = str(data.get("id") or data.get("event_id") or "").strip() or None
+    t.target_event_id = str(data.get("target_event_id") or "").strip() or None
+    t.legacy_db_id = _int_or_none(data.get("legacy_db_id"))
+    t.legacy_target_id = _int_or_none(data.get("legacy_target_id"))
+    return t
+
+
+def load_transactions_markdown(ledger_dir: Path) -> List[Transaction]:
+    """Load account-local Markdown event files in deterministic replay order."""
+    events = load_event_dicts(ledger_dir)
+    errors = validate_event_set(events)
+    if errors:
+        raise ValueError("invalid Markdown ledger:\n" + "\n".join(f"- {e}" for e in errors))
+    out = [_event_dict_to_transaction(event, seq=i) for i, event in enumerate(events)]
+    event_ids = {t.event_id for t in out if t.event_id}
+    unresolved = [
+        f"{t.event_id}: target_event_id {t.target_event_id}"
+        for t in out
+        if t.target_event_id and t.target_event_id not in event_ids
+    ]
+    if unresolved:
+        raise ValueError("unknown Markdown target references:\n" + "\n".join(unresolved))
     return out
 
 
-def load_fetch_universe_lots(db_path: Path) -> List[Lot]:
-    """Return the price-fetch universe: today's open lots + cash UNION stub
-    lots for every ticker that ever transacted but is no longer in open_lots.
+def _open_lots_cache(state: ReplayState) -> List[Dict[str, Any]]:
+    rows: List[Dict[str, Any]] = []
+    for ticker, lots in sorted(state.open_lots.items()):
+        for lot in sorted(lots, key=lambda l: (l.bucket, l.ticker, l.acq_date, l.cost)):
+            rows.append({
+                "ticker": ticker,
+                "qty": lot.qty,
+                "cost": lot.cost,
+                "acq_date": lot.acq_date,
+                "bucket": lot.bucket,
+                "market": lot.market,
+                "currency": lot.currency,
+                "is_share": lot.market not in {"CRYPTO", "FX", "CASH"},
+            })
+    return rows
 
-    Why: ``compute_profit_panel`` replays state to past period boundaries
-    (1D, 7D, MTD, 1M, YTD, 1Y, ALLTIME). Sold-off tickers reappear in those
-    boundary states. ``load_holdings_lots`` returns only currently-held lots,
-    so the price-fetch and history-fetch pipelines miss those tickers and
-    the profit panel ends up with no boundary close + no latest price for
-    them. The stub lots carry the (ticker, market, currency, bucket,
-    is_share) routing metadata the fetcher needs; ``quantity = 0`` keeps
-    valuation/replay code paths unaffected because they all weight by qty.
 
-    Stub buckets are kept identical to the most recent transaction's bucket
-    so reports that group by bucket still classify the ticker correctly.
-    """
-    if not db_path.exists():
-        return []
-    current = load_holdings_lots(db_path)
-    held: set[str] = {l.ticker for l in current if l.market != MarketType.CASH}
+def _cash_balances_cache(state: ReplayState) -> List[Dict[str, Any]]:
+    return [
+        {"currency": currency, "amount": amount}
+        for currency, amount in sorted(state.cash.items())
+        if abs(amount) > 1e-9
+    ]
 
-    db_init(db_path)
-    conn = db_connect(db_path)
-    try:
-        # Pick the most recent BUY/SELL row per ticker so (market, currency,
-        # bucket) come from a single, deterministic source row. SQLite's
-        # bare-column rule is unreliable when two rows tie on MAX(date), and
-        # DEPOSIT/WITHDRAW rows can have empty bucket/market — neither belongs
-        # in the trading-history universe, so restrict to the trade types.
-        rows = conn.execute(
-            """
-            SELECT t1.ticker,
-                   COALESCE(NULLIF(t1.market, ''), '')   AS market,
-                   COALESCE(NULLIF(t1.currency, ''), '') AS currency,
-                   COALESCE(NULLIF(t1.bucket, ''), '')   AS bucket,
-                   t1.date                               AS last_date
-              FROM transactions t1
-             WHERE t1.ticker IS NOT NULL AND t1.ticker != ''
-               AND t1.type IN ('BUY','SELL')
-               AND t1.id = (
-                   SELECT t2.id FROM transactions t2
-                    WHERE t2.ticker = t1.ticker
-                      AND t2.type IN ('BUY','SELL')
-                    ORDER BY t2.date DESC, t2.id DESC
-                    LIMIT 1
-               )
-            """
-        ).fetchall()
-    finally:
-        conn.close()
 
-    by_ticker: Dict[str, Dict[str, str]] = {}
-    for row in rows:
-        ticker = row["ticker"]
-        if ticker in held:
+def _transaction_index_cache(txns: Sequence[Transaction]) -> Dict[str, Any]:
+    by_type: Dict[str, int] = {}
+    target_refs: List[Dict[str, Any]] = []
+    tickers = set()
+    for t in txns:
+        by_type[t.type] = by_type.get(t.type, 0) + 1
+        if t.ticker:
+            tickers.add(t.ticker)
+        if t.target_event_id or t.target_id or t.legacy_target_id:
+            target_refs.append({
+                "id": t.event_id,
+                "target_event_id": t.target_event_id,
+                "target_id": t.target_id,
+                "legacy_target_id": t.legacy_target_id,
+            })
+    dates = [t.date for t in txns]
+    return {
+        "count": len(txns),
+        "by_type": dict(sorted(by_type.items())),
+        "tickers": sorted(tickers),
+        "first_date": min(dates) if dates else None,
+        "last_date": max(dates) if dates else None,
+        "ids": [t.event_id for t in txns if t.event_id],
+        "target_refs": target_refs,
+    }
+
+
+def _fetch_universe_cache(txns: Sequence[Transaction], state: ReplayState) -> List[Dict[str, Any]]:
+    held = set(state.open_lots.keys())
+    latest_meta: Dict[str, Dict[str, Any]] = {}
+    for t in sorted(txns, key=_txn_sort_key):
+        if t.type not in {"BUY", "SELL"} or not t.ticker:
             continue
-        by_ticker[ticker] = {
-            "market": row["market"],
-            "currency": row["currency"],
-            "bucket": row["bucket"] or "Mid Term (1y+)",
-            "last_date": row["last_date"],
+        latest_meta[t.ticker] = {
+            "ticker": t.ticker,
+            "market": t.market or "US",
+            "currency": t.currency or "USD",
+            "bucket": t.bucket or "Mid Term (1y+)",
+            "last_date": t.date,
+            "held": t.ticker in held,
         }
+    for ticker in held:
+        latest_meta.setdefault(ticker, {
+            "ticker": ticker,
+            "market": "US",
+            "currency": "USD",
+            "bucket": "Mid Term (1y+)",
+            "last_date": None,
+            "held": True,
+        })
+        latest_meta[ticker]["held"] = True
+    return [latest_meta[ticker] for ticker in sorted(latest_meta)]
 
+
+def build_markdown_cache_payloads(ledger_dir: Path, *, generated_at: Optional[str] = None) -> Dict[str, Dict[str, Any]]:
+    txns = load_transactions_markdown(ledger_dir)
+    state = replay(txns)
+    if state.issues:
+        raise ValueError("cannot build Markdown generated caches with replay issues:\n" + "\n".join(state.issues))
+    return {
+        "transaction_index.json": generated_payload(
+            "transaction_index",
+            ledger_dir,
+            _transaction_index_cache(txns),
+            generated_at=generated_at,
+        ),
+        "open_lots.json": generated_payload(
+            "open_lots",
+            ledger_dir,
+            _open_lots_cache(state),
+            generated_at=generated_at,
+        ),
+        "cash_balances.json": generated_payload(
+            "cash_balances",
+            ledger_dir,
+            _cash_balances_cache(state),
+            generated_at=generated_at,
+        ),
+        "fetch_universe.json": generated_payload(
+            "fetch_universe",
+            ledger_dir,
+            _fetch_universe_cache(txns, state),
+            generated_at=generated_at,
+        ),
+    }
+
+
+def ledger_rebuild_cache(ledger_dir: Path) -> Dict[str, Any]:
+    ensure_ledger_skeleton(ledger_dir)
+    generated_at = now_utc()
+    payloads = build_markdown_cache_payloads(ledger_dir, generated_at=generated_at)
+    for name, payload in payloads.items():
+        write_json(generated_dir(ledger_dir) / name, payload)
+    return {
+        "ledger": str(ledger_dir),
+        "generated": sorted(payloads),
+        "source_tree_hash": hash_tree(events_dir(ledger_dir)),
+    }
+
+
+def _normalize_cache_payload(payload: Dict[str, Any]) -> Any:
+    return payload.get("data")
+
+
+def ledger_verify_cache(ledger_dir: Path) -> Tuple[bool, List[str]]:
+    expected = build_markdown_cache_payloads(ledger_dir, generated_at="NORMALIZED")
+    issues: List[str] = []
+    for name, payload in expected.items():
+        path = generated_dir(ledger_dir) / name
+        if not path.exists():
+            issues.append(f"{name}: missing")
+            continue
+        try:
+            actual = read_json(path)
+        except Exception as exc:
+            issues.append(f"{name}: cannot parse JSON ({exc})")
+            continue
+        meta = actual.get("_meta") if isinstance(actual, dict) else None
+        expected_meta = payload.get("_meta") if isinstance(payload, dict) else {}
+        if not isinstance(meta, dict):
+            issues.append(f"{name}: missing generated metadata")
+        else:
+            for key in ("schema", "name", "source_tree_hash", "notice"):
+                if meta.get(key) != expected_meta.get(key):
+                    issues.append(f"{name}: metadata {key} mismatch; rebuild cache")
+            if not isinstance(meta.get("generated_at"), str) or not meta.get("generated_at"):
+                issues.append(f"{name}: missing generated_at metadata")
+        if _normalize_cache_payload(actual) != _normalize_cache_payload(payload):
+            issues.append(f"{name}: data mismatch; rebuild cache")
+    return not issues, issues
+
+
+def _state_summary(state: ReplayState) -> Dict[str, Any]:
+    lots: Dict[str, float] = {
+        ticker: round(sum(l.qty for l in lots), 10)
+        for ticker, lots in state.open_lots.items()
+    }
+    cash = {currency: round(amount, 10) for currency, amount in state.cash.items() if abs(amount) > 1e-9}
+    realized = round(sum(ev.realized_native for ev in state.realized_events), 10)
+    return {
+        "open_qty": dict(sorted(lots.items())),
+        "cash": dict(sorted(cash.items())),
+        "realized_native_total": realized,
+        "issues": list(state.issues),
+    }
+
+
+def _compare_summaries(db_summary: Dict[str, Any], md_summary: Dict[str, Any]) -> List[str]:
+    issues: List[str] = []
+    for ticker in sorted(set(db_summary["open_qty"]) | set(md_summary["open_qty"])):
+        if abs(db_summary["open_qty"].get(ticker, 0.0) - md_summary["open_qty"].get(ticker, 0.0)) > 1e-6:
+            issues.append(
+                f"open qty {ticker}: db={db_summary['open_qty'].get(ticker, 0.0):g} "
+                f"md={md_summary['open_qty'].get(ticker, 0.0):g}"
+            )
+    for currency in sorted(set(db_summary["cash"]) | set(md_summary["cash"])):
+        if abs(db_summary["cash"].get(currency, 0.0) - md_summary["cash"].get(currency, 0.0)) > 1e-2:
+            issues.append(
+                f"cash {currency}: db={db_summary['cash'].get(currency, 0.0):g} "
+                f"md={md_summary['cash'].get(currency, 0.0):g}"
+            )
+    if abs(db_summary["realized_native_total"] - md_summary["realized_native_total"]) > 1e-2:
+        issues.append(
+            "realized_native_total: "
+            f"db={db_summary['realized_native_total']:g} md={md_summary['realized_native_total']:g}"
+        )
+    for issue in db_summary.get("issues") or []:
+        issues.append(f"db replay issue: {issue}")
+    for issue in md_summary.get("issues") or []:
+        issues.append(f"markdown replay issue: {issue}")
+    return issues
+
+
+def _compare_db_rows_to_events(db_path: Path, events: Sequence[Dict[str, Any]]) -> List[str]:
+    rows = _dump_legacy_rows(db_path)
+    issues: List[str] = []
+    by_legacy: Dict[int, Dict[str, Any]] = {}
+    for event in events:
+        legacy = _int_or_none(event.get("legacy_db_id"))
+        if legacy is not None:
+            by_legacy[legacy] = event
+    for row in rows:
+        row_id = int(row["id"])
+        event = by_legacy.get(row_id)
+        if event is None:
+            issues.append(f"field parity: DB row {row_id} missing Markdown event")
+            continue
+        for db_key, event_key, kind in _DB_EVENT_FIELD_MAP:
+            db_val = _norm_for_parity(row.get(db_key), kind)
+            event_val = _norm_for_parity(event.get(event_key), kind)
+            if db_val != event_val:
+                issues.append(
+                    f"field parity row {row_id} {db_key}: db={db_val!r} md={event_val!r}"
+                )
+        db_target = _int_or_none(row.get("target_id"))
+        md_legacy_target = _int_or_none(event.get("legacy_target_id"))
+        if db_target != md_legacy_target:
+            issues.append(
+                f"field parity row {row_id} target_id: db={db_target!r} md_legacy={md_legacy_target!r}"
+            )
+        db_lots = [
+            (
+                str(lot.get("acq_date")),
+                round(float(lot.get("cost")), 10),
+                round(float(lot.get("qty")), 10),
+            )
+            for lot in (row.get("lots") or [])
+        ]
+        md_lots = [
+            (
+                str(lot.get("acq_date")),
+                round(float(lot.get("cost")), 10),
+                round(float(lot.get("qty")), 10),
+            )
+            for lot in (event.get("lots") or [])
+        ]
+        if db_lots != md_lots:
+            issues.append(f"lot parity row {row_id}: db={db_lots!r} md={md_lots!r}")
+    return issues
+
+
+def ledger_verify_parity(db_path: Path, ledger_dir: Path) -> Tuple[bool, Dict[str, Any]]:
+    legacy_rows = _dump_legacy_rows(db_path)
+    db_txns: List[Transaction] = []
+    for i, event in enumerate(_db_rows_to_events(legacy_rows)):
+        txn = _event_dict_to_transaction(event, seq=i)
+        txn.db_id = txn.legacy_db_id
+        txn.target_id = txn.legacy_target_id
+        db_txns.append(txn)
+    md_txns = load_transactions_markdown(ledger_dir)
+    md_events = load_event_dicts(ledger_dir)
+    db_state = replay(db_txns)
+    md_state = replay(md_txns)
+    issues = []
+    if len(db_txns) != len(md_txns):
+        issues.append(f"transaction count: db={len(db_txns)} md={len(md_txns)}")
+    md_legacy_ids = {t.legacy_db_id for t in md_txns if t.legacy_db_id is not None}
+    db_ids = {t.db_id for t in db_txns if t.db_id is not None}
+    if db_ids != md_legacy_ids:
+        issues.append("legacy_db_id mapping does not match DB ids")
+    issues.extend(_compare_db_rows_to_events(db_path, md_events))
+    issues.extend(_compare_summaries(_state_summary(db_state), _state_summary(md_state)))
+    cache_ok, cache_issues = ledger_verify_cache(ledger_dir)
+    if not cache_ok:
+        issues.extend(f"cache: {issue}" for issue in cache_issues)
+    report = {
+        "ok": not issues,
+        "state": CUTOVER_PROPOSAL_READY if not issues else DUAL_READ_PARITY,
+        "db_transaction_count": len(db_txns),
+        "markdown_event_count": len(md_txns),
+        "source_tree_hash": hash_tree(events_dir(ledger_dir)),
+        "issues": issues,
+        "db_summary": _state_summary(db_state),
+        "markdown_summary": _state_summary(md_state),
+    }
+    return not issues, report
+
+
+def ledger_export_db(db_path: Path, ledger_dir: Path, *, write: bool) -> Dict[str, Any]:
+    rows = _dump_legacy_rows(db_path)
+    events = _db_rows_to_events(rows)
+    planned_paths = [event_path_for(ledger_dir, event) for event in events]
+    result = {
+        "source_db": str(db_path),
+        "ledger": str(ledger_dir),
+        "write": write,
+        "event_count": len(events),
+        "planned_event_files": [str(path) for path in planned_paths],
+        "state": DB_CANONICAL if not write else DUAL_READ_PARITY,
+    }
+    if not write:
+        return result
+
+    ensure_ledger_skeleton(ledger_dir)
+    for event, path in zip(events, planned_paths):
+        write_event_file(event, path)
+
+    cache_result = ledger_rebuild_cache(ledger_dir)
+    ok, parity_report = ledger_verify_parity(db_path, ledger_dir)
+    stamp = now_utc().replace("-", "").replace(":", "")
+    bundle = migrations_dir(ledger_dir) / f"{stamp}-db-to-md"
+    bundle.mkdir(parents=True, exist_ok=True)
+    id_map = {
+        str(row["id"]): {
+            "event_id": event["id"],
+            "target_event_id": event.get("target_event_id"),
+            "legacy_target_id": event.get("legacy_target_id"),
+        }
+        for row, event in zip(rows, events)
+    }
+    write_json(bundle / "db-id-map.json", id_map)
+    write_json(bundle / "parity-report.json", parity_report)
+    if db_path.exists():
+        (bundle / "source-db.sha256").write_text(sha256_file(db_path) + "\n", encoding="utf-8")
+    manifest = [
+        "# Legacy SQLite to Markdown ledger migration manifest",
+        "",
+        f"- source_db: {db_path}",
+        f"- ledger: {ledger_dir}",
+        f"- exported_events: {len(events)}",
+        f"- parity_ok: {str(ok).lower()}",
+        f"- transition_state: {parity_report['state']}",
+        "",
+        "The source legacy SQLite evidence was not modified. Passing parity prepares a migration proposal only; archive/retirement has a separate gate.",
+    ]
+    (bundle / "manifest.md").write_text("\n".join(manifest) + "\n", encoding="utf-8")
+    result.update({
+        "migration_bundle": str(bundle),
+        "cache": cache_result,
+        "parity": parity_report,
+        "state": parity_report["state"],
+    })
+    return result
+
+
+LEDGER_STATE_FILE = "LEDGER_STATE.json"
+LEDGER_STATE_SCHEMA = "investment-ledger-state/v1"
+MIGRATION_SCHEMA = "investment-ledger-migration/v1"
+MIGRATION_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
+
+
+def _dump_legacy_rows(db_path: Path) -> List[Dict[str, Any]]:
+    """Read legacy SQLite rows through the quarantined read-only importer."""
+    from legacy_sqlite_import import dump_legacy_transactions  # type: ignore[import-not-found]  # noqa: WPS433
+
+    return dump_legacy_transactions(db_path)
+
+
+def _migration_id() -> str:
+    return now_utc().replace("-", "").replace(":", "").replace("T", "T").replace("Z", "Z")
+
+
+def _sanitize_migration_id(value: Any) -> str:
+    """Return a path-segment-safe migration id or fail before file writes."""
+    if not isinstance(value, str):
+        raise ValueError("invalid migration id; expected a string")
+    if (
+        value in {".", ".."}
+        or "/" in value
+        or "\\" in value
+        or not MIGRATION_ID_RE.fullmatch(value)
+    ):
+        raise ValueError(
+            "invalid migration id; use 1-80 ASCII letters, numbers, dots, underscores, or hyphens, "
+            "with no path separators"
+        )
+    return value
+
+
+def _migration_id_arg(value: Optional[str]) -> str:
+    return _sanitize_migration_id(value or _migration_id())
+
+
+def _required_migration_id_arg(value: Optional[str]) -> str:
+    if not value:
+        raise ValueError("rollback requires --migration-id")
+    return _sanitize_migration_id(value)
+
+
+def _ledger_state_path(ledger_dir: Path) -> Path:
+    return ledger_dir / LEDGER_STATE_FILE
+
+
+def _read_ledger_state(ledger_dir: Path) -> Dict[str, Any]:
+    path = _ledger_state_path(ledger_dir)
+    if not path.exists():
+        return {}
+    data = read_json(path)
+    if not isinstance(data, dict):
+        raise ValueError(f"{path} is not a JSON object")
+    return data
+
+
+def _write_ledger_state(ledger_dir: Path, payload: Dict[str, Any]) -> None:
+    ensure_ledger_skeleton(ledger_dir)
+    write_json(_ledger_state_path(ledger_dir), payload)
+
+
+def _legacy_db_journal_paths(db_path: Path) -> List[Path]:
+    return [Path(str(db_path) + suffix) for suffix in ("-wal", "-shm")]
+
+
+def _latest_migration_bundle(ledger_dir: Path) -> Optional[Path]:
+    root = migrations_dir(ledger_dir)
+    if not root.exists():
+        return None
+    bundles = sorted([path for path in root.iterdir() if path.is_dir()])
+    return bundles[-1] if bundles else None
+
+
+def _copy_if_exists(src: Path, dst: Path) -> None:
+    if not src.exists():
+        return
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    if src.is_dir():
+        shutil.copytree(src, dst, dirs_exist_ok=True)
+    else:
+        shutil.copy2(src, dst)
+
+
+def _snapshot_ledger_state(ledger_dir: Path, backup_root: Path) -> Dict[str, Any]:
+    """Copy pre-apply ledger state into a migration backup bundle."""
+    backup_root.mkdir(parents=True, exist_ok=False)
+    snapshots = {
+        "events": events_dir(ledger_dir).exists(),
+        "generated": generated_dir(ledger_dir).exists(),
+        LEDGER_STATE_FILE: _ledger_state_path(ledger_dir).exists(),
+    }
+    _copy_if_exists(events_dir(ledger_dir), backup_root / "events")
+    _copy_if_exists(generated_dir(ledger_dir), backup_root / "generated")
+    _copy_if_exists(_ledger_state_path(ledger_dir), backup_root / LEDGER_STATE_FILE)
+    manifest = {
+        "schema": MIGRATION_SCHEMA,
+        "snapshot_at": now_utc(),
+        "ledger": str(ledger_dir),
+        "pre_apply_event_tree_hash": hash_tree(events_dir(ledger_dir)),
+        "pre_apply_generated_tree_hash": hash_tree(generated_dir(ledger_dir)),
+        "snapshots": snapshots,
+    }
+    write_json(backup_root / "snapshot-manifest.json", manifest)
+    return manifest
+
+
+def _restore_ledger_state_from_backup(ledger_dir: Path, backup_root: Path) -> None:
+    manifest_path = backup_root / "snapshot-manifest.json"
+    if not manifest_path.exists():
+        raise FileNotFoundError(f"rollback backup manifest not found: {manifest_path}")
+    manifest = read_json(manifest_path)
+    snapshots = manifest.get("snapshots") or {}
+    for label, target in (
+        ("events", events_dir(ledger_dir)),
+        ("generated", generated_dir(ledger_dir)),
+    ):
+        source = backup_root / label
+        if target.exists():
+            shutil.rmtree(target)
+        if snapshots.get(label):
+            shutil.copytree(source, target)
+    state_path = _ledger_state_path(ledger_dir)
+    if state_path.exists():
+        state_path.unlink()
+    if snapshots.get(LEDGER_STATE_FILE):
+        shutil.copy2(backup_root / LEDGER_STATE_FILE, state_path)
+
+
+def _migration_layout_state() -> str:
+    return detect_legacy_layout()
+
+
+def _require_migration_layout_safe() -> str:
+    state = _migration_layout_state()
+    if state == "partial":
+        raise RuntimeError("account layout detector returned partial; reconcile account layout before legacy-to-Markdown migration")
+    if state == "migrate":
+        raise RuntimeError("legacy root account layout requires account-management migration before legacy-to-Markdown migration")
+    return state
+
+
+def migration_detect(args: argparse.Namespace) -> Dict[str, Any]:
+    layout_state = _migration_layout_state()
+    if layout_state in {"partial", "migrate"}:
+        root_db = DEFAULT_DB_PATH
+        return {
+            "schema": MIGRATION_SCHEMA,
+            "command": "detect",
+            "account": None,
+            "layout_state": layout_state,
+            "db": {
+                "path": str(root_db),
+                "exists": root_db.exists(),
+                "sha256": sha256_file(root_db) if root_db.exists() else None,
+            },
+            "ledger": None,
+            "side_effect": "read-only",
+            "blocked": (
+                "account layout must be reconciled before legacy-to-Markdown migration"
+                if layout_state == "partial"
+                else "run the account-management legacy-layout migration gate before legacy-to-Markdown migration"
+            ),
+        }
+    paths = resolve_account(args)
+    ledger_path = Path(getattr(args, "ledger", None) or paths.ledger)
+    state: Dict[str, Any] = {}
+    try:
+        state = _read_ledger_state(ledger_path)
+    except Exception as exc:  # noqa: BLE001 - report state parse blocker
+        state = {"error": str(exc)}
+    events: List[Dict[str, Any]] = []
+    event_error: Optional[str] = None
+    try:
+        events = load_event_dicts(ledger_path)
+    except Exception as exc:  # noqa: BLE001 - detect is diagnostic
+        event_error = str(exc)
+    cache_ok = False
+    cache_issues: List[str] = []
+    try:
+        cache_ok, cache_issues = ledger_verify_cache(ledger_path)
+    except Exception as exc:  # noqa: BLE001 - detect should not crash on incomplete ledgers
+        cache_issues = [str(exc)]
+    latest_bundle = _latest_migration_bundle(ledger_path)
+    archive_root = ledger_path / "archive" / "legacy-sqlite"
+    archived = sorted(path.name for path in archive_root.iterdir()) if archive_root.exists() else []
+    return {
+        "schema": MIGRATION_SCHEMA,
+        "command": "detect",
+        "account": paths.name,
+        "layout_state": layout_state,
+        "db": {
+            "path": str(paths.db),
+            "exists": paths.db.exists(),
+            "sha256": sha256_file(paths.db) if paths.db.exists() else None,
+        },
+        "ledger": {
+            "path": str(ledger_path),
+            "exists": ledger_path.exists(),
+            "event_count": len(events),
+            "event_tree_hash": hash_tree(events_dir(ledger_path)),
+            "event_error": event_error,
+            "generated_cache_ok": cache_ok,
+            "generated_cache_issues": cache_issues,
+            "state": state or None,
+            "latest_migration_bundle": str(latest_bundle) if latest_bundle else None,
+            "archived_legacy_sqlite_migrations": archived,
+        },
+        "side_effect": "read-only",
+        "next_step": "prepare" if paths.db.exists() else "verify",
+    }
+
+
+def migration_prepare(args: argparse.Namespace) -> Dict[str, Any]:
+    _require_migration_layout_safe()
+    paths = resolve_account(args)
+    ledger_path = Path(getattr(args, "ledger", None) or paths.ledger)
+    db_path = Path(getattr(args, "db", None) or paths.db)
+    if not db_path.exists():
+        raise FileNotFoundError(f"legacy source DB not found: {db_path}")
+    rows = _dump_legacy_rows(db_path)
+    events = _db_rows_to_events(rows)
+    event_errors = validate_event_set(events)
+    mid = _migration_id_arg(getattr(args, "migration_id", None))
+    proposal = {
+        "schema": MIGRATION_SCHEMA,
+        "command": "prepare",
+        "migration_id": mid,
+        "account": paths.name,
+        "source_db": str(db_path),
+        "source_db_sha256": sha256_file(db_path),
+        "ledger": str(ledger_path),
+        "event_count": len(events),
+        "event_tree_hash": hash_tree(events_dir(ledger_path)),
+        "planned_event_files": [str(event_path_for(ledger_path, event)) for event in events],
+        "legacy_row_mapping": {
+            "transactions_rows": len(rows),
+            "canonical_events": len(events),
+            "one_transaction_row_to_one_event": len(rows) == len(events),
+        },
+        "archive_target": str(ledger_path / "archive" / "legacy-sqlite" / mid),
+        "apply_does_not_move_db": True,
+        "archive_db_requires_separate_confirmation": True,
+        "blockers": event_errors,
+        "side_effect": "read-only" if not getattr(args, "write_proposal", False) else "writes-proposal-only",
+    }
+    if getattr(args, "write_proposal", False):
+        bundle = migrations_dir(ledger_path) / f"{mid}-prepare"
+        bundle.mkdir(parents=True, exist_ok=True)
+        write_json(bundle / "proposal.json", proposal)
+        proposal["proposal_path"] = str(bundle / "proposal.json")
+    return proposal
+
+
+def migration_apply(args: argparse.Namespace) -> Dict[str, Any]:
+    if not getattr(args, "yes", False):
+        raise PermissionError("migration apply requires the skill/user confirmation gate and --yes")
+    _require_migration_layout_safe()
+    paths = resolve_account(args)
+    ledger_path = Path(getattr(args, "ledger", None) or paths.ledger)
+    db_path = Path(getattr(args, "db", None) or paths.db)
+    if not db_path.exists():
+        raise FileNotFoundError(f"legacy source DB not found: {db_path}")
+    mid = _migration_id_arg(getattr(args, "migration_id", None))
+    before_hash = hash_tree(events_dir(ledger_path))
+    apply_bundle = migrations_dir(ledger_path) / f"{mid}-apply"
+    if apply_bundle.exists():
+        raise FileExistsError(f"migration apply bundle already exists: {apply_bundle}")
+    backup_root = apply_bundle / "backup"
+    pre_apply_manifest = _snapshot_ledger_state(ledger_path, backup_root)
+    try:
+        result = ledger_export_db(db_path, ledger_path, write=True)
+    except Exception:
+        _restore_ledger_state_from_backup(ledger_path, backup_root)
+        raise
+    parity = result.get("parity") or {}
+    if parity.get("ok") is False:
+        _restore_ledger_state_from_backup(ledger_path, backup_root)
+        write_json(apply_bundle / "blocked-apply-result.json", {
+            "schema": MIGRATION_SCHEMA,
+            "migration_id": mid,
+            "blocked": "parity failed; restored pre-apply Markdown/generated state",
+            "parity": parity,
+            "result": result,
+        })
+        return {
+            "schema": MIGRATION_SCHEMA,
+            "command": "apply",
+            "migration_id": mid,
+            "account": paths.name,
+            "ledger": str(ledger_path),
+            "source_db": str(db_path),
+            "source_db_still_exists": db_path.exists(),
+            "ledger_state": None,
+            "parity": parity,
+            "result": result,
+            "blocked": "parity failed; restored pre-apply Markdown/generated state and did not promote LEDGER_STATE.json",
+        }
+    state = {
+        "schema": LEDGER_STATE_SCHEMA,
+        "state": MARKDOWN_CANONICAL,
+        "account": paths.name,
+        "migration_id": mid,
+        "source_db": str(db_path),
+        "source_db_sha256": sha256_file(db_path),
+        "source_db_archived": False,
+        "applied_at": now_utc(),
+        "pre_apply_event_tree_hash": before_hash,
+        "event_tree_hash": hash_tree(events_dir(ledger_path)),
+        "generated_tree_hash": hash_tree(generated_dir(ledger_path)),
+        "migration_bundle": result.get("migration_bundle"),
+        "apply_bundle": str(apply_bundle),
+        "pre_apply_manifest": pre_apply_manifest,
+        "apply_did_not_move_db": db_path.exists(),
+        "archive_db_requires_separate_confirmation": True,
+    }
+    _write_ledger_state(ledger_path, state)
+    write_json(apply_bundle / "apply-result.json", {
+        "schema": MIGRATION_SCHEMA,
+        "migration_id": mid,
+        "ledger_state": state,
+        "parity": parity,
+        "result": result,
+    })
+    return {
+        "schema": MIGRATION_SCHEMA,
+        "command": "apply",
+        "migration_id": mid,
+        "account": paths.name,
+        "ledger": str(ledger_path),
+        "source_db": str(db_path),
+        "source_db_still_exists": db_path.exists(),
+        "ledger_state": state,
+        "parity": parity,
+        "result": result,
+    }
+
+
+def migration_verify(args: argparse.Namespace) -> Dict[str, Any]:
+    _require_migration_layout_safe()
+    paths = resolve_account(args)
+    ledger_path = Path(getattr(args, "ledger", None) or paths.ledger)
+    db_path = Path(getattr(args, "db", None) or paths.db)
+    issues: List[str] = []
+    state: Dict[str, Any] = {}
+    try:
+        state = _read_ledger_state(ledger_path)
+    except Exception as exc:  # noqa: BLE001
+        issues.append(f"ledger state: {exc}")
+    try:
+        events = load_event_dicts(ledger_path)
+        event_errors = validate_event_set(events)
+        issues.extend(f"events: {err}" for err in event_errors)
+    except Exception as exc:  # noqa: BLE001
+        events = []
+        issues.append(f"events: {exc}")
+    markdown_runtime: Dict[str, Any] = {"ok": False}
+    try:
+        md_txns = load_transactions_markdown(ledger_path)
+        md_state = replay(md_txns)
+        markdown_runtime = {
+            "ok": not md_state.issues,
+            "transaction_count": len(md_txns),
+            "replay_issues": md_state.issues,
+            "summary": _state_summary(md_state),
+        }
+        issues.extend(f"markdown-runtime: {issue}" for issue in md_state.issues)
+    except Exception as exc:  # noqa: BLE001
+        markdown_runtime = {"ok": False, "error": str(exc)}
+        issues.append(f"markdown-runtime: {exc}")
+    try:
+        cache_ok, cache_issues = ledger_verify_cache(ledger_path)
+    except Exception as exc:  # noqa: BLE001
+        cache_ok = False
+        cache_issues = [str(exc)]
+    issues.extend(f"cache: {issue}" for issue in cache_issues)
+
+    parity_report: Optional[Dict[str, Any]] = None
+    if db_path.exists():
+        try:
+            parity_ok, parity_report = ledger_verify_parity(db_path, ledger_path)
+            if not parity_ok:
+                issues.extend(f"parity: {issue}" for issue in parity_report.get("issues", []))
+            expected = state.get("source_db_sha256") if isinstance(state, dict) else None
+            if expected and sha256_file(db_path) != expected:
+                issues.append("source DB checksum differs from applied ledger state")
+        except Exception as exc:  # noqa: BLE001
+            issues.append(f"parity: {exc}")
+    elif state.get("source_db_archived") is not True:
+        issues.append("source DB missing but ledger state does not mark it archived")
+
+    no_sqlite_mode = getattr(args, "no_sqlite_mode", "transition")
+    no_sqlite_result: Dict[str, Any]
+    try:
+        ns_args = argparse.Namespace(root=Path.cwd(), mode=no_sqlite_mode)
+        no_sqlite_result = migration_verify_no_sqlite(ns_args)
+        if not no_sqlite_result.get("ok"):
+            issues.append(
+                f"no-sqlite-{no_sqlite_mode}: {no_sqlite_result.get('violation_count', 'unknown')} violation(s)"
+            )
+    except Exception as exc:  # noqa: BLE001
+        no_sqlite_result = {"ok": False, "mode": no_sqlite_mode, "error": str(exc)}
+        issues.append(f"no-sqlite-{no_sqlite_mode}: {exc}")
+
+    default_runtime: Dict[str, Any]
+    try:
+        selected_store = select_ledger_store(db_path, ledger_path, "auto")
+        default_txns = load_transactions(db=db_path, ledger=ledger_path, store="auto")
+        default_fetch_lots = load_fetch_universe_lots(db_path)
+        default_runtime = {
+            "ok": True,
+            "selected_store": selected_store,
+            "transaction_count": len(default_txns),
+            "fetch_universe_count": len(default_fetch_lots),
+            "db_exists": db_path.exists(),
+        }
+        if state.get("state") == MARKDOWN_CANONICAL and selected_store != "markdown":
+            default_runtime["ok"] = False
+            issues.append("default-runtime: Markdown canonical ledger did not select Markdown store")
+        if state.get("source_db_archived") is True and db_path.exists():
+            default_runtime["ok"] = False
+            issues.append("default-runtime: source DB still exists after archive state")
+        if len(events) != len(default_txns) and selected_store == "markdown":
+            default_runtime["ok"] = False
+            issues.append(
+                f"default-runtime: transaction count mismatch events={len(events)} default={len(default_txns)}"
+            )
+        if state.get("state") == MARKDOWN_CANONICAL:
+            try:
+                from report_archive import read_archive  # type: ignore[import-not-found]  # noqa: WPS433
+                before_exists = db_path.exists()
+                archive_index_path = generated_dir(ledger_path) / "report_archive_index.json"
+                before_index_hash = sha256_file(archive_index_path) if archive_index_path.exists() else None
+                read_archive("__migration_verify_readonly_probe__", db_path=db_path)
+                after_exists = db_path.exists()
+                after_index_hash = sha256_file(archive_index_path) if archive_index_path.exists() else None
+                default_runtime["report_archive_auto_read_did_not_create_db"] = (before_exists == after_exists)
+                default_runtime["report_archive_auto_read_did_not_rebuild_index"] = (
+                    before_index_hash == after_index_hash
+                )
+                if not before_exists and after_exists:
+                    default_runtime["ok"] = False
+                    issues.append("default-runtime: report_archive auto recreated legacy store")
+                if before_index_hash != after_index_hash:
+                    default_runtime["ok"] = False
+                    issues.append("default-runtime: report_archive auto read rebuilt generated index")
+            except Exception as exc:  # noqa: BLE001
+                default_runtime["ok"] = False
+                issues.append(f"default-runtime report_archive: {exc}")
+    except Exception as exc:  # noqa: BLE001
+        default_runtime = {"ok": False, "error": str(exc)}
+        issues.append(f"default-runtime: {exc}")
+
+    return {
+        "schema": MIGRATION_SCHEMA,
+        "command": "verify",
+        "ok": not issues,
+        "account": paths.name,
+        "ledger": str(ledger_path),
+        "event_count": len(events),
+        "event_tree_hash": hash_tree(events_dir(ledger_path)),
+        "markdown_runtime": markdown_runtime,
+        "default_runtime": default_runtime,
+        "generated_cache_ok": cache_ok,
+        "ledger_state": state or None,
+        "source_db": str(db_path),
+        "source_db_exists": db_path.exists(),
+        "parity": parity_report,
+        "no_sqlite": no_sqlite_result,
+        "issues": issues,
+    }
+
+
+def migration_archive_db(args: argparse.Namespace) -> Dict[str, Any]:
+    if not getattr(args, "yes", False):
+        raise PermissionError("archive-db moves protected legacy store evidence and requires a separate --yes gate")
+    _require_migration_layout_safe()
+    paths = resolve_account(args)
+    ledger_path = Path(getattr(args, "ledger", None) or paths.ledger)
+    db_path = Path(getattr(args, "db", None) or paths.db)
+    state = _read_ledger_state(ledger_path)
+    if state.get("schema") != LEDGER_STATE_SCHEMA or state.get("state") != MARKDOWN_CANONICAL:
+        raise RuntimeError("refusing to archive DB before migration apply writes a Markdown canonical ledger state")
+    if state.get("source_db_archived") is True:
+        raise RuntimeError("source DB is already marked archived in LEDGER_STATE.json")
+    expected_hash = state.get("source_db_sha256")
+    if not expected_hash:
+        raise RuntimeError("LEDGER_STATE.json is missing source_db_sha256; cannot archive safely")
+    if not db_path.exists():
+        raise FileNotFoundError(f"source DB not found: {db_path}")
+    actual_hash = sha256_file(db_path)
+    if actual_hash != expected_hash:
+        raise RuntimeError("refusing to archive DB because source checksum differs from LEDGER_STATE.json")
+    requested_mid = getattr(args, "migration_id", None)
+    if requested_mid:
+        requested_mid = _sanitize_migration_id(str(requested_mid))
+    if requested_mid and requested_mid != state.get("migration_id"):
+        raise RuntimeError("requested --migration-id does not match LEDGER_STATE.json")
+    verify = migration_verify(args)
+    if not verify.get("ok"):
+        raise RuntimeError("refusing to archive DB before migration verify passes: " + "; ".join(verify.get("issues", [])))
+    mid = _migration_id_arg(requested_mid or state.get("migration_id"))
+    archive_dir = ledger_path / "archive" / "legacy-sqlite" / str(mid)
+    archive_dir.mkdir(parents=True, exist_ok=False)
+    source_hash = actual_hash
+    moved: List[Dict[str, str]] = []
+    target = archive_dir / db_path.name
+    shutil.move(str(db_path), str(target))
+    moved.append({"from": str(db_path), "to": str(target), "sha256": source_hash})
+    for journal in _legacy_db_journal_paths(db_path):
+        if journal.exists():
+            jt = archive_dir / journal.name
+            shutil.move(str(journal), str(jt))
+            moved.append({"from": str(journal), "to": str(jt), "sha256": sha256_file(jt)})
+    (archive_dir / (("transactions" + ".db") + ".sha256")).write_text(source_hash + "\n", encoding="utf-8")
+    manifest = {
+        "schema": MIGRATION_SCHEMA,
+        "command": "archive-db",
+        "migration_id": mid,
+        "account": paths.name,
+        "archived_at": now_utc(),
+        "ledger": str(ledger_path),
+        "moved": moved,
+        "restore_is_recovery_only": True,
+        "normal_runtime_store": "markdown",
+    }
+    write_json(archive_dir / "manifest.json", manifest)
+    (archive_dir / "restore-instructions.md").write_text(
+        "# Legacy SQLite archive restore instructions\n\n"
+        "This archive is recovery evidence / legacy import input only. Restoring it must not "
+        "re-enable legacy-store normal runtime. Use migration rollback or a new migration prepare/apply "
+        "attempt if this evidence is needed.\n",
+        encoding="utf-8",
+    )
+    state.update({
+        "source_db_archived": True,
+        "source_db_archive": str(archive_dir),
+        "source_db_sha256": source_hash,
+        "archived_at": manifest["archived_at"],
+    })
+    _write_ledger_state(ledger_path, state)
+    return manifest
+
+
+def migration_rollback(args: argparse.Namespace) -> Dict[str, Any]:
+    if not getattr(args, "yes", False):
+        raise PermissionError("migration rollback changes ledger/archive state and requires --yes")
+    _require_migration_layout_safe()
+    paths = resolve_account(args)
+    ledger_path = Path(getattr(args, "ledger", None) or paths.ledger)
+    mid = _required_migration_id_arg(getattr(args, "migration_id", None))
+    state = _read_ledger_state(ledger_path)
+    apply_bundle = migrations_dir(ledger_path) / f"{mid}-apply"
+    backup_root = apply_bundle / "backup"
+    if not backup_root.exists():
+        raise FileNotFoundError(f"rollback backup not found for migration {mid}: {backup_root}")
+    rollback_dir = migrations_dir(ledger_path) / f"{mid}-rollback"
+    rollback_dir.mkdir(parents=True, exist_ok=True)
+    _restore_ledger_state_from_backup(ledger_path, backup_root)
+    archive_dir = ledger_path / "archive" / "legacy-sqlite" / str(mid)
+    restored_db: Optional[str] = None
+    if getattr(args, "restore_db_evidence", False):
+        archived_db = archive_dir / ("transactions" + ".db")
+        if not archived_db.exists():
+            raise FileNotFoundError(f"archived DB evidence not found: {archived_db}")
+        target = rollback_dir / "legacy-import-input" / ("transactions" + ".db")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(archived_db, target)
+        restored_db = str(target)
+    note = {
+        "schema": MIGRATION_SCHEMA,
+        "command": "rollback",
+        "migration_id": mid,
+        "account": paths.name,
+        "rolled_back_at": now_utc(),
+        "restored_db_evidence": restored_db,
+        "normal_runtime_store": "markdown",
+        "pre_rollback_state": state or None,
+        "note": "Rollback restored pre-apply Markdown/generated files. DB evidence, when requested, is copied under the rollback bundle only and does not re-enable legacy-store normal runtime.",
+    }
+    write_json(rollback_dir / "rollback-note.json", note)
+    return note
+
+
+def migration_verify_no_sqlite(args: argparse.Namespace) -> Dict[str, Any]:
+    try:
+        from validate_no_sqlite import run_validation  # type: ignore[import-not-found]  # noqa: WPS433
+    except ImportError as exc:
+        raise RuntimeError(f"cannot import validate_no_sqlite.py: {exc}") from exc
+    root = Path(getattr(args, "root", None) or Path.cwd())
+    mode = getattr(args, "mode", "final")
+    return run_validation(root=root, mode=mode)
+
+
+class LedgerStore:
+    """Backend-neutral store boundary for staged migration."""
+
+    state: str = DB_CANONICAL
+
+    def load_transactions(self) -> List[Transaction]:
+        raise NotImplementedError
+
+    def rebuild_caches(self) -> Dict[str, Any]:
+        raise NotImplementedError
+
+    def verify(self) -> Tuple[bool, Dict[str, Any]]:
+        raise NotImplementedError
+
+
+class SQLiteLedgerStore(LedgerStore):
+    state = DB_CANONICAL
+
+    def __init__(self, db_path: Path) -> None:
+        self.db_path = db_path
+
+    def load_transactions(self) -> List[Transaction]:
+        return load_transactions_db(self.db_path)
+
+    def rebuild_caches(self) -> Dict[str, Any]:
+        return db_rebuild_balances(self.db_path)
+
+    def verify(self) -> Tuple[bool, Dict[str, Any]]:
+        args = argparse.Namespace(db=self.db_path)
+        ok, issues = _verify_balance_tables(args)
+        return ok, {"ok": ok, "issues": issues, "state": self.state}
+
+
+class MarkdownLedgerStore(LedgerStore):
+    def __init__(self, ledger_dir: Path, *, state: str = DUAL_READ_PARITY) -> None:
+        if state not in STORE_STATES:
+            raise ValueError(f"unknown ledger state: {state}")
+        self.ledger_dir = ledger_dir
+        self.state = state
+
+    def load_transactions(self) -> List[Transaction]:
+        return load_transactions_markdown(self.ledger_dir)
+
+    def rebuild_caches(self) -> Dict[str, Any]:
+        return ledger_rebuild_cache(self.ledger_dir)
+
+    def verify(self) -> Tuple[bool, Dict[str, Any]]:
+        ok, issues = ledger_verify_cache(self.ledger_dir)
+        return ok, {"ok": ok, "issues": issues, "state": self.state}
+
+    def assert_live_write_allowed(self) -> None:
+        if self.state != MARKDOWN_CANONICAL:
+            raise RuntimeError(
+                "live Markdown writes require a separately confirmed cutover; "
+                f"current state is {self.state}"
+            )
+
+
+def ledger_state_is_markdown_canonical(ledger_dir: Path) -> bool:
+    try:
+        state = _read_ledger_state(ledger_dir)
+    except Exception:
+        return False
+    return state.get("schema") == LEDGER_STATE_SCHEMA and state.get("state") == MARKDOWN_CANONICAL
+
+
+def select_ledger_store(db_path: Optional[Path], ledger_dir: Optional[Path], requested: str = "auto") -> str:
+    """Resolve every normal runtime read to the Markdown ledger."""
+    _ = (db_path, ledger_dir)
+    if requested not in {"auto", "markdown", "db"}:
+        raise ValueError(f"unknown ledger store: {requested}")
+    return "markdown"
+
+
+
+def load_holdings_lots(db_path: Path) -> List[Lot]:
+    """Compatibility entry point: load projected holdings from Markdown replay."""
+    ledger_dir = _legacy_ledger_dir_for_path(db_path)
+    if not ledger_dir.exists():
+        return []
+    return load_holdings_lots_markdown(ledger_dir)
+
+def _lot_to_fetch_lot(lot: OpenLot) -> Lot:
+    try:
+        market_enum = MarketType(lot.market) if lot.market else MarketType.UNKNOWN
+    except ValueError:
+        market_enum = MarketType.UNKNOWN
+    is_share = market_enum not in (MarketType.CRYPTO, MarketType.FX, MarketType.CASH)
+    ccy_prefix = {
+        "USD": "$", "TWD": "NT$", "JPY": "¥",
+        "EUR": "€", "GBP": "£", "HKD": "HK$",
+    }.get(lot.currency, "")
+    unit = "shares " if is_share else ""
+    raw_line = (
+        f"- {lot.ticker}: {lot.qty:g} {unit}@ {ccy_prefix}{lot.cost:g} on {lot.acq_date} [{lot.market}]"
+        if is_share else
+        f"- {lot.ticker} {lot.qty:g} @ {ccy_prefix}{lot.cost:g} on {lot.acq_date} [{lot.market}]"
+    )
+    return Lot(
+        raw_line=raw_line,
+        bucket=lot.bucket,
+        ticker=lot.ticker,
+        quantity=lot.qty,
+        cost=lot.cost,
+        date=lot.acq_date,
+        market=market_enum,
+        is_share=is_share,
+    )
+
+
+def load_holdings_lots_markdown(ledger_dir: Path) -> List[Lot]:
+    """Return projected open lots + cash from Markdown replay."""
+    txns = load_transactions_markdown(ledger_dir)
+    state = replay(txns)
+    out: List[Lot] = []
+    for ticker in sorted(state.open_lots):
+        for lot in sorted(state.open_lots[ticker], key=lambda l: (l.bucket, l.ticker, l.acq_date, l.cost)):
+            out.append(_lot_to_fetch_lot(lot))
+    for currency, amount in sorted(state.cash.items()):
+        if abs(amount) <= 1e-9:
+            continue
+        out.append(Lot(
+            raw_line=f"- {currency}: {amount:g} [cash]",
+            bucket="Cash Holdings",
+            ticker=currency,
+            quantity=amount,
+            cost=None,
+            date=None,
+            market=MarketType.CASH,
+            is_share=False,
+        ))
+    return out
+
+
+
+def load_fetch_universe_lots(db_path: Path) -> List[Lot]:
+    """Compatibility entry point: load the price-fetch universe from Markdown replay."""
+    ledger_dir = _legacy_ledger_dir_for_path(db_path)
+    if not ledger_dir.exists():
+        return []
+    return load_fetch_universe_lots_markdown(ledger_dir)
+
+def load_fetch_universe_lots_markdown(ledger_dir: Path) -> List[Lot]:
+    """Markdown equivalent of ``load_fetch_universe_lots`` for dual-run tests."""
+    current = load_holdings_lots_markdown(ledger_dir)
+    held: set[str] = {l.ticker for l in current if l.market != MarketType.CASH}
+    txns = load_transactions_markdown(ledger_dir)
+    reversed_event_ids: set[str] = set()
+    reversed_db_ids: set[int] = set()
+    reversed_legacy_db_ids: set[int] = set()
+    for t in txns:
+        if t.type != "REVERSAL":
+            continue
+        if t.target_event_id:
+            reversed_event_ids.add(t.target_event_id)
+        if t.target_id is not None:
+            reversed_db_ids.add(t.target_id)
+        if t.legacy_target_id is not None:
+            reversed_legacy_db_ids.add(t.legacy_target_id)
+    by_ticker: Dict[str, Dict[str, str]] = {}
+    for t in sorted(txns, key=_txn_sort_key):
+        if t.type not in {"BUY", "SELL"} or not t.ticker:
+            continue
+        if (
+            (t.event_id and t.event_id in reversed_event_ids)
+            or (t.db_id is not None and t.db_id in reversed_db_ids)
+            or (t.legacy_db_id is not None and t.legacy_db_id in reversed_legacy_db_ids)
+        ):
+            continue
+        if t.ticker in held:
+            continue
+        by_ticker[t.ticker] = {
+            "market": t.market or "US",
+            "currency": t.currency or "USD",
+            "bucket": t.bucket or "Mid Term (1y+)",
+            "last_date": t.date,
+        }
     stubs: List[Lot] = []
     for ticker, meta in sorted(by_ticker.items()):
         try:
@@ -2963,9 +4346,6 @@ def load_fetch_universe_lots(db_path: Path) -> List[Lot]:
         except ValueError:
             market_enum = MarketType.UNKNOWN
         is_share = market_enum not in (MarketType.CRYPTO, MarketType.FX, MarketType.CASH)
-        # `currency` here is purely cosmetic (used to pick the prefix glyph
-        # in the synthetic raw_line below). The runtime currency is derived
-        # from `lot.market` everywhere downstream.
         ccy_prefix = {
             "USD": "$", "TWD": "NT$", "JPY": "¥",
             "EUR": "€", "GBP": "£", "HKD": "HK$",
@@ -2980,7 +4360,6 @@ def load_fetch_universe_lots(db_path: Path) -> List[Lot]:
             market=market_enum,
             is_share=is_share,
         ))
-
     return current + stubs
 
 
@@ -2988,10 +4367,16 @@ def load_transactions(
     *,
     db: Optional[Path] = None,
     md: Optional[Path] = None,
+    ledger: Optional[Path] = None,
+    store: str = "auto",
 ) -> List[Transaction]:
-    """Load transactions from DB. The optional md fallback exists only for
-    direct migration tests; runtime CLI paths use transactions.db."""
-    if db and db.exists():
+    """Load transactions through the staged store adapters."""
+    selected = select_ledger_store(db, ledger, store)
+    if selected == "markdown":
+        if ledger and ledger.exists():
+            return load_transactions_markdown(ledger)
+        return []
+    if selected == "db" and db and db.exists():
         return load_transactions_db(db)
     if md and md.exists():
         return parse_transactions(md)
@@ -3009,13 +4394,17 @@ def _add_source_args_no_account(sp: argparse.ArgumentParser) -> None:
     consumers of `_add_source_args` (pnl / profit-panel / analytics /
     replay)."""
     sp.add_argument("--db", default=None, type=Path,
-                    help="SQLite store (default: active account's transactions.db)")
+                    help="Legacy path override; normal runtime uses the account Markdown ledger")
+    sp.add_argument("--ledger", default=None, type=Path,
+                    help="Markdown ledger directory for dual-read/parity runs")
+    sp.add_argument("--ledger-store", choices=("auto", "markdown"), default="auto",
+                    help="Read source; final runtime uses Markdown")
 
 
 def _add_source_args(sp: argparse.ArgumentParser) -> None:
     """Common --db and --account flags. Default for --db is None (sentinel)
     so resolve_account() can detect "not explicitly set" and fall back to
-    the active account's transactions.db."""
+    the active account Markdown ledger."""
     _add_source_args_no_account(sp)
     add_account_args(sp)
 
@@ -3024,8 +4413,8 @@ def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
 
-    # ---- verify (DB replay vs balance tables) ----------------------------- #
-    v = sub.add_parser("verify", help="Replay transactions.db and reconcile against open_lots + cash_balances")
+    # ---- verify (Markdown replay vs generated projections) ------------------- #
+    v = sub.add_parser("verify", help="Replay Markdown ledger and reconcile against generated projections")
     v.add_argument("--db", default=None, type=Path)
     add_account_args(v)
 
@@ -3082,10 +4471,10 @@ def _build_parser() -> argparse.ArgumentParser:
     sub.add_parser("self-check", help="Run unit tests")
 
     # ---- db <subcommand> --------------------------------------------------- #
-    db = sub.add_parser("db", help="SQLite store: init, import, add, dump, stats")
+    db = sub.add_parser("db", help="Markdown ledger compatibility aliases: init, import, add, dump, stats")
     db_sub = db.add_subparsers(dest="db_cmd", required=True)
 
-    di = db_sub.add_parser("init", help="Create transactions.db with schema (idempotent)")
+    di = db_sub.add_parser("init", help="Initialize Markdown ledger skeleton (idempotent)")
     di.add_argument("--db", default=None, type=Path)
     add_account_args(di)
 
@@ -3101,7 +4490,17 @@ def _build_parser() -> argparse.ArgumentParser:
     dij.add_argument("--db", default=None, type=Path)
     add_account_args(dij)
 
-    da = db_sub.add_parser("add", help="Insert one transaction from an inline JSON blob")
+    dpj = db_sub.add_parser(
+        "preview-json",
+        help="Dry-run a JSON import against a temporary ledger copy and print before/after summary",
+    )
+    dpj.add_argument("--input", required=True, type=Path)
+    dpj.add_argument("--output", default=None, type=Path,
+                     help="Optional path for the preview JSON summary")
+    dpj.add_argument("--db", default=None, type=Path)
+    add_account_args(dpj)
+
+    da = db_sub.add_parser("add", help="Append one transaction from an inline JSON blob")
     da.add_argument("--json", required=True, help="Canonical JSON object (or list)")
     da.add_argument("--db", default=None, type=Path)
     add_account_args(da)
@@ -3114,9 +4513,96 @@ def _build_parser() -> argparse.ArgumentParser:
     ds.add_argument("--db", default=None, type=Path)
     add_account_args(ds)
 
-    drb = db_sub.add_parser("rebuild", help="Force-rebuild open_lots + cash_balances from the transactions log")
+    drb = db_sub.add_parser("rebuild", help="Force-rebuild generated projections from the Markdown transactions log")
     drb.add_argument("--db", default=None, type=Path)
     add_account_args(drb)
+
+    # ---- ledger <subcommand> --------------------------------------------- #
+    ledger = sub.add_parser(
+        "ledger",
+        help="Markdown ledger tools: lint, legacy export, rebuild/verify caches, verify parity",
+    )
+    ledger_sub = ledger.add_subparsers(dest="ledger_cmd", required=True)
+
+    ll = ledger_sub.add_parser("lint", help="Validate Markdown ledger event files")
+    ll.add_argument("--ledger", default=None, type=Path)
+    add_account_args(ll)
+
+    le = ledger_sub.add_parser("export-db", help="Non-destructively export legacy rows to Markdown event files")
+    le.add_argument("--db", default=None, type=Path)
+    le.add_argument("--out", "--ledger", dest="ledger", default=None, type=Path,
+                    help="Target ledger directory; defaults to the resolved account ledger")
+    mode = le.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--dry-run", action="store_true", help="Plan export without writing files")
+    mode.add_argument("--write", action="store_true", help="Write event files and migration audit artifacts")
+    add_account_args(le)
+
+    lrc = ledger_sub.add_parser("rebuild-cache", help="Rebuild generated Markdown ledger cache files")
+    lrc.add_argument("--ledger", default=None, type=Path)
+    add_account_args(lrc)
+
+    lvc = ledger_sub.add_parser("verify-cache", help="Verify generated cache files match Markdown replay")
+    lvc.add_argument("--ledger", default=None, type=Path)
+    add_account_args(lvc)
+
+    lvp = ledger_sub.add_parser("verify-parity", help="Compare legacy replay/materialization to Markdown replay/cache")
+    lvp.add_argument("--db", default=None, type=Path)
+    lvp.add_argument("--ledger", default=None, type=Path)
+    add_account_args(lvp)
+
+    # ---- migration <subcommand> ------------------------------------------ #
+    migration = sub.add_parser(
+        "migration",
+        help="Legacy-to-Markdown migration flow: detect, prepare, apply, verify, archive, rollback",
+    )
+    migration_sub = migration.add_subparsers(dest="migration_cmd", required=True)
+
+    md = migration_sub.add_parser("detect", help="Read-only migration/account state classification")
+    md.add_argument("--ledger", default=None, type=Path)
+    add_account_args(md)
+
+    mp = migration_sub.add_parser("prepare", help="Read legacy SQLite evidence and build a Markdown migration proposal")
+    mp.add_argument("--db", default=None, type=Path)
+    mp.add_argument("--ledger", default=None, type=Path)
+    mp.add_argument("--migration-id", default=None)
+    mp.add_argument("--write-proposal", action="store_true",
+                    help="Write proposal JSON under ledger/migrations; otherwise print only")
+    add_account_args(mp)
+
+    ma = migration_sub.add_parser("apply", help="Gated: write Markdown events/caches; does not move legacy store evidence")
+    ma.add_argument("--db", default=None, type=Path)
+    ma.add_argument("--ledger", default=None, type=Path)
+    ma.add_argument("--migration-id", default=None)
+    ma.add_argument("--yes", action="store_true",
+                    help="Required after the natural-language migration confirmation gate")
+    add_account_args(ma)
+
+    mv = migration_sub.add_parser("verify", help="Verify Markdown ledger/cache/parity after prepare/apply")
+    mv.add_argument("--db", default=None, type=Path)
+    mv.add_argument("--ledger", default=None, type=Path)
+    mv.add_argument("--no-sqlite-mode", choices=("transition", "final"), default="transition")
+    add_account_args(mv)
+
+    mar = migration_sub.add_parser("archive-db", help="Separately gated move of legacy store evidence into ledger archive")
+    mar.add_argument("--db", default=None, type=Path)
+    mar.add_argument("--ledger", default=None, type=Path)
+    mar.add_argument("--migration-id", default=None)
+    mar.add_argument("--yes", action="store_true",
+                     help="Required after the separate archive-db protected-file confirmation gate")
+    add_account_args(mar)
+
+    mr = migration_sub.add_parser("rollback", help="Gated recovery action for a recorded migration id")
+    mr.add_argument("--ledger", default=None, type=Path)
+    mr.add_argument("--migration-id", required=True)
+    mr.add_argument("--restore-db-evidence", action="store_true",
+                    help="Copy archived DB evidence back as legacy import input only; never runtime fallback")
+    mr.add_argument("--yes", action="store_true",
+                    help="Required after rollback confirmation gate")
+    add_account_args(mr)
+
+    vns = migration_sub.add_parser("verify-no-sqlite", help="Static SQLite quarantine validator")
+    vns.add_argument("--root", default=Path.cwd(), type=Path)
+    vns.add_argument("--mode", choices=("transition", "final"), default="final")
 
     # ---- account <subcommand> --------------------------------------------- #
     acct = sub.add_parser("account", help="Manage accounts (multi-account support)")
@@ -3168,15 +4654,39 @@ def _resolve_paths(args: argparse.Namespace) -> Tuple[Path, Optional[Path]]:
     warn = check_pairing(db_path, settings_path)
     if warn:
         print(f"WARNING: {warn}", file=sys.stderr)
+    ledger_attr = getattr(args, "ledger", None)
+    ledger_path = Path(ledger_attr) if ledger_attr is not None else paths.ledger
+    ledger_warn = check_ledger_pairing(db_path, settings_path, ledger_path)
+    if ledger_warn:
+        print(f"WARNING: {ledger_warn}", file=sys.stderr)
     return db_path, settings_path
 
 
+def _resolve_ledger_path(args: argparse.Namespace) -> Path:
+    paths = resolve_account(args)
+    ledger_attr = getattr(args, "ledger", None)
+    ledger_path = Path(ledger_attr) if ledger_attr is not None else paths.ledger
+    db_attr = getattr(args, "db", None)
+    db_path = Path(db_attr) if db_attr is not None else paths.db
+    settings_attr = getattr(args, "settings", None)
+    settings_path = Path(settings_attr) if settings_attr is not None else paths.settings
+    warn = check_ledger_pairing(db_path, settings_path, ledger_path)
+    if warn:
+        print(f"WARNING: {warn}", file=sys.stderr)
+    return ledger_path
+
+
 def _resolve_txns(args: argparse.Namespace) -> List[Transaction]:
-    """Resolve transactions from transactions.db."""
-    db = getattr(args, "db", None)
-    if db and Path(db).exists():
-        db_init(Path(db))
-        return load_transactions_db(Path(db))
+    """Resolve transactions from the selected store."""
+    ledger_store = getattr(args, "ledger_store", "auto")
+    db = Path(getattr(args, "db")) if getattr(args, "db", None) is not None else _resolve_paths(args)[0]
+    ledger_path = _resolve_ledger_path(args)
+    selected = select_ledger_store(db, ledger_path, ledger_store)
+    if selected == "markdown":
+        return load_transactions_markdown(ledger_path)
+    if selected == "db" and db.exists():
+        db_init(db)
+        return load_transactions_db(db)
     return []
 
 
@@ -3186,7 +4696,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     # IS the migration entry). Detect by sniffing argv[0] before parsing.
     raw = list(argv) if argv is not None else sys.argv[1:]
     is_account_cmd = len(raw) > 0 and raw[0] == "account"
-    if not is_account_cmd:
+    is_migration_cmd = len(raw) > 0 and raw[0] == "migration"
+    if not is_account_cmd and not is_migration_cmd:
         autodetect_and_migrate_or_exit()
 
     args = _build_parser().parse_args(argv)
@@ -3202,11 +4713,25 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.cmd == "verify":
         db_path, _ = _resolve_paths(args)
         args.db = db_path
+        ledger_path = _resolve_ledger_path(args)
+        if select_ledger_store(db_path, ledger_path, "auto") == "markdown":
+            try:
+                ok, issues = ledger_verify_cache(ledger_path)
+            except Exception as exc:
+                print(f"ERROR: {exc}", file=sys.stderr)
+                return 1
+            if ok:
+                print("OK: Markdown ledger generated caches match replay.")
+                return 0
+            print("MISMATCH (Markdown generated caches drifted from event replay; run `ledger rebuild-cache`):")
+            for issue in issues:
+                print(f"  - {issue}")
+            return 1
         ok, mismatches = _verify_balance_tables(args)
         if ok:
             print("OK: replay matches open_lots + cash_balances.")
             return 0
-        print("MISMATCH (balance tables drifted from log replay; run `db rebuild`):")
+        print("MISMATCH (generated caches drifted from Markdown replay; rebuild ledger caches):")
         for m in mismatches:
             print(f"  - {m}")
         return 1
@@ -3319,8 +4844,14 @@ def main(argv: Optional[List[str]] = None) -> int:
             all_lots: List[Lot] = []
             tagged: List[Tuple[str, Transaction]] = []
             for ap in all_paths:
-                all_lots.extend(load_holdings_lots(ap.db))
-                for t in load_transactions_db(ap.db):
+                selected_store = select_ledger_store(ap.db, ap.ledger, getattr(args, "ledger_store", "auto"))
+                if selected_store == "markdown":
+                    all_lots.extend(load_holdings_lots_markdown(ap.ledger))
+                    account_txns = load_transactions_markdown(ap.ledger)
+                else:
+                    all_lots.extend(load_holdings_lots(ap.db))
+                    account_txns = load_transactions_db(ap.db)
+                for t in account_txns:
                     tagged.append((ap.name, t))
 
             # CB-2: deterministic global order = (date, account_name, original_seq).
@@ -3371,15 +4902,26 @@ def main(argv: Optional[List[str]] = None) -> int:
                     file=sys.stderr,
                 )
             settings = parse_settings_profile(args.settings)
-            snap = compute_snapshot(
-                db_path=args.db,
-                prices=prices,
-                settings=settings,
-                today=today,
-            )
+            ledger_path = _resolve_ledger_path(args)
+            if select_ledger_store(args.db, ledger_path, getattr(args, "ledger_store", "auto")) == "markdown":
+                snap = _compute_snapshot_core(
+                    lots=load_holdings_lots_markdown(ledger_path),
+                    txns=load_transactions_markdown(ledger_path),
+                    prices=prices,
+                    settings=settings,
+                    today=today,
+                    total_mode=False,
+                )
+            else:
+                snap = compute_snapshot(
+                    db_path=args.db,
+                    prices=prices,
+                    settings=settings,
+                    today=today,
+                )
         if not snap.aggregates:
-            print(f"ERROR: {args.db} has no open_lots / cash_balances. "
-                  "Run `python scripts/transactions.py db init` and import transactions first.",
+            print(f"ERROR: Markdown ledger for {args.db} has no positions. "
+                  "Import or append ledger events first.",
                   file=sys.stderr)
             return 4
         n_bytes = write_snapshot(snap, args.output)
@@ -3465,6 +5007,12 @@ def main(argv: Optional[List[str]] = None) -> int:
         args.db = db_path
         return _dispatch_db(args)
 
+    if args.cmd == "ledger":
+        return _dispatch_ledger(args)
+
+    if args.cmd == "migration":
+        return _dispatch_migration(args)
+
     return 2
 
 
@@ -3488,7 +5036,8 @@ def _handle_account_cmd(args: argparse.Namespace) -> int:
             return 1
         print(f"Created account: {paths.name}")
         print(f"  settings: {paths.settings}")
-        print(f"  db:       {paths.db}")
+        print(f"  legacy:   {paths.db}")
+        print(f"  ledger:   {paths.ledger}")
         print(f"  reports:  {paths.reports_dir}")
         print("Set as active with: python scripts/transactions.py account use", paths.name)
         return 0
@@ -3518,56 +5067,126 @@ def _handle_account_cmd(args: argparse.Namespace) -> int:
 # CLI helpers — DB dispatch
 # --------------------------------------------------------------------------- #
 
-def _verify_balance_tables(args: argparse.Namespace) -> Tuple[bool, List[str]]:
-    """Replay the transactions log and reconcile against the materialized
-    balance tables (open_lots + cash_balances).
+def _dispatch_ledger(args: argparse.Namespace) -> int:
+    ledger_path = _resolve_ledger_path(args)
 
-    Drift here means the balance tables were edited outside the rebuild path
-    — a defensive check. The `verify` command is the user-visible entry
-    point; it implicitly runs after every import via the auto-rebuild.
-    """
-    db_path = Path(args.db) if hasattr(args, "db") else DEFAULT_DB_PATH
-    if not db_path.exists():
-        return False, [f"{db_path} not found"]
-    db_init(db_path)
-    txns = load_transactions_db(db_path)
-    state = replay(txns)
-
-    # Build expected balances from replay
-    expected_qty: Dict[str, float] = {
-        ticker: sum(l.qty for l in lots) for ticker, lots in state.open_lots.items()
-    }
-    expected_cash = {
-        ccy: amt for ccy, amt in state.cash.items() if abs(amt) > 1e-6
-    }
-
-    # Read actual balance tables
-    actual_qty: Dict[str, float] = {}
-    actual_cash: Dict[str, float] = {}
-    if db_path.exists():
-        conn = db_connect(db_path)
+    if args.ledger_cmd == "lint":
         try:
-            for row in conn.execute("SELECT ticker, qty FROM open_lots"):
-                actual_qty[row["ticker"]] = actual_qty.get(row["ticker"], 0.0) + float(row["qty"])
-            for row in conn.execute("SELECT currency, amount FROM cash_balances"):
-                actual_cash[row["currency"]] = float(row["amount"])
-        finally:
-            conn.close()
+            events = load_event_dicts(ledger_path)
+            errors = validate_event_set(events)
+        except Exception as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 1
+        if errors:
+            print("Markdown ledger lint failed:")
+            for err in errors:
+                print(f"  - {err}")
+            return 1
+        print(f"OK: {len(events)} Markdown ledger event(s) valid at {ledger_path}")
+        return 0
 
-    mismatches: List[str] = []
-    for ticker in sorted(set(expected_qty) | set(actual_qty)):
-        e = expected_qty.get(ticker, 0.0)
-        a = actual_qty.get(ticker, 0.0)
-        if abs(e - a) > 1e-6:
-            mismatches.append(f"{ticker}: replay={e:g} vs open_lots={a:g}")
-    for ccy in sorted(set(expected_cash) | set(actual_cash)):
-        e = expected_cash.get(ccy, 0.0)
-        a = actual_cash.get(ccy, 0.0)
-        if abs(e - a) > 1e-3:
-            mismatches.append(f"cash {ccy}: replay={e:g} vs cash_balances={a:g}")
-    for issue in state.issues:
-        mismatches.append(f"replay issue: {issue}")
-    return len(mismatches) == 0, mismatches
+    if args.ledger_cmd == "export-db":
+        db_path, _ = _resolve_paths(args)
+        result = ledger_export_db(db_path, ledger_path, write=bool(args.write))
+        print(json.dumps(result, indent=2, ensure_ascii=False, default=str))
+        if args.write and result.get("parity", {}).get("ok") is False:
+            return 1
+        return 0
+
+    if args.ledger_cmd == "rebuild-cache":
+        try:
+            result = ledger_rebuild_cache(ledger_path)
+        except Exception as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 1
+        print(json.dumps(result, indent=2, ensure_ascii=False, default=str))
+        return 0
+
+    if args.ledger_cmd == "verify-cache":
+        try:
+            ok, issues = ledger_verify_cache(ledger_path)
+        except Exception as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 1
+        if ok:
+            print(f"OK: generated caches match Markdown replay at {ledger_path}")
+            return 0
+        print("Markdown generated cache mismatch:")
+        for issue in issues:
+            print(f"  - {issue}")
+        return 1
+
+    if args.ledger_cmd == "verify-parity":
+        db_path, _ = _resolve_paths(args)
+        try:
+            ok, report = ledger_verify_parity(db_path, ledger_path)
+        except Exception as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 1
+        print(json.dumps(report, indent=2, ensure_ascii=False, default=str))
+        return 0 if ok else 1
+
+    print(f"Unknown ledger subcommand: {args.ledger_cmd}", file=sys.stderr)
+    return 1
+
+
+# --------------------------------------------------------------------------- #
+# CLI helpers — migration-flow dispatch
+# --------------------------------------------------------------------------- #
+
+def _dispatch_migration(args: argparse.Namespace) -> int:
+    try:
+        if args.migration_cmd == "detect":
+            result = migration_detect(args)
+            print(json.dumps(result, indent=2, ensure_ascii=False, default=str))
+            return 0
+        if args.migration_cmd == "prepare":
+            result = migration_prepare(args)
+            print(json.dumps(result, indent=2, ensure_ascii=False, default=str))
+            return 0 if not result.get("blockers") else 1
+        if args.migration_cmd == "apply":
+            result = migration_apply(args)
+            print(json.dumps(result, indent=2, ensure_ascii=False, default=str))
+            parity = result.get("parity") or {}
+            return 0 if parity.get("ok", True) else 1
+        if args.migration_cmd == "verify":
+            result = migration_verify(args)
+            print(json.dumps(result, indent=2, ensure_ascii=False, default=str))
+            return 0 if result.get("ok") else 1
+        if args.migration_cmd == "archive-db":
+            result = migration_archive_db(args)
+            print(json.dumps(result, indent=2, ensure_ascii=False, default=str))
+            return 0
+        if args.migration_cmd == "rollback":
+            result = migration_rollback(args)
+            print(json.dumps(result, indent=2, ensure_ascii=False, default=str))
+            return 0
+        if args.migration_cmd == "verify-no-sqlite":
+            result = migration_verify_no_sqlite(args)
+            print(json.dumps(result, indent=2, ensure_ascii=False, default=str))
+            return 0 if result.get("ok") else 1
+    except PermissionError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    except Exception as exc:  # noqa: BLE001 - CLI should surface concise diagnostics
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+    print(f"Unknown migration subcommand: {args.migration_cmd}", file=sys.stderr)
+    return 1
+
+
+# --------------------------------------------------------------------------- #
+# CLI helpers — DB dispatch
+# --------------------------------------------------------------------------- #
+
+
+def _verify_balance_tables(args: argparse.Namespace) -> Tuple[bool, List[str]]:
+    """Compatibility verifier: check Markdown generated caches against replay."""
+    db_path = Path(args.db) if hasattr(args, "db") else DEFAULT_DB_PATH
+    ledger_dir = _legacy_ledger_dir_for_path(db_path)
+    if not ledger_dir.exists():
+        return False, [f"Markdown ledger not found: {ledger_dir}"]
+    return ledger_verify_cache(ledger_dir)
 
 
 def _dispatch_db(args: argparse.Namespace) -> int:
@@ -3575,7 +5194,7 @@ def _dispatch_db(args: argparse.Namespace) -> int:
 
     if args.db_cmd == "init":
         status = db_init(db)
-        print(f"Schema {status} at {db} (version {SCHEMA_VERSION}).")
+        print(f"Markdown ledger {status} for {db}.")
         return 0
 
     if args.db_cmd == "import-csv":
@@ -3607,6 +5226,20 @@ def _dispatch_db(args: argparse.Namespace) -> int:
         print(f"Imported {inserted} JSON record(s) → {db}.")
         return 0
 
+    if args.db_cmd == "preview-json":
+        preview, errs = db_preview_json(args.input, db)
+        if errs:
+            for e in errs:
+                print(f"  - {e}", file=sys.stderr)
+            return 4
+        if args.output:
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            args.output.write_text(json.dumps(preview, indent=2, ensure_ascii=False), encoding="utf-8")
+            print(f"Wrote JSON import preview to {args.output}.")
+        else:
+            print(json.dumps(preview, indent=2, ensure_ascii=False))
+        return 0 if preview.get("ok") else 4
+
     if args.db_cmd == "add":
         db_init(db)
         inserted, errs = db_add(args.json, db)
@@ -3628,9 +5261,6 @@ def _dispatch_db(args: argparse.Namespace) -> int:
         return 0
 
     if args.db_cmd == "rebuild":
-        if not db.exists():
-            print(f"ERROR: {db} not found", file=sys.stderr)
-            return 2
         result = db_rebuild_balances(db)
         print(json.dumps({"rebuilt": result}, indent=2, ensure_ascii=False))
         return 0

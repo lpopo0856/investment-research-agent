@@ -113,7 +113,7 @@ For demo reports, use only the isolated demo ledger:
 python demo/bootstrap_demo_ledger.py --apply
 ```
 
-Then run the normal report pipeline using `--db demo/transactions.db` for ledger-reading steps and `--cache demo/market_data_cache.db` for `fetch_history.py` and `fill_history_gap.py`. Prefer final HTML under `demo/reports/`. Never point demo bootstrap at production data. Demo `portfolio_report` follows the same no news / no actions / no trading psychology rule.
+Then run the normal report pipeline using the legacy-named `--db demo/ledger-anchor` ledger path for ledger-reading steps and the demo JSON market cache at `demo/market_data_cache.json` for `fetch_history.py` and `fill_history_gap.py`. Prefer final HTML under `demo/reports/`. Never point demo bootstrap at production data. Demo `portfolio_report` follows the same no news / no actions / no trading psychology rule.
 
 ## Stop Conditions
 

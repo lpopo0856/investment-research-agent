@@ -7,13 +7,13 @@ description: Safely split an asset class, market, strategy sleeve, or ticker set
 
 ## Core Rule
 
-Treat account splitting as ledger migration, not table editing. Follow `docs/transactions_agent_guidelines.md` for ledger write safety: preserve the combined economic state of source plus target, keep the original source DB backed up, and verify both reconstructed ledgers before writing live files.
+Treat account splitting as ledger migration, not table editing. Follow `docs/transactions_agent_guidelines.md` for ledger write safety: preserve the combined economic state of source plus target, keep the original source ledger backed up, and verify both reconstructed ledgers before writing live files.
 
 ## Natural-Language User Interface
 
 Treat natural language as the only default user interface. Command snippets, flags, paths, and machine formats below are internal agent contracts or audit evidence, not user instructions. Execute eligible steps yourself via tools, summarize results naturally, and collect missing parameters conversationally. Do not ask the user to run commands, choose flags, know canonical command names, assemble files, or write JSON unless they explicitly request CLI/API instructions or execution is blocked by missing authority. Confirmation gates ask for the required decision in natural language and must not delegate command execution or machine formatting to the user.
 
-Use the reusable helper when this repo's account-aware SQLite ledger is available:
+Use the reusable helper when this repo's account-aware Markdown ledger is available:
 
 ```bash
 python scripts/split_asset_account.py \
@@ -73,7 +73,7 @@ Proceed only when `verify_issues.source`, `verify_issues.target`, and `verify_is
 
 4. Explain the write plan before applying.
 
-Show the user the selector, selected tickers/assets, target account name, backup path, and the dry-run verification result. If the project has a confirm-before-write rule for transaction DBs, get explicit same-turn confirmation before `--apply`.
+Show the user the selector, selected tickers/assets, target account name, backup path, and the dry-run verification result. If the project has a confirm-before-write rule for transaction ledgers, get explicit same-turn confirmation before `--apply`.
 
 5. Apply.
 
@@ -118,6 +118,6 @@ Never edit derived balance tables directly. Rebuild them through the canonical i
 
 If any dry-run verification fails, do not apply. Inspect `summary.json`, narrow the selector, or handle unsupported transaction shapes manually.
 
-If live verification fails after apply, restore the source DB from `transactions.db.bak` or the timestamped backup written by the script, then report the mismatch.
+If live verification fails after apply, restore the source ledger from `ledger backup` or the timestamped backup written by the script, then report the mismatch.
 
 If the target account already contains transactions, refuse to overwrite unless the user explicitly intends to replace it.

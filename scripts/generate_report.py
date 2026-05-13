@@ -73,7 +73,7 @@ CONTEXT FILE SHAPE  (report_context.json)
         "performance_attribution": {...},
         "trade_quality": {...},
         "discipline_check": {...}
-      },                  // optional override; generated automatically from transactions.db when absent
+      },                  // optional override; generated automatically from the Markdown ledger when absent
       "theme_sector_html": "<div class=\"cols-2\">...</div>",
       "theme_sector_audit": {
         "tickers": {
@@ -98,7 +98,7 @@ CONTEXT FILE SHAPE  (report_context.json)
         "by_section": {}
       },
       "data_gaps":     [{"summary": "ALPH 成本基礎缺失",
-                          "detail": "transactions.db open_lots row for ALPH lacks cost basis"}, ...],
+                          "detail": "Markdown ledger lot for ALPH lacks cost basis"}, ...],
       "spec_update_note": "...",
     }
 
@@ -243,6 +243,7 @@ from report_archive import (                                  # noqa: E402
     _report_id_from_path,
     archive_report as _archive_report,
 )
+from check_report_html import check_html_text                  # noqa: E402
 
 
 # Legacy alias kept for any out-of-tree caller that imported this name from
@@ -4543,7 +4544,7 @@ def _cli(argv: Optional[List[str]] = None) -> argparse.Namespace:
                         "auto-FX, and auto-analytics — all numeric work happens upstream. "
                         "This is the canonical pipeline path; --prices/--db is a fallback.")
     p.add_argument("--db", default=None, type=Path,
-                   help="Fallback path: transactions.db source for positions when "
+                   help="Fallback path: account ledger source for positions when "
                         "--snapshot is not supplied.")
     p.add_argument("--settings", default=None, type=Path)
     p.add_argument("--prices", required=False, type=Path,
@@ -4571,6 +4572,9 @@ def _cli(argv: Optional[List[str]] = None) -> argparse.Namespace:
                    help="Run unit tests for PM-grade indicator helpers and exit. Validates "
                         "the canonical math (R:R, rails, style readout, lever inference) "
                         "without rendering a report. Use this in CI to catch silent drift.")
+    p.add_argument("--archive", action="store_true",
+                   help="Persist snapshot/context into the account ledger report archive. "
+                        "Default report generation writes only the final HTML.")
     p.add_argument("--verbose", "-v", action="store_true")
     p.add_argument(
         "--language",
@@ -4781,7 +4785,7 @@ def _build_snapshot_from_legacy_inputs(args: argparse.Namespace) -> Tuple[Option
         settings=settings,
     )
     if not snapshot.aggregates:
-        print(f"ERROR: {args.db} has no open_lots / cash_balances. "
+        print(f"ERROR: {args.db} has no Markdown ledger positions. "
               f"Run `python scripts/transactions.py db init` and import transactions first.",
               file=sys.stderr)
         return None, 4
@@ -5082,32 +5086,28 @@ def main(argv: Optional[List[str]] = None) -> int:
     args.output.write_text(html_doc, encoding="utf-8")
     print(f"Wrote {args.output} ({len(html_doc):,} bytes)")
 
+    html_errors = check_html_text(html_doc, require_lang=settings.locale)
+    if html_errors:
+        print(
+            f"ERROR: rendered report HTML failed self-containment checks "
+            f"({len(html_errors)} problem(s)):",
+            file=sys.stderr,
+        )
+        for err in html_errors:
+            print(f"  - {err}", file=sys.stderr)
+        return 9
+
     if total_mode:
-        # No per-account transactions.db to archive into.  Total reports
-        # land under accounts/_total/reports/ and accumulate there until D10
-        # (retention policy) lands.  Skip the archive step entirely.
+        # Total reports land under accounts/_total/reports/ and accumulate there
+        # until D10 (retention policy) lands. Skip the archive step entirely.
+        return 0
+    if not args.archive:
         return 0
 
     try:
         report_id = _report_id_from_path(args.output) or args.output.stem
-        # Demo-isolation guard: if the HTML lands under a `demo/` directory,
-        # archive into `demo/transactions.db` so synthetic runs do not pollute
-        # the production `report_archive` table. Mirrors the cache-isolation
-        # discipline in fetch_history.py.
-        archive_db = args.db if args.db else Path("transactions.db")
-        out_parts = {p.lower() for p in args.output.resolve().parts}
-        if "demo" in out_parts and Path(archive_db).resolve().name == "transactions.db" \
-                and Path(archive_db).resolve().parent.name != "demo":
-            demo_db = Path("demo/transactions.db")
-            if demo_db.exists():
-                print(
-                    f"WARNING: --output is under demo/ but --db resolves to root "
-                    f"{archive_db}; routing report_archive to {demo_db} so demo "
-                    f"runs do not pollute production. Pass --db demo/transactions.db "
-                    "explicitly to silence this warning.",
-                    file=sys.stderr,
-                )
-                archive_db = demo_db
+        # Archive uses durable file records under the account ledger.
+        archive_db = args.db if args.db else Path("ledger")
         _archive_report(
             report_id=report_id,
             snapshot_path=args.snapshot,

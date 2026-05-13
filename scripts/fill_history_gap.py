@@ -1,10 +1,10 @@
 """Inject web-researched OHLC / FX rows after fetch_history.py reports a gap.
 
 When `fetch_history.py` exits 5 with a gap list, the agent must web-search the
-missing entries and use this helper to persist them. Rows go to the SQLite cache given by ``--cache`` (default: cwd
-``market_data_cache.db``, so subsequent ``fetch_history.py`` runs see them as
-cache hits) and optionally merged into ``prices.json``. **Demo ledger runs**
-must use the same ``--cache demo/market_data_cache.db`` as ``fetch_history.py``.
+missing entries and use this helper to persist them. Rows go to the JSON cache given by ``--cache`` so subsequent
+``fetch_history.py`` runs see them as cache hits, and can optionally be merged
+into ``prices.json``. Demo ledger runs should use the same demo-local cache as
+``fetch_history.py``.
 
 Per /docs/portfolio_report_agent_guidelines/03-latest-price-retrieval.md, the
 attribution `agent_web_search` is the durable source-of-truth tag for any

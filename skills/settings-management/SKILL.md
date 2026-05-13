@@ -68,4 +68,4 @@ For a new strategy section or first creation, show the full proposed section/con
 - Never rewrite strategy from defaults or market views; ask the user or leave neutral/default text as explicitly labeled fallback.
 - Never place strategy or derived preferences in another file, project memory, report context, or ledger metadata.
 - Keep account description/language/base currency/time zone changes inside `SETTINGS.md` and verify by re-reading the changed section after write.
-- Do not edit `transactions.db`, `open_lots`, `cash_balances`, reports, or Python scripts as part of settings management.
+- Do not edit `ledger/`, `open_lots`, `cash_balances`, reports, or Python scripts as part of settings management.

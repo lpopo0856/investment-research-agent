@@ -17,7 +17,7 @@ Strategy policy: no lever block / keyword inference. Read whole `SETTINGS.md` `#
 
 ### 15.2 Position handling
 
-Dynamic `transactions.db.open_lots`; never hard-code. Judge long-term core, mid-term growth, short-term positions separately; same ticker in different buckets may get different actions. High-growth/high-vol names require bull/base/bear. Every recommendation needs action + price band + trigger. Trims name ticker + acquisition date; default highest-cost-first unless §15.6.1 strategy posture says otherwise. Use hold period and per-lot P&L context. Flag data gaps, estimates, source conflicts.
+Dynamic `Markdown ledger generated holdings`; never hard-code. Judge long-term core, mid-term growth, short-term positions separately; same ticker in different buckets may get different actions. High-growth/high-vol names require bull/base/bear. Every recommendation needs action + price band + trigger. Trims name ticker + acquisition date; default highest-cost-first unless §15.6.1 strategy posture says otherwise. Use hold period and per-lot P&L context. Flag data gaps, estimates, source conflicts.
 
 Horizon standard for rendered §10.5 / daily decision sections: lots-first bucket derivation controls research depth. Any Short Term lot requires tactical evidence and a state (`act_now`, `wait`, `exit`, `need_data`) even if aggregate bucket is long; mixed-bucket tickers require a `quality_audit` explaining the split. Mid/long-term lots require thesis/strategic status (`strengthening`/`intact`/`weakening`/`broken` or allocation-role equivalent). Aggregate bucket is fallback only when lots are missing or immaterial. `portfolio_report` skips this research layer; it may still show math/position horizon sections from the snapshot.
 
@@ -83,7 +83,7 @@ Every actionable §10.9 row requires renderer-formatted Portfolio fit:
 
 `Portfolio fit — sized Xpp of NAV; correlated with {top-3 overlaps}; theme overlap with {themes} → {pushes/does not push} {single-name|theme|high-vol bucket} cap toward warn ({current% vs warn%}); cash floor after action {Y%} vs floor {Z%}.`
 
-NAV basis = total NAV including cash. Renderer computes `Current` from `transactions.db.open_lots + cash_balances +` the prices snapshot path supplied on the CLI (deliverable runs: `$REPORT_RUN_DIR/prices.json` under `/tmp`); pass numeric `sized_pp_delta` or `target_pct` (renderer derives delta). No prose NAV math, risk-asset denominator, or share-count trim without converting through current price/total NAV.
+NAV basis = total NAV including cash. Renderer computes `Current` from `Markdown ledger generated holdings + cash_balances +` the prices snapshot path supplied on the CLI (deliverable runs: `$REPORT_RUN_DIR/prices.json` under `/tmp`); pass numeric `sized_pp_delta` or `target_pct` (renderer derives delta). No prose NAV math, risk-asset denominator, or share-count trim without converting through current price/total NAV.
 
 Default rails, overridden by SETTINGS: single-name cap 10%, theme cap 30%, high-vol bucket cap 30%, cash floor 10%, single-day move alert ±8%. Rail breach requires one of: accompanying correlated trim with named lot, downsize, or §10.6 alert + reduced conviction.
 
@@ -179,7 +179,7 @@ Reply in SETTINGS language with absolute HTML path, most important rendered aler
 
 ### A.1 Inputs/language
 
-- [ ] Fresh read: `transactions.db` (positions via `load_holdings_lots`), `SETTINGS.md`, `/docs/*`; output language + `<html lang>` match; no bilingual labels; stray-language grep clean except §5.2 allow-list.
+- [ ] Fresh read: `ledger/` (positions via `load_holdings_lots`), `SETTINGS.md`, `/docs/*`; output language + `<html lang>` match; no bilingual labels; stray-language grep clean except §5.2 allow-list.
 
 ### A.2 File output
 

@@ -14,7 +14,7 @@ When a guideline in this repo says "delegate to `temp-researcher`" or "run insid
 
 ## 1. Purpose
 
-A temp-researcher absorbs the token cost of research-class work (large WebSearch / WebFetch dumps, PDF / image / multi-file extraction, broad codebase or DB scans) inside an isolated context that dies on exit, returning to the parent only:
+A temp-researcher absorbs the token cost of research-class work (large WebSearch / WebFetch dumps, PDF / image / multi-file extraction, broad codebase or ledger scans) inside an isolated context that dies on exit, returning to the parent only:
 
 - a path to a durable result file, and
 - a short summary plus audit fields.
@@ -82,7 +82,7 @@ audit:
 ### 6.1 Daily-report Phase A — news + events research (section-gated)
 
 - **Mode gate**: invoke this brief only when the effective report policy renders §10.5 daily decision sections (current policy: single-account `daily_report`). `portfolio_report` and all `total_account` variants must not invoke a news/events temp-researcher, must not derive `research_targets`, and must not author `research_coverage`.
-- **Inputs**: cover-universe ticker list (from `transactions.db.open_lots` minus cash/cash-equivalents, plus extras from §10.6/§10.9), compact parent-derived `research_targets` map (`expected_horizon`, `bucket_breakdown`, `position_weight`, `materiality`, `mixed_bucket`), `$REPORT_RUN_DIR/report_context.json` (already initialized with empty `news` and `events_30d` fields), spec excerpts from `04-computations-to-static-snapshot.md` §10.5 and §10.6.
+- **Inputs**: cover-universe ticker list (from the active ledger store's projected open lots minus cash/cash-equivalents, plus extras from §10.6/§10.9), compact parent-derived `research_targets` map (`expected_horizon`, `bucket_breakdown`, `position_weight`, `materiality`, `mixed_bucket`), `$REPORT_RUN_DIR/report_context.json` (already initialized with empty `news` and `events_30d` fields), spec excerpts from `04-computations-to-static-snapshot.md` §10.5 and §10.6.
 - **Work**: WebSearch each ticker per §10.5 step 2 (current + previous report month; TW also 繁中); WebFetch promising URLs (no SERP-only items); identify dated catalysts per §10.5 step 4 (issuer IR, exchange filings/calendar, etc.); reject generic headline-only items; record per the §10.5 Records spec. Use `research_targets` for horizon/depth, but do not recompute portfolio math.
 - **Artifact**: for rendered daily research sections only, `report_context.json["news"]`, `report_context.json["events"]`, and `report_context.json["research_coverage"]` populated per the §10.5 schema, including `quality_schema: "horizon_v1"` for canonical report runs. Each ticker includes horizon, research depth, tactical decision or thesis/strategic status, decision relevance, evidence classes, source quality, quality audit, and any audited exception.
 - **Phase boundary**: Phase A owns live news/events plus compact evidence metadata only. Phase B owns final investment judgment, sizing, R:R, kill, portfolio fit, and price/technical integration from snapshot/prices. Phase A may cite technical/flow evidence only if directly sourced; `covered_by_snapshot` never replaces live news/event search audit.

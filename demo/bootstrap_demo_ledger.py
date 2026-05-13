@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """
 Build / refresh the synthetic demo transaction seed and optionally materialize
-`demo/transactions.db`. This script only prepares fake transaction data; report
-generation is handled by the normal agent workflow (see demo/README.md).
+`demo/ledger/` as Markdown event files. This script only prepares fake
+transaction data; report generation is handled by the normal agent workflow
+(see demo/README.md).
 
 Run from repo root:
   python demo/bootstrap_demo_ledger.py --write-json
@@ -12,7 +13,7 @@ from __future__ import annotations
 
 import argparse
 import json
-import subprocess
+import shutil
 import sys
 from pathlib import Path
 
@@ -20,7 +21,7 @@ REPO = Path(__file__).resolve().parent.parent
 SCRIPTS = REPO / "scripts"
 DEMO = REPO / "demo"
 JSON_PATH = DEMO / "transactions_history.json"
-DB_PATH = DEMO / "transactions.db"
+LEDGER_PATH = DEMO / "ledger"
 
 LT, MT, ST = "Long Term", "Mid Term", "Short Term"
 
@@ -1069,10 +1070,10 @@ def build_transactions() -> list[dict]:
 
 def _validate_replay(txns: list[dict]) -> None:
     sys.path.insert(0, str(SCRIPTS))
-    from transactions import _dict_to_transaction, replay  # noqa: WPS433
+    import transactions as tx_runtime  # noqa: WPS433
 
-    parsed = [_dict_to_transaction(d, seq=i) for i, d in enumerate(txns)]
-    st = replay(parsed)
+    parsed = [tx_runtime._dict_to_transaction(d, seq=i) for i, d in enumerate(txns)]
+    st = tx_runtime.replay(parsed)
     for iss in st.issues:
         raise SystemExit(f"replay issue: {iss}")
     for ccy, bal in st.cash.items():
@@ -1080,36 +1081,30 @@ def _validate_replay(txns: list[dict]) -> None:
             raise SystemExit(f"negative cash {ccy}: {bal}")
 
 
-def _apply_db() -> None:
-    if DB_PATH.exists():
-        DB_PATH.unlink()
-    subprocess.check_call(
-        [sys.executable, str(SCRIPTS / "transactions.py"), "db", "init", "--db", str(DB_PATH)],
-        cwd=str(REPO),
-    )
-    subprocess.check_call(
-        [
-            sys.executable,
-            str(SCRIPTS / "transactions.py"),
-            "db",
-            "import-json",
-            "--input",
-            str(JSON_PATH),
-            "--db",
-            str(DB_PATH),
-        ],
-        cwd=str(REPO),
-    )
-    subprocess.check_call(
-        [sys.executable, str(SCRIPTS / "transactions.py"), "verify", "--db", str(DB_PATH)],
-        cwd=str(REPO),
-    )
+def _apply_ledger() -> None:
+    sys.path.insert(0, str(SCRIPTS))
+    from ledger_markdown import ensure_ledger_skeleton, events_dir, generated_dir  # noqa: WPS433
+    import transactions as tx_runtime  # noqa: WPS433
+
+    for child in (events_dir(LEDGER_PATH), generated_dir(LEDGER_PATH)):
+        if child.exists():
+            shutil.rmtree(child)
+    ensure_ledger_skeleton(LEDGER_PATH)
+    inserted, errors = tx_runtime.ledger_import_json(JSON_PATH, LEDGER_PATH)
+    if errors:
+        raise SystemExit("; ".join(errors))
+    expected = len(json.loads(JSON_PATH.read_text(encoding="utf-8")))
+    if inserted != expected:
+        raise SystemExit(f"inserted {inserted} records, expected {expected}")
+    ok, issues = tx_runtime.ledger_verify_cache(LEDGER_PATH)
+    if not ok:
+        raise SystemExit("ledger cache verification failed: " + "; ".join(issues))
 
 
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--write-json", action="store_true", help=f"Write {JSON_PATH.name}")
-    ap.add_argument("--apply", action="store_true", help="Recreate demo DB from JSON")
+    ap.add_argument("--apply", action="store_true", help="Recreate demo Markdown ledger from JSON")
     args = ap.parse_args()
     txns = build_transactions()
     _validate_replay(txns)
@@ -1123,8 +1118,8 @@ def main() -> int:
         if not JSON_PATH.exists():
             print("ERROR: run with --write-json first", file=sys.stderr)
             return 2
-        _apply_db()
-        print(f"Materialized {DB_PATH}")
+        _apply_ledger()
+        print(f"Materialized {LEDGER_PATH}")
 
     if not args.write_json and not args.apply:
         ap.print_help()

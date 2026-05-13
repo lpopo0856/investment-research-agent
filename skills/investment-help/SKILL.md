@@ -46,7 +46,7 @@ python scripts/transactions.py account list
 python scripts/transactions.py db stats
 ```
 
-If those are unavailable during early setup, fall back to lightweight file presence checks described in `docs/help_agent_guidelines.md`. Do not write files, switch accounts, initialize DBs, or migrate from this skill.
+If those are unavailable during early setup, fall back to lightweight file presence checks described in `docs/help_agent_guidelines.md`. Do not write files, switch accounts, initialize ledgers, or migrate from this skill.
 
 If no account is safely resolvable, or the active/default account is missing
 usable settings, lead with onboarding/settings completion instead of presenting
@@ -59,7 +59,7 @@ onboarding state.
 
 Render the menu exactly as a menu, not as implementation:
 
-1. Start with one sentence naming the detected state: cold start, legacy layout, empty DB, ready, or multiple accounts.
+1. Start with one sentence naming the detected state: cold start, legacy layout, empty ledger, ready, or multiple accounts.
 2. Show the four core capabilities from `docs/help_agent_guidelines.md`:
    - onboarding / import
    - record a transaction

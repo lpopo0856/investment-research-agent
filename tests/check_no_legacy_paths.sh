@@ -44,7 +44,7 @@ for pat in "${LEGACY_PATTERNS[@]}"; do
   fi
 done
 
-# Also check for hardcoded `transactions.db` or `SETTINGS.md` paths in command-line examples
+# Also check for hardcoded `ledger/` or `SETTINGS.md` paths in command-line examples
 # that aren't explicitly account-scoped or demo-scoped. (Code blocks containing
 # `python scripts/...` and these paths.)
 for f in "${DOC_GLOBS[@]}"; do
@@ -56,7 +56,7 @@ for f in "${DOC_GLOBS[@]}"; do
     continue
   fi
   for file in $files; do
-    # In code blocks: python scripts/... that contain 'transactions.db' or 'SETTINGS.md'
+    # In code blocks: python scripts/... that contain 'Markdown ledger' or 'SETTINGS.md'
     # without 'accounts/' or 'demo/' prefix.
     suspicious=$(awk '
       /^```/ { in_block = !in_block; next }

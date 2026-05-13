@@ -1,6 +1,6 @@
 ---
 name: onboarding
-description: Route new-user setup, legacy-layout migration, statement extraction, and first ledger import through the repo's canonical onboarding contracts. Use when SETTINGS.md or transactions.db/account files are missing, the user asks to get started/onboard/import a statement, or an agent needs the safe setup path without absorbing the full onboarding, settings, or transaction docs.
+description: Route new-user setup, legacy-layout migration, statement extraction, and first ledger import through the repo's canonical onboarding contracts. Use when SETTINGS.md or Markdown ledger/account files are missing, the user asks to get started/onboard/import a statement, or an agent needs the safe setup path without absorbing the full onboarding, settings, or transaction docs.
 ---
 
 # Onboarding
@@ -48,7 +48,7 @@ If dependency installation fails, report the blocker and continue only with work
 
 ## Layout Preflight Gate
 
-Before any script reads `SETTINGS.md` or `transactions.db`, run the C-8 layout preflight:
+Before any script reads `SETTINGS.md` or `ledger/`, run the C-8 layout preflight:
 
 ```bash
 python scripts/transactions.py account detect
@@ -67,6 +67,10 @@ python scripts/transactions.py account migrate --yes
 - `partial`: hard stop; follow the reconciliation path in `docs/onboarding_agent_guidelines.md` before doing anything else.
 
 Never run `python scripts/transactions.py account migrate --yes` unless `account detect` printed exactly `migrate` in the same workflow.
+
+This account-layout migration is separate from legacy-to-Markdown ledger migration.
+If a clean account already exists and the user asks to remove SQLite or migrate
+`ledger/` to Markdown, route to `skills/migration-flow/SKILL.md`.
 
 ## Routing Workflow
 

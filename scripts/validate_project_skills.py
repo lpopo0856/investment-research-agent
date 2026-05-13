@@ -145,6 +145,34 @@ EXPECTED_SKILLS = {
             ["partial", "hard stop"],
         ],
     },
+    "migration-flow": {
+        "path": "skills/migration-flow/SKILL.md",
+        "docs": [
+            "docs/migration_flow_agent_guidelines.md",
+            "docs/transactions_agent_guidelines.md",
+        ],
+        "commands": [
+            "python scripts/transactions.py account detect",
+            "python scripts/transactions.py migration detect --account <name>",
+            "python scripts/transactions.py migration prepare --account <name>",
+            "python scripts/transactions.py migration verify --account <name>",
+            "python scripts/transactions.py migration verify-no-sqlite",
+            "python scripts/transactions.py migration apply --account <name> --yes",
+            "python scripts/transactions.py migration archive-db --account <name> --yes",
+            "python scripts/transactions.py migration rollback --account <name> --migration-id <id> --yes",
+        ],
+        "phrases": [
+            ["archive-db", "only", "move"],
+            ["same-turn", "confirmation"],
+            ["apply", "must not move", "source legacy evidence"],
+            ["natural language", "default user interface"],
+            ["partial", "hard stop"],
+            ["Confirm migration apply? (yes / no / edit)"],
+            ["Archive the legacy SQLite evidence now? (yes / no)"],
+            ["Deleting", "archived legacy SQLite evidence"],
+            ["rollback", "must not", "legacy-store runtime normal"],
+        ],
+    },
     "settings-management": {
         "path": "skills/settings-management/SKILL.md",
         "docs": ["docs/settings_agent_guidelines.md"],
@@ -187,7 +215,7 @@ EXPECTED_SKILLS = {
             ["portfolio_report", "must not", "news"],
             ["validate_report_context.py"],
             ["rm -rf", "$REPORT_RUN_DIR"],
-            ["demo", "demo/market_data_cache.db"],
+            ["demo", "JSON market cache"],
             ["active/default account", "single-account"],
             ["scope is not", "resolve"],
         ],
@@ -211,7 +239,7 @@ EXPECTED_SKILLS = {
             ["pp of NAV"],
             ["portfolio fit"],
             ["Reviewer pass"],
-            ["do not edit", "SETTINGS.md", "transactions.db"],
+            ["do not edit", "SETTINGS.md", "protected ledger evidence"],
             ["never fabricate"],
             ["account-bound", "active account"],
             ["portfolio/ledger context"],
@@ -260,7 +288,7 @@ EXPECTED_SKILLS = {
         ],
         "phrases": [
             ["upgrade code", "without overwriting private account data"],
-            ["must not edit or delete", "SETTINGS.md", "transactions.db"],
+            ["must not edit or delete", "SETTINGS.md", "protected ledger evidence"],
             ["tracked source files", "uncommitted changes", "do not pull"],
             ["partial", "hard stop"],
             ["migrate", "migration requires the account-management gate"],
@@ -294,7 +322,7 @@ TRANSACTION_WRITE_COMMANDS = [
 UNSAFE_PHRASES = [
     "skip confirmation",
     "migrate automatically",
-    "edit transactions.db manually",
+    "edit protected ledger evidence manually",
     "write without confirmation",
     "insert without confirmation",
     "no confirmation needed",
@@ -651,8 +679,32 @@ This skill is ledger migration. Reference docs/transactions_agent_guidelines.md.
 1. Detect layout: `python scripts/transactions.py account detect`. List with `python scripts/transactions.py account list`. partial is a hard stop.
 2. Resolve the source account from the user name, active account, or default. Dry-run is the default for `python scripts/split_asset_account.py`. Use --apply only after reviewing the JSON summary and verify_issues are empty.
 3. After --apply, run `python scripts/transactions.py verify --account <source>` and `python scripts/transactions.py verify --account <target>`.
-Backup `transactions.db.bak` before --apply.
+Backup `legacy-ledger.bak` before --apply.
 Never edit derived balance tables directly. Rebuild via the canonical import/replay path.
+""",
+        "migration-flow": """---
+name: migration-flow
+description: Safely migrate legacy SQLite investment ledgers to Markdown.
+---
+# Migration flow
+Reference docs/migration_flow_agent_guidelines.md and docs/transactions_agent_guidelines.md.
+Run `python scripts/transactions.py account detect` first. partial is a hard stop.
+Read-only commands:
+- `python scripts/transactions.py migration detect --account <name>`
+- `python scripts/transactions.py migration prepare --account <name>`
+- `python scripts/transactions.py migration verify --account <name>`
+- `python scripts/transactions.py migration verify-no-sqlite`
+Write-capable gated commands:
+- `python scripts/transactions.py migration apply --account <name> --yes`
+- `python scripts/transactions.py migration rollback --account <name> --migration-id <id> --yes`
+Protected archive command:
+- `python scripts/transactions.py migration archive-db --account <name> --yes`
+archive-db is the only command that may move protected legacy SQLite evidence and requires same-turn confirmation.
+apply must not move the source legacy evidence.
+Use natural language as the default user interface.
+Prompt before apply: Confirm migration apply? (yes / no / edit).
+Prompt before archive: Archive the legacy SQLite evidence now? (yes / no).
+Forbid Deleting live or archived legacy SQLite evidence. rollback must not make legacy-store runtime normal.
 """,
         "settings-management": """---
 name: settings-management
@@ -687,7 +739,7 @@ Run:
 Use `python scripts/fill_history_gap.py` only for structured history gaps. Do not use --allow-incomplete.
 portfolio_report must not gather news, actions, events, research targets, or trading psychology.
 Validate context with validate_report_context.py. After success run `rm -rf "$REPORT_RUN_DIR"`.
-Demo reports use demo/transactions.db and demo/market_data_cache.db.
+Demo reports use demo/demo Markdown ledger and demo JSON market cache.
 """,
         "investment-analysis": """---
 name: investment-analysis
@@ -696,7 +748,7 @@ description: Route ad hoc investment analysis through the strategy-bound researc
 # Investment analysis
 This skill handles ad hoc research that is not an HTML report. Route HTML output to skills/report-management/SKILL.md.
 Use docs/portfolio_report_agent_guidelines/07-investment-content-and-checklist.md for detailed PM-grade fields.
-Do not edit SETTINGS.md or transactions.db, reports, ledgers, or account state.
+Do not edit SETTINGS.md, protected ledger evidence, reports, ledgers, or account state.
 Ad hoc research is account-bound by default; run `python scripts/transactions.py account detect`, resolve the active account, then read SETTINGS.md and the Investment Style And Strategy section plus portfolio/ledger context.
 Use latest public information and browse when facts may have changed. If account context is missing, label generic/non-personalized research.
 Output Bottom line first with size in pp of NAV.
@@ -723,7 +775,7 @@ name: upgrade-management
 description: Safely upgrade or update this repo without risking private portfolio data.
 ---
 # Upgrade management
-Upgrade code without overwriting private account data. Must not edit or delete SETTINGS.md or transactions.db.
+Upgrade code without overwriting private account data. Must not edit or delete SETTINGS.md or protected ledger evidence.
 Route migrations to skills/account-management/SKILL.md and optional demo smoke checks to skills/report-management/SKILL.md; respect demo/README.md isolation.
 Inspect code with `git status --short` and `git remote -v`.
 Also inspect `git branch --show-current` and `git describe --tags --exact-match`.

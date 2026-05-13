@@ -10,11 +10,13 @@ market_data_cache.db
 market_data_cache.db-journal
 market_data_cache.db-wal
 market_data_cache.db-shm
+market_data_cache.json
 /reports/*_portfolio_report*.html
 /reports/*_portfolio_report*.md
 .DS_Store
 .omc/
 .claude/settings.local.json
+*/__pycache__/
 /scripts/__pycache__/
 /demo/__pycache__/
 demo/market_data_cache.db

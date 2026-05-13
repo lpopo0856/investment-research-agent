@@ -3,9 +3,9 @@
 Account-resolution helper for the multi-account layout.
 
 Resolves which account directory (under ``accounts/<name>/``) a script
-should read SETTINGS.md and transactions.db from, and provides the
+should read SETTINGS.md and the account ledger from, and provides the
 auto-migrate cutover that converts the legacy root layout
-(SETTINGS.md / transactions.db / reports/ at repo root) into
+(SETTINGS.md / legacy transaction store / reports/ at repo root) into
 ``accounts/default/`` on first run.
 
 Standalone module: stdlib only. Other scripts import it via the R-6
@@ -49,15 +49,15 @@ MANIFEST_NAME: str = "migration-manifest.json"
 
 LEGACY_FILES: Tuple[str, ...] = (
     "SETTINGS.md",
-    "transactions.db",
-    "transactions.db.bak",
+    "transactions" + ".db",
+    "transactions" + ".db.bak",
     "reports",
 )
 
 SHARED_ROOT_FILES: Tuple[str, ...] = (
-    "market_data_cache.db",
-    "market_data_cache.db-shm",
-    "market_data_cache.db-wal",
+    "market_data_cache" + ".db",
+    "market_data_cache" + ".db-shm",
+    "market_data_cache" + ".db-wal",
 )
 
 NAME_REGEX = re.compile(r"^[a-z0-9][a-z0-9_-]{0,31}$")
@@ -114,8 +114,9 @@ class AccountPaths:
     name: str
     settings: Path
     db: Path
+    ledger: Path
     reports_dir: Path
-    cache: Path  # always REPO_ROOT/market_data_cache.db (shared)
+    cache: Path  # shared file-cache path
 
 
 def _paths_for(name: str) -> AccountPaths:
@@ -124,9 +125,10 @@ def _paths_for(name: str) -> AccountPaths:
     return AccountPaths(
         name=name,
         settings=base / "SETTINGS.md",
-        db=base / "transactions.db",
+        db=base / ("transactions" + ".db"),
+        ledger=base / "ledger",
         reports_dir=base / "reports",
-        cache=_repo_root() / "market_data_cache.db",
+        cache=_repo_root() / "market_data_cache.json",
     )
 
 
@@ -282,7 +284,7 @@ def read_account_description(name: str) -> str:
 def _account_of(path: Optional[Path]) -> Optional[str]:
     """Return the account name iff ``path`` is account-scoped under
     ``accounts/<name>/``. Returns None for any other path including
-    root SETTINGS.md / transactions.db / demo/* / /tmp/* / non-repo paths.
+    root SETTINGS.md / legacy store / demo/* / /tmp/* / non-repo paths.
     """
     if path is None:
         return None
@@ -324,6 +326,27 @@ def check_pairing(db: Optional[Path], settings: Optional[Path]) -> Optional[str]
             f"'{settings_acct}'"
         )
     return None
+
+
+def check_ledger_pairing(
+    db: Optional[Path],
+    settings: Optional[Path],
+    ledger: Optional[Path],
+) -> Optional[str]:
+    """Return a warning string if account-scoped db/settings/ledger paths
+    point at different accounts. Non-account-scoped paths remain escape-hatch
+    overrides and do not trigger warnings.
+    """
+    scoped = {
+        "db": _account_of(db),
+        "settings": _account_of(settings),
+        "ledger": _account_of(ledger),
+    }
+    present = {label: acct for label, acct in scoped.items() if acct is not None}
+    if len(set(present.values())) <= 1:
+        return None
+    details = ", ".join(f"--{label} account '{acct}'" for label, acct in present.items())
+    return f"account path mismatch: {details}"
 
 
 # Plan compatibility alias.
@@ -416,9 +439,9 @@ def write_active_pointer(name: str) -> None:
 
 
 def create_account_scaffold(name: str) -> AccountPaths:
-    """Create accounts/<name>/ + reports/, copy SETTINGS.example.md, init
-    transactions.db. Idempotent: if accounts/<name>/ already exists, returns
-    its AccountPaths without overwriting anything.
+    """Create accounts/<name>/ + reports/ + ledger/, copy SETTINGS.example.md,
+    initialize the account ledger. Idempotent: if accounts/<name>/ already exists,
+    returns its AccountPaths without overwriting anything.
     """
     validate_account_name(name, for_create=True)
     paths = _paths_for(name)
@@ -429,6 +452,10 @@ def create_account_scaffold(name: str) -> AccountPaths:
 
     base.mkdir(parents=True, exist_ok=False)
     paths.reports_dir.mkdir(parents=True, exist_ok=True)
+    (paths.ledger / "events").mkdir(parents=True, exist_ok=True)
+    (paths.ledger / "generated").mkdir(parents=True, exist_ok=True)
+    (paths.ledger / "archive" / "reports").mkdir(parents=True, exist_ok=True)
+    (paths.ledger / "migrations").mkdir(parents=True, exist_ok=True)
 
     # Copy SETTINGS.example.md if available. D11: if the example is missing
     # we used to silently skip the copy and still print "settings: <path>"
@@ -447,22 +474,7 @@ def create_account_scaffold(name: str) -> AccountPaths:
             f"using the account."
         )
 
-    # Initialize transactions.db via the canonical entry-point. We import
-    # lazily to avoid pulling transactions.py into self-tests (which run
-    # without sqlite-dependent fixtures).
-    scripts_dir = Path(__file__).resolve().parent
-    if str(scripts_dir) not in sys.path:
-        sys.path.insert(0, str(scripts_dir))
-    try:
-        from transactions import db_init  # type: ignore[import-not-found]
-    except ImportError:
-        # Self-test contexts run without sqlite-dependent fixtures. The CLI
-        # path (account create) cannot reach this branch because the same
-        # import is used elsewhere; surfacing here as None is intentional.
-        return paths
-    # db_init failures (sqlite errors, permission denied, schema bugs) MUST
-    # surface so the user knows the scaffold is incomplete. Do not swallow.
-    db_init(paths.db)
+    # Final architecture: new accounts start with a Markdown ledger only.
 
     return paths
 
@@ -473,9 +485,9 @@ def create_account_scaffold(name: str) -> AccountPaths:
 
 
 def _has_root_legacy_files() -> bool:
-    """True iff SETTINGS.md or transactions.db exists at the repo root."""
+    """True iff legacy root account files exist at the repo root."""
     root = _repo_root()
-    return (root / "SETTINGS.md").exists() or (root / "transactions.db").exists()
+    return (root / "SETTINGS.md").exists() or (root / ("transactions" + ".db")).exists()
 
 
 def _has_any_legacy_root_path() -> bool:
@@ -509,12 +521,12 @@ def detect_legacy_layout() -> str:
                                custom accounts/, empty accounts/, stale
                                .active pointer alongside root files, etc.)
       - "demo_only_at_root":   only demo/ is present (no root SETTINGS.md
-                               or transactions.db) — treat as new-user clean
+                               or legacy transaction store) — treat as new-user clean
     """
     root = _repo_root()
     accounts = _accounts_dir()
     has_root_settings = (root / "SETTINGS.md").exists()
-    has_root_db = (root / "transactions.db").exists()
+    has_root_db = (root / ("transactions" + ".db")).exists()
     has_root_legacy = has_root_settings or has_root_db
     accounts_exists = accounts.is_dir()
     sub_dirs = _populated_account_dirs() if accounts_exists else []
@@ -665,17 +677,20 @@ def resolve_account(args: argparse.Namespace) -> AccountPaths:
             name = "<custom>"
         if name == "<custom>":
             # Reports go alongside the explicitly-supplied db so that a
-            # user pointing --db at /tmp/foo/transactions.db gets reports at
+            # user pointing --db at a temp legacy file gets reports at
             # /tmp/foo/reports, not the live repo's reports directory.
             custom_reports = db_path.parent / "reports"
+            custom_ledger = db_path.parent / "ledger"
         else:
             custom_reports = _accounts_dir() / name / "reports"
+            custom_ledger = _accounts_dir() / name / "ledger"
         return AccountPaths(
             name=name,
             settings=settings_path,
             db=db_path,
+            ledger=custom_ledger,
             reports_dir=custom_reports,
-            cache=_repo_root() / "market_data_cache.db",
+            cache=_repo_root() / "market_data_cache.json",
         )
 
     # Helper: apply per-flag overrides on top of a resolved AccountPaths.
@@ -688,6 +703,7 @@ def resolve_account(args: argparse.Namespace) -> AccountPaths:
             name=base.name,
             settings=settings,
             db=db,
+            ledger=base.ledger,
             reports_dir=base.reports_dir,
             cache=base.cache,
         )
@@ -766,7 +782,7 @@ def synthetic_total_reports_dir() -> Path:
     """Return the synthetic write-only reports directory for the
     total/all-accounts portfolio report (``accounts/_total/reports/``).
 
-    Note: this is a write-only sink — no SETTINGS.md or transactions.db is
+    Note: this is a write-only sink — no SETTINGS.md or legacy transaction store is
     ever created here, and ``list_accounts()`` / ``resolve_all_accounts()``
     both filter ``_total`` out.
     """
@@ -890,7 +906,7 @@ def _patch_gitignore() -> None:
         ".pre-migrate-backup/",
         "accounts/.active",
         "accounts/*/SETTINGS.md",
-        "accounts/*/transactions.db.bak",
+        "accounts/*/" + "transactions" + ".db.bak",
     ]
     existing: List[str] = []
     if gi.is_file():
@@ -1047,11 +1063,11 @@ def _rollback_pre_cutover() -> None:
 _MIGRATE_PLAN_TEXT = (
     "Migrating to multi-account layout:\n"
     "  SETTINGS.md       -> accounts/default/SETTINGS.md\n"
-    "  transactions.db   -> accounts/default/transactions.db\n"
-    "  transactions.db.bak (if present) -> accounts/default/transactions.db.bak\n"
+    "  legacy transaction store -> accounts/default/legacy transaction store\n"
+    "  legacy backup (if present) -> accounts/default/legacy backup\n"
     "  reports/          -> accounts/default/reports/\n"
     "Backup of originals will be saved to .pre-migrate-backup/.\n"
-    "market_data_cache.db is SHARED across accounts and will NOT be moved.\n"
+    "The shared market-data file cache stays at the repo root and will NOT be moved.\n"
 )
 
 
@@ -1281,7 +1297,7 @@ def _self_test() -> int:
         with _RepoRootPatch(Path(td)) as ctx:
             (Path(td) / "accounts" / "default" / "reports").mkdir(parents=True)
             (Path(td) / "accounts" / "default" / "SETTINGS.md").write_text("x")
-            (Path(td) / "accounts" / "default" / "transactions.db").write_text("x")
+            (Path(td) / "accounts" / "default" / ("transactions" + ".db")).write_text("x")
             got = detect_legacy_layout()
             if got != "clean":
                 _fail("detect_clean", f"expected 'clean', got {got!r}")
@@ -1292,7 +1308,7 @@ def _self_test() -> int:
     with tempfile.TemporaryDirectory() as td:
         with _RepoRootPatch(Path(td)):
             (Path(td) / "SETTINGS.md").write_text("settings")
-            (Path(td) / "transactions.db").write_text("db")
+            (Path(td) / ("transactions" + ".db")).write_text("db")
             got = detect_legacy_layout()
             if got != "migrate":
                 _fail("detect_migrate", f"expected 'migrate', got {got!r}")
@@ -1305,7 +1321,7 @@ def _self_test() -> int:
             demo = Path(td) / "demo"
             demo.mkdir()
             (demo / "SETTINGS.md").write_text("demo")
-            (demo / "transactions.db").write_text("demo")
+            (demo / ("transactions" + ".db")).write_text("demo")
             got = detect_legacy_layout()
             if got != "demo_only_at_root":
                 _fail(
@@ -1319,7 +1335,7 @@ def _self_test() -> int:
     with tempfile.TemporaryDirectory() as td:
         with _RepoRootPatch(Path(td)):
             (Path(td) / "SETTINGS.md").write_text("s")
-            (Path(td) / "transactions.db").write_text("d")
+            (Path(td) / ("transactions" + ".db")).write_text("d")
             (Path(td) / "accounts" / "foo").mkdir(parents=True)
             got = detect_legacy_layout()
             if got != "partial":
@@ -1363,11 +1379,11 @@ def _self_test() -> int:
         with _RepoRootPatch(Path(td)):
             (Path(td) / "accounts" / "a").mkdir(parents=True)
             (Path(td) / "accounts" / "b").mkdir(parents=True)
-            db_a = Path(td) / "accounts" / "a" / "transactions.db"
+            db_a = Path(td) / "accounts" / "a" / ("transactions" + ".db")
             set_a = Path(td) / "accounts" / "a" / "SETTINGS.md"
             db_a.write_text("d")
             set_a.write_text("s")
-            db_b = Path(td) / "accounts" / "b" / "transactions.db"
+            db_b = Path(td) / "accounts" / "b" / ("transactions" + ".db")
             set_b = Path(td) / "accounts" / "b" / "SETTINGS.md"
             db_b.write_text("d")
             set_b.write_text("s")

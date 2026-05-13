@@ -1,6 +1,6 @@
 # Investment Research Agent
 
-**Do not edit/delete `SETTINGS.md` or `transactions.db` unless the user explicitly asks and the matching workflow confirmation gate is satisfied.**
+**Do not edit/delete `SETTINGS.md` or `ledger/` unless the user explicitly asks and the matching workflow confirmation gate is satisfied.**
 
 This file is the top-level router and non-negotiable safety floor. Detailed workflow rules live in `skills/*/SKILL.md` and `docs/*.md`; do not duplicate them here. When a skill or doc is more specific, follow it.
 
@@ -24,7 +24,7 @@ repo maintenance that does not read or depend on account files, safe account
 detection/listing, and the onboarding/settings interview needed to finish
 setup.
 
-Generic market education/news and pure repo maintenance do not need account resolution unless the answer becomes personalized, reads `SETTINGS.md`/`transactions.db`, or affects account state. For personalized research, always load the resolved account's strategy and current portfolio/ledger context before making recommendations; if context cannot be resolved, provide only generic research and label it non-personalized.
+Generic market education/news and pure repo maintenance do not need account resolution unless the answer becomes personalized, reads `SETTINGS.md`/`ledger/`, or affects account state. For personalized research, always load the resolved account's strategy and current portfolio/ledger context before making recommendations; if context cannot be resolved, provide only generic research and label it non-personalized.
 
 ## Workflow routing via project skills
 
@@ -41,6 +41,7 @@ Core workflow skills:
 - `skills/investment-analysis/SKILL.md` — ad hoc stock / ETF / crypto / market / portfolio analysis without HTML generation.
 - `skills/context-economy/SKILL.md` — context-drop / temp-researcher gate for large extraction or research phases.
 - `skills/split-asset-account/SKILL.md` — auditable account split / sleeve migration.
+- `skills/migration-flow/SKILL.md` — legacy-to-Markdown ledger migration, verify, archive, and rollback gates.
 - `skills/upgrade-management/SKILL.md` — safe repo upgrade/update flow with backup, dependency refresh, and account-layout migration gates.
 
 Canonical docs behind those skills:
@@ -50,13 +51,14 @@ Canonical docs behind those skills:
 - `docs/transactions_agent_guidelines.md`
 - `docs/settings_agent_guidelines.md`
 - `docs/portfolio_report_agent_guidelines.md`
+- `docs/migration_flow_agent_guidelines.md`
 - `docs/context_drop_protocol.md`
 - `docs/temp_researcher_contract.md`
 
 ## Hard floors no skill may weaken
 
-1. **Protected files:** do not edit/delete account `SETTINGS.md` or `transactions.db` unless the user explicitly asks and the matching skill/doc confirmation gate has passed.
-2. **Multi-account preflight:** before any non-interactive script reads account `SETTINGS.md` or `transactions.db`, run `python scripts/transactions.py account detect`. Run migration only when the detector prints exactly `migrate`; stop on `partial`; do not migrate on `clean` or `demo_only_at_root`.
+1. **Protected files:** do not edit/delete account `SETTINGS.md` or `ledger/` unless the user explicitly asks and the matching skill/doc confirmation gate has passed.
+2. **Multi-account preflight:** before any non-interactive script reads account `SETTINGS.md` or `ledger/`, run `python scripts/transactions.py account detect`. Run migration only when the detector prints exactly `migrate`; stop on `partial`; do not migrate on `clean` or `demo_only_at_root`.
 3. **Ledger writes:** use `skills/transaction-management/SKILL.md`. Never insert/import without parsed plan, canonical JSON or `/tmp` JSON path, resulting-state preview, explicit same-turn `yes`, backup, and verify. Never SQL-update/delete ledger rows or edit derived tables directly.
 4. **Settings writes:** use `skills/settings-management/SKILL.md`. Never write without proposed content or unified diff, explicit same-turn `yes`, and backup for existing files. Never invent strategy or leak secrets.
 5. **Report generation:** use `skills/report-management/SKILL.md`. Report intermediates stay under `/tmp`; final HTML only goes to the configured reports path; `portfolio_report` must not gather daily decision/news/action content.

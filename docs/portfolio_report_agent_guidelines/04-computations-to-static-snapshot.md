@@ -17,8 +17,8 @@
 > each; whole-file Reads load that into the parent agent's context for the
 > rest of the session, with no editorial benefit (the renderer reads the
 > files from disk and that path is unchanged). `transactions.py snapshot` /
-> `analytics` / `pnl` are the canonical compact views — `db dump` is for
-> backup, not for "give me transaction context."
+> `analytics` / `pnl` are the canonical compact views — full ledger dumps are
+> for backup/history export, not for "give me transaction context."
 
 **Path convention (HARD):** Unqualified filenames `report_snapshot.json`, `report_context.json`, and `prices.json` in this part file refer to those **basenames inside** `$REPORT_RUN_DIR` under `/tmp` for a normal report run (see `/docs/portfolio_report_agent_guidelines.md` — Intermediate files). Do not write these artifacts to the repository root.
 
@@ -46,7 +46,7 @@ Appendix A.5 checks: base prefix on `Value`, `P&L`, KPIs, popover footer; native
 
 - Total assets, invested value, cash/cash-equivalent value, cash ratio.
 - Per-holding weight (% total assets), theme weight, sector weight.
-- Per-holding P&L from `transactions.db.open_lots`; cost `?` → P&L `n/a`.
+- Per-holding P&L from `Markdown ledger generated holdings`; cost `?` → P&L `n/a`.
 - Per-lot P&L for Price popover: `(latest_price − lot_cost) × lot_qty`; skip `?` cost.
 - Per-ticker weighted-average cost over known-cost lots.
 - Per-ticker §8.8 freshness fields.
@@ -74,7 +74,7 @@ Surface in §10.3: cost-weighted avg hold ex-cash; oldest lot ticker/date/durati
 | `—` | Not applicable; metric structurally meaningless. | Cash / cash-equivalent P&L; any structurally undefined row+column. |
 | `n/a` | Missing; metric should exist but input/source missing. | Cost/date `?`; unresolved market data; missing FX pair. |
 
-Cell-level only. Never blank cells; never write "missing/unknown/data gap" inside cells. Sources & data gaps enumerates every `n/a` reason and `transactions.db` row id or URL needed.
+Cell-level only. Never blank cells; never write "missing/unknown/data gap" inside cells. Sources & data gaps enumerates every `n/a` reason and `ledger/` row id or URL needed.
 
 ---
 
@@ -103,7 +103,7 @@ Sections below describe renderer capabilities. **Required** means required only 
    4. Merge into `report_context.json` under `"trading_psychology"`.
    5. Run the full pre-render gate `python scripts/validate_report_context.py --snapshot "$REPORT_RUN_DIR/report_snapshot.json" --context "$REPORT_RUN_DIR/report_context.json"`; `generate_report.py` must not be invoked until this passes.
 
-   Demo reports use the same policy-gated authoring rule. `demo/` only supplies an alternate synthetic transaction DB; the agent generating a demo daily report still authors and validates this section during the normal report run, while a demo `portfolio_report` skips it.
+   Demo reports use the same policy-gated authoring rule. `demo/` only supplies an alternate synthetic transaction ledger; the agent generating a demo daily report still authors and validates this section during the normal report run, while a demo `portfolio_report` skips it.
 
    **Plain text & typography (HARD).** All `trading_psychology` headline / observation / improvement / strength strings are plain text — no HTML tags (`validate_report_context.py` rejects tag-like markup). Visual styling matches the report body: `generate_report.render_trading_psychology` uses `.psych-*` CSS appended with the canonical stylesheet so font size, line height, and ink colors align with `.prose` / §14.9 tokens.
 
@@ -153,10 +153,10 @@ Sections below describe renderer capabilities. **Required** means required only 
 ### 10.1.5 Profit panel (HARD)
 
 A discrete period-P&L block placed between the Portfolio Dashboard and the
-Holdings table. Sourced from `transactions.db` (the local SQLite event log;
-see `docs/transactions_agent_guidelines.md`). `python scripts/transactions.py
-snapshot --prices prices.json --output report_snapshot.json` computes and
-embeds both `report_snapshot.json["profit_panel"]` and
+Holdings table. Sourced from the active Markdown ledger store (`ledger/events/`
+replay plus `ledger/generated/` caches). `python scripts/transactions.py snapshot --prices
+prices.json --output report_snapshot.json` computes and embeds both
+`report_snapshot.json["profit_panel"]` and
 `report_snapshot.json["realized_unrealized"]`; the renderer copies those values
 into context when no explicit override is supplied. The standalone
 `profit-panel` / `pnl` subcommands are inspection tools, not report-pipeline
@@ -205,17 +205,18 @@ not a substitute for the per-note row contract.
 `starting_value` requires daily closes for every held ticker at the boundary
 date plus FX as-of the boundary. The agent runs `scripts/fetch_history.py`
 to populate `prices.json["_history"]` and `prices.json["_fx_history"]`.
-`scripts/fetch_history.py` uses `market_data_cache.db` cache-first by default,
+`scripts/fetch_history.py` uses `market_data_cache.json` cache-first by default,
 then fetches missing or stale ranges from the free API chain and upserts
-successful rows. `transactions.db` remains the only canonical transaction
-store; `market_data_cache.db` is derived and disposable. When history is
+successful rows. `accounts/<name>/ledger/` is the live transaction
+store; generated Markdown caches are rebuildable, and `market_data_cache.json` is
+derived and disposable. When history is
 missing after cache + network fallback, the value falls back to the current latest price / FX
 with an explicit `using current` audit note rendered under Sources & data gaps
 (MVP `fx_approx` allowance). Missing data does **not** silently render as clean
 data; it is surfaced as an auditable data gap.
 
 For ALLTIME, `starting_value = 0`, `starting_unrealized = 0`, and
-`net_flows` includes every DEPOSIT − WITHDRAW from the beginning of the DB.
+`net_flows` includes every DEPOSIT − WITHDRAW from the beginning of the ledger.
 
 `DIVIDEND` and `FEE` flow into `realized`, **not** `net_flows` — they are
 P&L impacts, not external-cash flows.
@@ -338,7 +339,7 @@ Self-check: sectors sum exactly 100% cash/FX excluded; every non-cash/non-FX tic
 
 When this section renders, the renderer only formats `context["news"]` / `context["events"]`; `scripts/fetch_prices.py` is prices only. Agent must also write `context["research_coverage"]`. Empty news/events without search audit is violation and pre-render validation failure. When this section is skipped, these keys must be absent unless explicitly used by a non-rendered debug fixture.
 
-**Subagent isolation (HARD when the mode gate is true; per `docs/context_drop_protocol.md` and `docs/temp_researcher_contract.md`).** §10.5 + §10.6 research is the largest token sink in the daily pipeline (typically 30k–80k tokens of WebSearch/WebFetch results across the cover universe). When rendered, it **must** be delegated to a temp-researcher per the brand-agnostic contract — using whatever isolation primitive the runtime provides (Claude Code subagent, Codex fresh session, Gemini CLI subagent, or equivalent). It must not run in the parent agent's context. The parent's brief includes: cover-universe ticker list (from `transactions.db.open_lots` minus cash/cash-equivalents, plus extras from §10.6/§10.9), a compact `research_targets` map derived from `report_snapshot.json`, this §10.5 + §10.6 spec text, and the path `$REPORT_RUN_DIR/report_context.json`. The temp-researcher runs the WebSearch / WebFetch / source-fetching workflow below in its own context, writes `context["news"]`, `context["events"]`, and `context["research_coverage"]` directly into the file, validates the JSON, and returns only `{result_file: <path>, summary: ≤200 words, audit: {bytes, sha256, record_count, sources_count, gaps}}` per the contract's §4 return shape. **The parent agent must not paste the temp-researcher's findings or search snippets back into its own response** — that defeats the protocol. The parent reads from `report_context.json` lazily (via `jq`) only when Phase B authoring needs a specific field. The `MEMORY.md` rule "agent owns live WebSearch/WebFetch for §10.5 — empty section without audit trail = workflow violation" is satisfied for rendered daily sections because the audit (sources, URLs, search reasoning) lives in `context["research_coverage"]` and the per-news/per-event records — exactly as before, just produced inside the isolated context.
+**Subagent isolation (HARD when the mode gate is true; per `docs/context_drop_protocol.md` and `docs/temp_researcher_contract.md`).** §10.5 + §10.6 research is the largest token sink in the daily pipeline (typically 30k–80k tokens of WebSearch/WebFetch results across the cover universe). When rendered, it **must** be delegated to a temp-researcher per the brand-agnostic contract — using whatever isolation primitive the runtime provides (Claude Code subagent, Codex fresh session, Gemini CLI subagent, or equivalent). It must not run in the parent agent's context. The parent's brief includes: cover-universe ticker list (from `Markdown ledger generated holdings` minus cash/cash-equivalents, plus extras from §10.6/§10.9), a compact `research_targets` map derived from `report_snapshot.json`, this §10.5 + §10.6 spec text, and the path `$REPORT_RUN_DIR/report_context.json`. The temp-researcher runs the WebSearch / WebFetch / source-fetching workflow below in its own context, writes `context["news"]`, `context["events"]`, and `context["research_coverage"]` directly into the file, validates the JSON, and returns only `{result_file: <path>, summary: ≤200 words, audit: {bytes, sha256, record_count, sources_count, gaps}}` per the contract's §4 return shape. **The parent agent must not paste the temp-researcher's findings or search snippets back into its own response** — that defeats the protocol. The parent reads from `report_context.json` lazily (via `jq`) only when Phase B authoring needs a specific field. The `MEMORY.md` rule "agent owns live WebSearch/WebFetch for §10.5 — empty section without audit trail = workflow violation" is satisfied for rendered daily sections because the audit (sources, URLs, search reasoning) lives in `context["research_coverage"]` and the per-news/per-event records — exactly as before, just produced inside the isolated context.
 
 **Decision-grade horizon standard (`horizon_v1`).** Canonical runs that render §10.5 write `research_coverage.quality_schema = "horizon_v1"` and per-ticker quality metadata; no-schema contexts are legacy/debug only. Research depth is lots-first: inspect `snapshot.aggregates[].lots[].bucket` before aggregate `bucket`; any open Short Term lot makes the ticker `short_term` or `mixed_requires_audit` in the parent input. Aggregate bucket is fallback only when lots are absent/non-material. Materiality from aggregate weight: `high >=5pp NAV`, `medium >=1pp and <5pp`, `low <1pp`. Low-materiality short-term names may be tactical-light, but still need `act_now` / `wait` / `exit` / `need_data`.
 
@@ -360,7 +361,7 @@ Phase ownership: parent derives `research_targets` from the snapshot and passes 
 
 Workflow (executed inside the temp-researcher's isolated context):
 
-1. Cover universe = every `transactions.db.open_lots` position except cash/pure cash-equivalents, de-duped, plus extra tickers surfaced in §10.6/§10.9.
+1. Cover universe = every active-ledger open position except cash/pure cash-equivalents, de-duped, plus extra tickers surfaced in §10.6/§10.9.
 2. Per ticker run ≥1 WebSearch: `"<ticker> <company name>" earnings OR guidance OR downgrade OR upgrade OR catalyst <YYYY-MM>` using current and previous report month. TW also query 繁中: `"<code> <公司名>" 法說 OR 營收 OR 財報 OR 重大訊息`. Fetch/read promising URLs; no SERP-only items.
 3. Collect 1-3 material 14-calendar-day items per ticker; older only if thesis-relevant/follow-up. Material = earnings/guidance/M&A/regulator/customer/product/analyst action/capital raise/lawsuit/supply-chain. Skip routine target nudges, recap-only, sponsored, and generic headline summaries that do not change action, thesis status, catalyst probability, kill/stop, or data-gap state. Zero material → audit `news_search:<ticker>:no_material_within_14d` or extended-window reason.
 4. Per ticker identify 30-day dated catalysts from issuer IR, exchange filing/calendar, Yahoo, Nasdaq, MarketWatch, TWSE/TPEx. Verify dates on issuer/exchange/official source; unverifiable → `date:TBD` + tried source in data gaps.

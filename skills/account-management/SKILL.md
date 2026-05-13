@@ -52,18 +52,22 @@ python scripts/transactions.py account migrate --yes
 
 - `python scripts/transactions.py account use <name>` writes `accounts/.active`; run it only when switching active account is the user's requested outcome.
 - `python scripts/transactions.py account create <name>` scaffolds account
-  files and initializes that account's DB; use it only after confirming the
+  files and initializes that account's Markdown ledger; use it only after confirming the
   desired account name and creation intent. The copied settings file is not
   usable account settings until `skills/settings-management/SKILL.md` has
   collected or confirmed Account description, Language, Investment Style And
   Strategy, and Base currency.
 - `python scripts/transactions.py account migrate --yes` migrates a legacy root layout; run it only when `python scripts/transactions.py account detect` printed exactly `migrate` in the same workflow.
+- Legacy-to-Markdown ledger migration is not account-layout migration. If the user
+  asks to remove SQLite, migrate legacy evidence into Markdown, archive legacy SQLite evidence,
+  or run no-SQLite validation after layout is clean, route to
+  `skills/migration-flow/SKILL.md`.
 
 ### Forbidden without explicit user-approved workflow
 
 - Destructive file surgery outside canonical scripts.
 - Any migration on `clean`, `demo_only_at_root`, or `partial` detector states.
-- Manual moves/deletes of `SETTINGS.md`, `transactions.db`, account directories, or `accounts/.active` when a canonical command exists.
+- Manual moves/deletes of `SETTINGS.md`, `ledger/`, account directories, or `accounts/.active` when a canonical command exists.
 
 ## Detector-State Rules
 

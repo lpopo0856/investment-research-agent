@@ -7,7 +7,7 @@ description: Safely upgrade or update this investment repo without risking priva
 
 ## Core Rule
 
-Upgrade code and dependencies without overwriting private account data. This skill may update tracked repo code when the user asks to upgrade, but it must not edit or delete account `SETTINGS.md` or `transactions.db`. If an upgrade reveals an account-layout migration or any settings/ledger write, route to the matching account/settings/transaction skill and require that workflow's confirmation gate.
+Upgrade code and dependencies without overwriting private account data. This skill may update tracked repo code when the user asks to upgrade, but it must not edit or delete account `SETTINGS.md` or protected ledger evidence. If an upgrade reveals an account-layout migration or any settings/ledger write, route to the matching account/settings/transaction skill and require that workflow's confirmation gate.
 
 ## Natural-Language User Interface
 
@@ -36,7 +36,7 @@ git branch --show-current
 git describe --tags --exact-match
 ```
 
-If this is not a Git checkout (`.git` is absent), treat it as an independent archive/zip copy and stop the automatic upgrade flow. Explain that this install has no Git history, so the assistant cannot safely align tags, branches, or local changes in place. Give natural-language manual update guidance: back up `accounts/` plus any root `SETTINGS.md` / `transactions.db`, download a fresh release copy, move the private account artifacts into the new copy only after checking the layout, then ask the assistant to run onboarding/post-upgrade checks. Recommend reinstalling with Git for future one-step upgrades.
+If this is not a Git checkout (`.git` is absent), treat it as an independent archive/zip copy and stop the automatic upgrade flow. Explain that this install has no Git history, so the assistant cannot safely align tags, branches, or local changes in place. Give natural-language manual update guidance: back up `accounts/` plus any root legacy layout files, download a fresh release copy, move the private account artifacts into the new copy only after checking the layout, then ask the assistant to run onboarding/post-upgrade checks. Recommend reinstalling with Git for future one-step upgrades.
 
 If tracked source files have uncommitted changes in a Git checkout, do not pull or checkout over them. Summarize the conflict and ask whether the user wants to save, stash, discard, or handle those edits. Do not decide that branch for the user.
 
@@ -57,7 +57,7 @@ Apply the detector gate exactly:
 ```bash
 accounts/
 SETTINGS.md
-transactions.db
+Markdown ledger
 ```
 
 This backup is protective copying, not permission to edit those files. Report the backup path.
@@ -120,6 +120,11 @@ python scripts/transactions.py account list
 
 If the detector prints `migrate` after the update, stop before migration and route to `skills/account-management/SKILL.md`; migration is allowed only when `account detect` prints exactly `migrate` and the user confirms that account-management write.
 
+If the upgraded code introduces or requires a legacy-to-Markdown ledger migration
+for an already-clean account, route that separate workflow to
+`skills/migration-flow/SKILL.md`; do not archive `ledger/` from the
+upgrade workflow.
+
 4. **Optional smoke check.** If the user wants confidence before touching real data, use the demo path through `skills/report-management/SKILL.md`. Keep demo artifacts isolated under `demo/` and `/tmp` according to `demo/README.md`.
 
 ## Output Contract
@@ -145,4 +150,4 @@ Stop and ask or route when:
 - `account detect` prints `partial`;
 - migration is needed (`migrate`) and the user has not confirmed the account-management migration gate;
 - dependency installation or validation fails in a way that blocks normal use;
-- any step would edit/delete `SETTINGS.md`, `transactions.db`, or derived ledger tables outside the owning workflow.
+- any step would edit/delete `SETTINGS.md`, `ledger/`, or derived ledger tables outside the owning workflow.

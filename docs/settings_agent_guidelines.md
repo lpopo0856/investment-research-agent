@@ -238,7 +238,7 @@ keep the example template intact and move on.
 After the file is written, run no commands; `accounts/<active>/SETTINGS.md`
 is read on-demand by every workflow (resolved via `--account <name>` or
 `accounts/.active`). End with one line: "Done. Your settings are saved.
-Want to continue onboarding (initialise the database / import
+Want to continue onboarding (initialise the Markdown ledger / import
 transactions), or ask me a research question now?"
 
 ## 5. Review / edit existing SETTINGS.md
@@ -290,7 +290,7 @@ dictionary handling is a separate concern documented in
 - Generating a portfolio report or running research from inside the
   settings interview. Once `SETTINGS.md` is saved, route back to the
   workflow the user actually wanted (or to the help menu).
-- Editing `transactions.db`, the schema docs, or any spec under
+- Editing `ledger/`, the schema docs, or any spec under
   `docs/`. Settings is user data, not contract.
 - Interviewing for fields the example template does not expose
   (custom rails, custom personas, anything beyond `SETTINGS.example.md`).

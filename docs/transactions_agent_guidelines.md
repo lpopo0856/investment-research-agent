@@ -22,7 +22,7 @@ Useful account-management subcommands:
 ```sh
 python scripts/transactions.py account list          # list accounts; marks active with (*)
 python scripts/transactions.py account use <name>    # set accounts/.active
-python scripts/transactions.py account create <name> # scaffold new account + db init
+python scripts/transactions.py account create <name> # scaffold new account + Markdown ledger init
 python scripts/transactions.py account detect        # print layout state before migration
 python scripts/transactions.py account migrate --yes # root-layout migration; run only if detect = migrate
 ```
@@ -30,7 +30,7 @@ python scripts/transactions.py account migrate --yes # root-layout migration; ru
 When the active account is `default`, omitting `--account` is equivalent to
 passing `--account default`. For clarity in the examples below, `--account
 <name>` is shown explicitly wherever the target account matters. Demo
-invocations continue to use explicit `--db demo/transactions.db
+invocations continue to use explicit `--db demo/ledger-anchor
 --settings demo/SETTINGS.md` paths unchanged.
 
 When acting as an agent, resolve and name the target account before ledger inspection, write previews, imports, corrections, or confirmations. Use the user-named account when present; otherwise use the active account, falling back to `default` only when safely resolvable. Stop on `partial` or unresolved account state rather than guessing.
@@ -49,13 +49,14 @@ exclusive with `--account` and `--db` / `--settings`; on conflict the
 script exits non-zero with a clear error. Used by the total / all-accounts
 report pipeline (see `docs/portfolio_report_agent_guidelines.md` §N). Not
 available on other subcommands (`pnl`, `profit-panel`, `analytics`,
-`replay`, `db init`, `verify`, `account migrate`, etc.) — those keep
+`replay`, ledger init/write compatibility aliases, `verify`, `account migrate`, etc.) — those keep
 single-`--account` behavior.
 
 ---
 
-`transactions.db` is the **only** record of the portfolio for each account.
-It lives at `accounts/<name>/transactions.db` (gitignored) and captures both:
+`accounts/<name>/ledger/` is the live canonical portfolio record for each
+account. It lives at `accounts/<name>/ledger/` (gitignored) and
+captures both:
 
 1. The **append-only event log** of every flow (BUY / SELL / DEPOSIT /
    WITHDRAW / DIVIDEND / FEE / FX_CONVERT / ADJUST / REVERSAL), including
@@ -65,25 +66,29 @@ It lives at `accounts/<name>/transactions.db` (gitignored) and captures both:
    every write. This is what the report renderer, price fetcher, and
    profit panel read from.
 
-The DB is the single source of truth; consumers either read the balance tables
-directly via `scripts/transactions.py load_holdings_lots(db_path)` or query SQL.
+The canonical store is an account-local Markdown event ledger at
+`accounts/<name>/ledger/events/...` with rebuildable generated caches under
+`accounts/<name>/ledger/generated/`. The legacy-named `db` subcommands are
+compatibility aliases kept for old scripts; they append/read Markdown ledger
+events and do not imply a SQLite runtime. Consumers should stay behind the
+store helpers in `scripts/transactions.py` rather than reading generated files
+directly.
 
 ---
 
 ## 0. Token discipline (HARD)
 
-Per `docs/context_drop_protocol.md`. The DB grows over time; what was 5
-rows during onboarding becomes 500+ after a year of recording. Reading
+Per `docs/context_drop_protocol.md`. The ledger grows over time; what was 5
+events during onboarding becomes 500+ after a year of recording. Reading
 the whole ledger into agent context every turn is unnecessary and
 expensive.
 
-- **`db dump` is for backup, not for context.** Never paste `db dump` output
-  into the conversation to "see what's there." Use `db stats` for shape
-  (counts by type, date range), `transactions.py snapshot` /
-  `transactions.py analytics` / `transactions.py pnl` for the canonical
-  compact analytical views, or narrow SQL
-  (`sqlite3 accounts/<name>/transactions.db "SELECT … LIMIT 50"`)
-  for targeted lookups.
+- **Full ledger dumps are for backup, not for context.** Never paste full dump output
+  into the conversation to "see what's there." Use `db stats` (legacy-named
+  Markdown compatibility alias) for shape (counts by type, date range),
+  `transactions.py snapshot` / `transactions.py analytics` / `transactions.py pnl`
+  for the canonical compact analytical views, or targeted ledger-store helpers
+  for narrow lookups.
 - **Bulk-import preview is path + sample, not full row list.** For batches
   > 20 rows, show counts, the `/tmp/...json` path, and `jq '.[0:5]' <path>`
   — same rule as `docs/onboarding_agent_guidelines.md` §6.3.
@@ -99,23 +104,23 @@ confirm, verify still apply unchanged.
 
 ## 1. Hard safety rules
 
-1. **Never** UPDATE or DELETE rows in `transactions` or `sell_lot_consumption`
-   to "fix" a prior entry. Mistakes are corrected by appending a `REVERSAL`
-   row whose `target_id` references the bad row's `id`, then appending the
-   corrected entry.
-2. **Never** edit the derived tables (`open_lots`, `cash_balances`) directly.
-   They are auto-rebuilt on every successful import. Run
-   `python scripts/transactions.py db rebuild` if you suspect drift.
-3. **Always** back up to `transactions.db.bak` before any agent-driven write
-   (`db add`, `db import-csv`, `db import-json`).
+1. **Never** UPDATE or DELETE existing canonical history to "fix" a prior
+   entry. Ledger mistakes are corrected by appending a `REVERSAL` event whose
+   `target_event_id` (or imported legacy audit id when applicable) references
+   the bad event, then appending the corrected entry. Migrated rows preserve
+   `legacy_db_id` / `legacy_target_id` only as audit metadata.
+2. **Never** edit derived state directly (`open_lots`, `cash_balances`, or
+   `ledger/generated/*`). It is auto-rebuilt from canonical replay. Run the generated-cache rebuild/verify path for ledger drift.
+3. **Always** back up the live target store before any agent-driven write
+   (`db add`, `db import-csv`, or `db import-json` compatibility aliases, or a future
+   renamed Markdown write command). Backups must include event files and generated caches.
 4. **Never** show a write without first showing a parsed plan + the JSON
-   blob(s) that will be inserted + getting explicit `yes` from the user in
+   blob(s) that will be appended + getting explicit `yes` from the user in
    the same conversation turn.
-5. **Always** run `python scripts/transactions.py verify` after every write
-   and report the result. Verify reconciles the log replay against the
-   balance tables — drift means something wrote the balance tables outside
-   the rebuild path. On mismatch, restore `transactions.db.bak` and tell
-   the user.
+5. **Always** run the appropriate verify after every write and report the
+   result. Use `python scripts/transactions.py verify` and, when cache drift is suspected,
+   `python scripts/transactions.py ledger verify-cache`. On mismatch,
+   restore the backup and tell the user.
 6. **Never** invent missing fields. Every defaulted field is tagged
    `(assumed)` in the plan. `rationale` and `tags` are optional — leave them
    `NULL` when the user did not volunteer them; never interrogate the user
@@ -123,7 +128,7 @@ confirm, verify still apply unchanged.
 
 ## 2. Schema
 
-`transactions.db` has four tables:
+The Markdown ledger has event files plus generated cache projections:
 
 ```sql
 -- Append-only event log.
@@ -151,9 +156,9 @@ cash_balances(
 )
 ```
 
-Schema version is tracked in `schema_meta`. `db init` is idempotent and
-upgrades older DBs to the current schema by adding the derived tables and
-running a rebuild.
+Ledger schema/version metadata lives with the Markdown ledger. `db init` is a
+legacy-named compatibility alias that idempotently creates the Markdown ledger
+skeleton and generated-cache directories.
 
 Transaction types (`type` column):
 
@@ -171,14 +176,14 @@ Transaction types (`type` column):
 
 Required fields per type are enforced by `_validate_canonical_dict()` in
 `scripts/transactions.py`. CSV / JSON / message imports go through that
-validator before any row is INSERTed.
+validator before any event is appended.
 
 ## 3. Natural-language workflow (the common case)
 
 When the user describes a trade, correction, or cash adjustment in plain
 English ("bought 30 NVDA at $185 yesterday", "sold 10 TSLA at $400",
 "deposited $5,000"), follow this contract end-to-end. **Hard rule**: never
-INSERT into the DB without showing a parsed plan, the canonical JSON blob,
+append to the Markdown ledger without showing a parsed plan, the canonical JSON blob,
 and getting an explicit `yes` from the user in the same turn.
 
 ### 3.1 When this section applies
@@ -247,33 +252,32 @@ question — do not guess.
 ### 3.5 EDIT procedure (corrections to a prior transaction)
 
 When the user is fixing a typo / wrong price / wrong date / wrong quantity
-in a transaction that is already in the DB:
+in a transaction that is already in the Ledger:
 
-1. Find the bad row's `id` (`db dump | jq` or `db stats` plus a quick
-   inspection works).
-2. Append a `REVERSAL` row whose `target_id` is the bad row's `id`. This
+1. Find the bad event id using a narrow ledger inspection or a full dump kept out of chat.
+2. Append a `REVERSAL` event whose target references the bad event. This
    inverts the cash and position impact.
-3. Append the corrected `BUY` / `SELL` / `DEPOSIT` / etc. row.
+3. Append the corrected `BUY` / `SELL` / `DEPOSIT` / etc. event.
 4. The rebuild step yields the corrected balance tables.
 
 Never UPDATE or DELETE the bad row. The append-only invariant is what gives
 the agent a credible audit trail.
 
-### 3.6 Confirmation transcript (required before INSERT)
+### 3.6 Confirmation transcript (required before ledger append)
 
-Before any INSERT, reply with exactly these blocks:
+Before any append, reply with exactly these blocks:
 
 1. **Parsed trades** — a small table or bullet list with every field per
    trade. Mark every defaulted / inferred field as `(assumed)`. Include
    `rationale` and `tags` only when the user volunteered them.
 2. **Plan** — bullet list, e.g.:
-   - `INSERT into transactions: {"date":"2026-04-27","type":"BUY","ticker":"NVDA","qty":30,"price":185.00,"bucket":"Mid Term","market":"US","currency":"USD","cash_account":"USD"}`
+   - `Append Markdown event: {"date":"2026-04-27","type":"BUY","ticker":"NVDA","qty":30,"price":185.00,"bucket":"Mid Term","market":"US","currency":"USD","cash_account":"USD"}`
    - `→ open_lots gains 1 row (NVDA 30 @ 185.00); cash_balances USD 50000 → 44450 after auto-rebuild`
 3. **JSON blob(s)** — the exact JSON that will be passed to
    `transactions.py db add` (or `import-csv` / `import-json` for batches),
    in a fenced ```json block.
 4. **Resulting state** — short summary: open_lots row count delta,
-   cash_balances per-currency before/after, transaction count inserted.
+   cash_balances per-currency before/after, transaction count appended.
 5. **Realized P&L** (only for `SELL`) — per-lot realized P&L and the
    `lots: [{acq_date, cost, qty}, …]` array that will land in
    `sell_lot_consumption`. (IRR is intentionally not computed; see
@@ -286,18 +290,18 @@ acknowledgement.
 
 ### 3.7 Write procedure
 
-1. `cp accounts/<name>/transactions.db accounts/<name>/transactions.db.bak`
-   (omit if using the active account and the DB is empty).
-2. INSERT each transaction via
+1. `cp accounts/<name>/ledger/ accounts/<name>/ledger backup`
+   (omit only when the target ledger is empty).
+2. Append each transaction via
    `python scripts/transactions.py db add --json '<canonical-json>' --account <name>`
    in the order the user listed them (or `db import-csv` / `db import-json`
-   for a batch file). Each call auto-rebuilds the balance tables.
+   for a batch file). Each call auto-rebuilds generated caches/projections.
    Omitting `--account` uses the active account from `accounts/.active`.
 3. Run `python scripts/transactions.py verify --account <name>`. Must exit 0:
    `OK: replay matches open_lots + cash_balances.`
-4. Reply with the inserted transaction `id`s and a one-line summary, e.g.
-   `Inserted txn id=87 (NVDA BUY 30 @ $185.00); open_lots +1, USD cash 50000 → 44450.`
-5. If verification fails, restore `transactions.db.bak` and report the
+4. Reply with the appended transaction/event id(s) and a one-line summary, e.g.
+   `Appended NVDA BUY 30 @ $185.00; open_lots +1, USD cash 50000 → 44450.`
+5. If verification fails, restore `ledger backup` and report the
    failure without retrying silently.
 
 ### 3.8 Edge cases
@@ -307,14 +311,14 @@ acknowledgement.
   Term` / `Mid Term` / `Short Term`.
 - **Multiple cash accounts in the same currency** → ask which one to debit
   / credit.
-- **Date in the future** → refuse. The DB is the executed-transaction log;
+- **Date in the future** → refuse. The ledger is the executed-transaction log;
   planned or limit orders are out of scope.
 - **Ambiguous price prefix** (e.g. bare `185` with no `$`) → ask for the
   currency.
 - **Multi-trade batch** ("bought 10 NVDA at 200 and sold 5 TSLA at 400
   yesterday") → parse each trade separately and present them as a single
-  confirmation block. Insert atomically (one validation pass; all-or-nothing
-  per `db_import_records`).
+  confirmation block. Append atomically (one validation pass; all-or-nothing
+  per the import transaction path).
 - **Cash-only adjustments** ("I deposited $5,000") → use `DEPOSIT`; no
   ticker, no qty, no price.
 
@@ -392,7 +396,7 @@ into canonical CSV or JSON, then uses 4.1 / 4.2.
 
 ## 5. Profit-panel computation
 
-The periodic profit panel is computed from the DB. In the automated portfolio
+The periodic profit panel is computed from the Markdown ledger. In the automated portfolio
 report pipeline this is produced by `python scripts/transactions.py snapshot`
 and embedded in `report_snapshot.json["profit_panel"]`; do not manually merge a
 separate `profit_panel.json` into `report_context.json`. For that pipeline,
@@ -427,7 +431,7 @@ net_flows    = Σ DEPOSIT − Σ WITHDRAW       # flows external to the portfoli
 date. Run `scripts/fetch_history.py` once per report run to populate the
 run’s prices file (typically `$REPORT_RUN_DIR/prices.json` under `/tmp`; or
 `prices_history.json` only if you deliberately use that path) with `_history` and `_fx_history`.
-The script uses `market_data_cache.db` by default: it reads cached daily
+The script uses `market_data_cache.json` by default: it reads cached daily
 closes / FX first, fetches missing or stale ranges from free APIs, and upserts
 successful rows back into the cache. Use `--no-cache` only for debugging a
 network-only run. The cache is derived market data; it is not canonical user
@@ -436,7 +440,7 @@ Missing history degrades to a fallback (current price) with an explicit
 audit note rendered under Sources & data gaps, not inside the profit panel.
 
 For ALLTIME, `starting_value = 0`, `starting_unrealized = 0`, and
-`net_flows` includes every DEPOSIT − WITHDRAW from the beginning of the DB.
+`net_flows` includes every DEPOSIT − WITHDRAW from the beginning of the ledger.
 
 ### 6.1 Transaction analytics for report sections
 
@@ -493,21 +497,21 @@ All commands below resolve the account via `--account <name>`, the
 to operate on the active account.
 
 - `python scripts/transactions.py verify [--account <name>]` — replay the
-  log, compare to the materialized `open_lots` + `cash_balances`. Drift
-  means something wrote the balance tables outside the rebuild path.
+  Markdown event log and compare it to generated projections. Drift
+  means generated files are stale or were edited outside the rebuild path.
 - `python scripts/transactions.py db rebuild [--account <name>]` — force-
-  rebuild balance tables from a fresh log replay (the import path runs this
+  rebuild generated projections from a fresh Markdown event replay (the import path runs this
   automatically; this is the manual escape hatch).
 - `python scripts/transactions.py db dump [--account <name>]` — emit every
-  row as JSON (suitable for ad-hoc analysis or backup).
+  event as JSON (suitable for ad-hoc analysis or backup).
 - `python scripts/transactions.py db stats [--account <name>]` — count by
-  type, distinct tickers, date range, schema version.
+  type, distinct tickers, date range, ledger schema/version metadata.
 - `python scripts/transactions.py self-check` — unit tests for parser,
-  replay, P&L math, period boundaries, and the DB import paths
+  replay, P&L math, period boundaries, and the ledger import paths
   (csv / json / db_add / load_holdings_lots round-trip). Treat
   failures as a regression gate.
 
-## 9. What does **not** belong in transactions.db
+## 9. What does **not** belong in Markdown ledger
 
 - Watchlist or thesis updates that do not move money.
 - Speculative limit orders that have not filled.

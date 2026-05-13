@@ -34,7 +34,7 @@ Read this file first, then read **every** part file below in order on every port
 - Phase B drafts **only rendered editorial sections** (alerts / watchlists / adjustments / action items / `trading_psychology` / Strategy readout / summary as applicable) as the **user-author persona** defined by `SETTINGS.md` `## Investment Style And Strategy`; it must not adopt senior-PM/reviewer voice or override the user's strategy with generic PM best practice.
 - Phase C switches hat to a senior PM reviewer, annotates issues for rendered strategy-dependent sections only, and sends genuine evidence/logic/strategy-drift defects back to the relevant earlier phase before render. PM-best-practice disagreement with a strategy-consistent user action is comment-only; it must not force a Phase B rewrite.
 - Phase D renders one self-contained HTML file only after `scripts/validate_report_context.py --snapshot "$REPORT_RUN_DIR/report_snapshot.json" --context "$REPORT_RUN_DIR/report_context.json" --report-type <daily_report|portfolio_report>` passes for the selected mode, runs Appendix A self-checks, **deletes `$REPORT_RUN_DIR`** (`rm -rf`), and replies with the absolute HTML path plus required audit notes.
-- `SETTINGS.md` and `transactions.db` (resolved from `accounts/<active>/` via `--account <name>` or the `accounts/.active` pointer; see §4) are read-only unless the user explicitly asks to edit them.
+- `SETTINGS.md` and `ledger/` (resolved from `accounts/<active>/` via `--account <name>` or the `accounts/.active` pointer; see §4) are read-only unless the user explicitly asks to edit them.
 
 ### Intermediate files and cleanup (HARD)
 
@@ -52,7 +52,7 @@ Every report run must choose two orthogonal axes before Phase A gather:
 - `report_type`: `daily_report` or `portfolio_report`. This is the content taxonomy.
 - `account_scope`: `single_account` or `total_account` (`--all-accounts`). This is only input aggregation; **total is not a report type**. If the user does not name an account or ask for total/consolidated/all-accounts scope, resolve the active/default account and proceed as single-account scope after the report type is selected.
 
-**Unspecified report type stop rule.** If the user asks to generate/run a report and the prompt does not clearly specify `daily_report` or `portfolio_report`, stop before Phase A. Do not run `account migrate`, fetch prices/history, read `SETTINGS.md` / `transactions.db`, create `$REPORT_RUN_DIR`, launch live research, or infer a default. Ask one concise question that briefly explains:
+**Unspecified report type stop rule.** If the user asks to generate/run a report and the prompt does not clearly specify `daily_report` or `portfolio_report`, stop before Phase A. Do not run `account migrate`, fetch prices/history, read `SETTINGS.md` / `ledger/`, create `$REPORT_RUN_DIR`, launch live research, or infer a default. Ask one concise question that briefly explains:
 
 - `daily_report`: daily decision/editorial report with alerts, today's summary, material news, 30-day events, high risk/opportunity, recommended adjustments, today's actions, trading psychology, and the holdings Action column for single-account scope.
 - `portfolio_report`: math/position review that omits immediate-attention/news/events/actions/trading-psychology sections and the holdings Action column.
@@ -153,7 +153,7 @@ or structural field is materialized once, in this order:
    snapshot + context onto the §10 HTML. (Omitting `--account` resolves the active account
    from `accounts/.active`; pass `--account <name>` to target a specific account.)
 
-The renderer's legacy `--prices --db` path remains for backwards compatibility
+The renderer's legacy-named `--prices --db` path remains for backwards compatibility
 but emits a deprecation warning; new agent runs must use `--snapshot`.
 
 ### Total / All-Accounts scope (§N)
@@ -182,7 +182,7 @@ python scripts/fetch_prices.py --all-accounts \
 
 python scripts/fetch_history.py --all-accounts \
     --merge-into "$RUN_DIR/prices.json" \
-    [--cache market_data_cache.db]
+    [--cache market_data_cache.json]
 
 python scripts/transactions.py snapshot --all-accounts --base-currency USD \
     --prices "$RUN_DIR/prices.json" \
@@ -200,7 +200,7 @@ After success, `rm -rf "$RUN_DIR"`.
 **Output path.** When `--output` is omitted, the renderer writes to
 `accounts/_total/reports/<YYYY-MM-DD_HHMM>_total_account_<report_type>.html`. The
 `accounts/_total/` directory holds **only** reports — there is no SETTINGS.md
-or transactions.db; `account list` does not show it.
+or Markdown ledger; `account list` does not show it.
 
 **Mutually exclusive with `--account NAME`.** Passing both on any of the
 four pipeline scripts (`fetch_prices.py`, `fetch_history.py`,
@@ -224,15 +224,15 @@ on a synthetic 3-account fixture under `/tmp/`.
 ### Demo ledger for report generation
 
 To exercise the **same pipeline** without reading or writing the user’s active-account
-`transactions.db`, use **`demo/`**: seed `demo/transactions_history.json` →
-`demo/transactions.db` via `python demo/bootstrap_demo_ledger.py --apply`.
+`ledger/`, use **`demo/`**: seed `demo/transactions_history.json` →
+`demo/ledger` via `python demo/bootstrap_demo_ledger.py --apply`.
 There is no demo report pipeline script and no committed demo editorial JSON; context is authored per run under `$REPORT_RUN_DIR` like production and only for sections rendered by the selected report type / account scope.
-The demo ledger is an **alternate `--db` path** plus **alternate history cache**:
-run the normal portfolio-report workflow, pass **`--db demo/transactions.db`**
+The demo ledger is an **alternate legacy-named `--db` ledger path** plus **alternate history cache**:
+run the normal portfolio-report workflow, pass **`--db demo/ledger-anchor`** (legacy-named ledger path)
 to `fetch_prices.py`, `fetch_history.py`, and `transactions.py snapshot`, and
-pass **`--cache demo/market_data_cache.db`** to **`fetch_history.py` and
+pass **`--cache demo/market_data_cache.json`** to **`fetch_history.py` and
 `fill_history_gap.py`** so demo fetches do not read or write the root
-`market_data_cache.db`. (Do not use `--account` for demo runs; the explicit `--db`/`--settings` path is the intentional escape hatch.) Then author the context from the snapshot, latest
+`market_data_cache.json`. (Do not use `--account` for demo runs; the explicit `--db`/`--settings` path is the intentional escape hatch.) Then author the context from the snapshot, latest
 public data, `SETTINGS.md`, and these guidelines exactly as for a production
 report. Prefer writing deliverable demo HTML under **`demo/reports/`** (same
 filename pattern) instead of `reports/` so user production reports stay

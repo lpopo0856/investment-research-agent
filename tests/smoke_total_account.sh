@@ -13,7 +13,7 @@ set -euo pipefail
 
 RUN="$(date -u +%Y%m%dT%H%M%SZ)"
 SMOKE="/tmp/investments_total_smoke_${RUN}_$$"
-SMOKE_CACHE="/tmp/smoke_total_cache_${RUN}_$$.db"
+SMOKE_CACHE="/tmp/smoke_total_cache_${RUN}_$$.json"
 FIXED_TODAY="2026-05-01"
 REPO="$(git rev-parse --show-toplevel)"
 
@@ -29,7 +29,7 @@ for live in "$REPO/accounts/alpha" "$REPO/accounts/beta" "$REPO/accounts/beta_em
 done
 
 # Capture live cache mtime BEFORE any work (CACHE-PIN check at §9):
-LIVE_CACHE="$REPO/market_data_cache.db"
+LIVE_CACHE="$REPO/market_data_cache.json"
 if [ -f "$LIVE_CACHE" ]; then
     LIVE_CACHE_MTIME_BEFORE="$(stat -f %m "$LIVE_CACHE" 2>/dev/null || stat -c %Y "$LIVE_CACHE")"
 else
@@ -48,7 +48,7 @@ trap 'cd / ; rm -rf "$SMOKE" "$SMOKE_CACHE"' EXIT
 echo "=== smoke_total_account: $SMOKE (cache: $SMOKE_CACHE, today: $FIXED_TODAY)"
 
 # --- Stage 3 fixture accounts ---------------------------------------------
-# SCAFFOLD-1 NOTE: account create scaffolds dir + transactions.db, but
+# SCAFFOLD-1 NOTE: account create scaffolds dir + Markdown ledger, but
 # SETTINGS.md is NOT auto-populated when SETTINGS.example.md is absent at the
 # repo root (verified scripts/account.py:370-407 — heredoc copy at 388-389
 # is conditional). We write SETTINGS explicitly via canonical heading+bullet

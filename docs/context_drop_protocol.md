@@ -82,7 +82,7 @@ Lower priority — interview turns are user-driven and not token-heavy. No subag
 
 ### Transactions agent (`docs/transactions_agent_guidelines.md`)
 
-Reading `transactions.db` and price caches can be large. Wrap as research-class when answering broad questions ("show me everything about ticker X over 5 years"); narrow queries can stay in the main agent.
+Reading `ledger/` and price caches can be large. Wrap as research-class when answering broad questions ("show me everything about ticker X over 5 years"); narrow queries can stay in the main agent.
 
 ## What this protocol does NOT do
 

@@ -7,7 +7,7 @@ description: Produce ad hoc stock, ETF, crypto, market, sector, or portfolio inv
 
 ## Core Rule
 
-This skill covers investment research and recommendations that do not produce an HTML report. For HTML deliverables, route to `skills/report-management/SKILL.md`. For ledger, account, or settings changes, route to the matching management skill; this skill must not edit `SETTINGS.md`, `transactions.db`, reports, or account state; do not edit `SETTINGS.md` or `transactions.db` from this skill.
+This skill covers investment research and recommendations that do not produce an HTML report. For HTML deliverables, route to `skills/report-management/SKILL.md`. For ledger, account, or settings changes, route to the matching management skill; this skill must not edit `SETTINGS.md`, protected ledger evidence, reports, or account state; do not edit `SETTINGS.md` or `ledger/` from this skill.
 
 ## Natural-Language User Interface
 

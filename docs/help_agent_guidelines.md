@@ -38,32 +38,32 @@ python scripts/transactions.py account list 2>/dev/null \
   || ls accounts/ 2>/dev/null \
   || echo "(no accounts)"
 
-# Check settings + DB for the active account
-python scripts/transactions.py db stats 2>/dev/null
+# Check settings + Markdown ledger for the active account
+python scripts/transactions.py db stats 2>/dev/null  # legacy-named compatibility alias; reads Markdown
 ```
 
 For a simpler one-shot check when `transactions.py` is not yet available:
 
 ```sh
-ls accounts/.active accounts/ SETTINGS.md transactions.db 2>/dev/null
+ls accounts/.active accounts/ SETTINGS.md Markdown ledger 2>/dev/null
 ```
 
 Tailor the reply:
 
 - **Cold start** (`accounts/` missing or empty, and no root `SETTINGS.md` /
-  `transactions.db`) — lead with onboarding. Tell the user the other
+  `ledger/`) — lead with onboarding. Tell the user the other
   workflows depend on having those two artifacts in place. Point at
   `docs/onboarding_agent_guidelines.md`.
 - **Missing or incomplete settings** (account exists but `SETTINGS.md` is
   absent, template-only, or not yet confirmed) — lead with settings/onboarding
   completion. Do not present account-bound research, reports, transaction
   inspection, or account-state-dependent help as ready yet.
-- **Legacy layout detected** (root `SETTINGS.md` or `transactions.db`
+- **Legacy layout detected** (root legacy layout files
   present, no `accounts/`) — note that migration is needed and any script
   run will prompt for it automatically.
-- **Empty DB** (active account's `transactions.db` exists, 0 rows) — lead
+- **Empty ledger** (active account's `ledger/` exists, 0 rows) — lead
   with transaction recording. The other workflows work but will be empty.
-- **Ready** (active account has settings + DB with rows) — render the full
+- **Ready** (active account has settings + Markdown ledger events) — render the full
   four-item menu.
 - **Multiple accounts exist** (`account list` shows ≥ 2 entries) — after
   the four-item menu, add a **"Switch account"** sub-action (see §3 E).
@@ -83,13 +83,13 @@ commands here — the user is asking the agent, not the shell.
 - **Ask like:** "Help me get started." / "Onboard me — here's my
   brokerage statement." (attach PDF / CSV / JSON / XLSX / screenshot /
   text)
-- **Agent does:** detects missing `SETTINGS.md` / `transactions.db`,
+- **Agent does:** detects missing `SETTINGS.md` / `ledger/`,
   bootstraps both, converts whatever format you handed it into canonical
   transactions, confirms before writing, runs `verify`. Contract:
   `docs/onboarding_agent_guidelines.md`.
 
-Hide this item from the menu once both artifacts exist and the DB has
-rows.
+Hide this item from the menu once both artifacts exist and the Markdown ledger has
+events.
 
 ### B. Record a transaction (most frequent flow)
 
@@ -108,7 +108,7 @@ rows.
   earnings?" / "Is XYZ a fit for my strategy?"
 - **Agent does:** resolves the active/default account unless the user named one,
   reads that account's `SETTINGS.md` (full `Investment Style And Strategy`
-  section), loads positions from that account's `transactions.db`, and
+  section), loads positions from that account's `ledger/`, and
   responds first-person as the user — variant view, sized in pp of NAV,
   with kill criteria. No writes. Contract: `AGENTS.md` (Output structure
   + sourcing rules).
@@ -138,7 +138,7 @@ Hide this note when only one account exists.
   `python scripts/transactions.py account use <name>` on the user's choice.
   All subsequent commands in the session resolve against the new active
   account (equivalent to passing `--account <name>` on every call).
-  No writes to any DB. Contract: `docs/transactions_agent_guidelines.md`
+  No writes to any ledger. Contract: `docs/transactions_agent_guidelines.md`
   (Active-account resolution section).
 
 Hide this item when only one account exists.
