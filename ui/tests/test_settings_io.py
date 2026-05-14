@@ -17,8 +17,10 @@ def fixture_account(tmp_path, monkeypatch):
     fixture_dir = accounts_root / "fixture"
     fixture_dir.mkdir(parents=True)
 
-    # Copy the real SETTINGS.md into the fixture account
-    real_settings = Path(__file__).resolve().parent.parent.parent / "accounts" / "default" / "SETTINGS.md"
+    # Copy tracked fixture settings, never private local account settings.
+    real_settings = (
+        Path(__file__).resolve().parent / "fixtures" / "accounts" / "default" / "SETTINGS.md"
+    )
     shutil.copy(real_settings, fixture_dir / "SETTINGS.md")
 
     # Monkey-patch ACCOUNTS_ROOT in both modules so resolve_account_path resolves correctly

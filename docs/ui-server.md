@@ -50,8 +50,9 @@ ui/                              ← new Python package
     test_terminal_posix.py       (skipped on win32)
 scripts/
   run_ui_server.py   45 lines    uvicorn entrypoint
-requirements-ui.txt              fastapi, uvicorn[standard], websockets, ptyprocess/pywinpty
+requirements-ui.txt              fastapi, uvicorn[standard], websockets, platformdirs, ptyprocess/pywinpty
 requirements-ui-dev.txt          +pytest, httpx (>=0.27 for ASGITransport)
+requirements-ui-build.txt        +PyInstaller and report-fetch dependencies for one-file executable builds
 ```
 
 `ui/static/index.html` is intentionally a single file — Tailwind, xterm.js,
@@ -68,6 +69,7 @@ bundler, no `node_modules`, no build step.**
 | PTY | **ptyprocess** (POSIX) / **pywinpty** (win32) | platform-conditional via `sys_platform` markers in `requirements-ui.txt`. Only `ui/terminal.py` branches on `sys.platform`. |
 | Holdings | re-uses `scripts/portfolio_snapshot.py` | `compute_snapshot(prices={})` returns lots/cost-basis without any network fetch — see "Holdings contract" below |
 | Settings I/O | stdlib `hashlib`/`difflib`/`os.replace` | token-gated TOCTOU; timestamped `.bak.<UTC>` before every write |
+| Packaged data dirs | **platformdirs** | frozen builds store mutable data under OS app-data paths; source checkouts keep repo-relative data by default |
 
 The server is **single-process, single-user, local-only**. There is no
 auth, no CORS layer, no rate limiting — that's safe because uvicorn binds
@@ -100,6 +102,32 @@ files → 404. Path traversal (`..%2F..%2F..%2Fetc%2Fpasswd`) is rejected at
 the regex layer.
 
 ---
+
+## Packaged executable build
+
+The desktop-app-feel build path uses PyInstaller one-file executables. The
+tracked build wrapper is `scripts/build_ui_executable.py`; it packages
+`scripts/run_packaged_ui.py`, bundles `ui/static/`, and deliberately does not
+add `accounts/`, ledgers, reports, or root market-data caches as data files.
+
+Build dependencies live in `requirements-ui-build.txt`. It includes PyInstaller
+plus the report-fetch dependencies that existing scripts load lazily so CI
+artifacts do not depend on whatever happens to be installed on a developer's
+machine. GitHub Actions builds macOS, Linux, and Windows artifacts in
+`.github/workflows/build-ui-executables.yml` and uploads one runnable executable
+per OS artifact using `actions/upload-artifact@v4`.
+
+Mutable data policy:
+
+- Source checkout default: keep using repo-relative `accounts/` for existing
+  developer/test behavior.
+- Frozen executable default: create an empty app-data workspace via
+  `platformdirs` and store mutable `accounts/` plus cache data there.
+- Overrides: `INVESTMENTS_DATA_ROOT` points the app at an explicit mutable
+  workspace; `INVESTMENTS_ACCOUNTS_ROOT` can override just account discovery.
+
+First run of a packaged app creates the workspace directories only; it does
+not ship or seed personal/demo account data.
 
 ## Terminal wire protocol
 

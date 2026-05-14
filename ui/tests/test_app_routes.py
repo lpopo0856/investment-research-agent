@@ -85,6 +85,7 @@ def test_get_agents_lists_only_detected_binaries():
         assert resp.status_code == 200
         body = resp.json()
         listed_ids = {a["id"] for a in body["agents"]}
+        installer_ids = {a["id"] for a in body.get("installers", [])}
         # Each listed id must correspond to a binary that's actually on PATH.
         for aid in listed_ids:
             binary = _AGENT_SPECS[aid]["binary"]
@@ -96,5 +97,9 @@ def test_get_agents_lists_only_detected_binaries():
         # Each listed agent has both id and label fields.
         for a in body["agents"]:
             assert "id" in a and "label" in a
+        # Missing Claude/Codex get install affordances instead of being bundled.
+        for aid, binary in (("install_claude", "claude"), ("install_codex", "codex")):
+            if shutil.which(binary) is None:
+                assert aid in installer_ids
 
     _run(_test())

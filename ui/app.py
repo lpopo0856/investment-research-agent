@@ -21,19 +21,16 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
+import shlex
 import shutil
-from pathlib import Path
+import sys
 from typing import Optional, Union
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 
-from ui.accounts import (
-    REPO_ROOT,
-    default_account,
-    discover_accounts,
-    resolve_account_path,
-)
+from ui.accounts import default_account, discover_accounts, resolve_account_path
 from ui.holdings import HoldingsRecomputeError, recompute_holdings
 from ui.reports import list_reports, paginate, resolve_report_path
 from ui.settings_io import (
@@ -45,10 +42,11 @@ from ui.settings_io import (
     write_settings,
 )
 from ui.terminal import AgentNotFoundError, TerminalSession, close_all_active
+from ui.runtime_paths import bootstrap_local_data, resource_path
 
 logger = logging.getLogger(__name__)
 
-_STATIC_DIR = REPO_ROOT / "ui" / "static"
+_STATIC_DIR = resource_path("ui", "static")
 _INDEX_HTML = _STATIC_DIR / "index.html"
 
 # Agent registry. Each entry maps a stable id used in the WS query string and
@@ -69,6 +67,49 @@ _AVAILABLE_AGENTS: dict[str, dict] = {
     if shutil.which(spec["binary"]) is not None
 }
 
+_INSTALLABLE_AGENT_SPECS: dict[str, dict] = {
+    "claude": {
+        "id": "install_claude",
+        "label": "Install Claude Code",
+        "tool": "claude",
+        "command": "npm install -g @anthropic-ai/claude-code",
+        "binary": "claude",
+    },
+    "codex": {
+        "id": "install_codex",
+        "label": "Install Codex",
+        "tool": "codex",
+        "command": "npm install -g @openai/codex",
+        "binary": "codex",
+    },
+}
+
+
+def _installer_argv(spec: dict) -> list[str]:
+    """Return a shell session that shows, but does not auto-run, install help."""
+
+    command = spec["command"]
+    tool_label = spec["label"]
+    if sys.platform == "win32":
+        message = (
+            f"Write-Host '{tool_label}'; "
+            f"Write-Host 'Review and run this command if you want to install it:'; "
+            f"Write-Host '{command}'; "
+            "Write-Host ''; "
+            "Write-Host 'This packaged app does not bundle optional agent CLIs.'"
+        )
+        return ["powershell", "-NoExit", "-Command", message]
+
+    shell = os.environ.get("SHELL") or "/bin/sh"
+    message = (
+        f"printf '%s\\n' {shlex.quote(tool_label)} "
+        f"{shlex.quote('Review and run this command if you want to install it:')} "
+        f"{shlex.quote(command)} '' "
+        f"{shlex.quote('This packaged app does not bundle optional agent CLIs.')}; "
+        f"exec {shlex.quote(shell)} -l"
+    )
+    return [shell, "-lc", message]
+
 app = FastAPI(title="Investments UI", version="1.0.0")
 
 
@@ -79,6 +120,7 @@ app = FastAPI(title="Investments UI", version="1.0.0")
 
 @app.on_event("startup")
 async def _startup() -> None:
+    bootstrap_local_data()
     logger.info("Server up")
 
 
@@ -261,12 +303,23 @@ async def put_settings_section(
 
 @app.get("/api/agents", response_model=None)
 async def list_agents() -> JSONResponse:
-    """Return agents available on this machine (detected at server startup)."""
+    """Return available optional agents and install affordances."""
+
+    installers = [
+        {
+            "id": spec["id"],
+            "label": spec["label"],
+            "tool": spec["tool"],
+        }
+        for spec in _INSTALLABLE_AGENT_SPECS.values()
+        if shutil.which(spec["binary"]) is None
+    ]
     return JSONResponse({
         "agents": [
             {"id": aid, "label": spec["label"]}
             for aid, spec in _AVAILABLE_AGENTS.items()
-        ]
+        ],
+        "installers": installers,
     })
 
 
@@ -276,16 +329,33 @@ async def ws_terminal(websocket: WebSocket, agent: str = "claude", account: str 
 
     # Validate agent.
     spec = _AVAILABLE_AGENTS.get(agent)
+    installer_spec = next(
+        (
+            candidate for candidate in _INSTALLABLE_AGENT_SPECS.values()
+            if candidate["id"] == agent
+        ),
+        None,
+    )
     if spec is None:
-        await websocket.close(code=4400, reason="unsupported agent")
-        return
+        if installer_spec is None:
+            await websocket.close(code=4400, reason="unsupported agent")
+            return
+        argv = _installer_argv(installer_spec)
+        spec = {
+            "label": installer_spec["label"],
+            "argv": argv,
+            "binary": argv[0],
+            "installer": True,
+        }
 
-    # Validate account.
-    try:
-        resolve_account_path(account)
-    except ValueError:
-        await websocket.close(code=4400, reason="bad account")
-        return
+    # Validate account for real agent sessions. Installer helper sessions are
+    # allowed before the first empty profile contains any accounts.
+    if not spec.get("installer"):
+        try:
+            resolve_account_path(account)
+        except ValueError:
+            await websocket.close(code=4400, reason="bad account")
+            return
 
     session = TerminalSession()
     try:

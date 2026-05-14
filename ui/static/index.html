@@ -281,6 +281,16 @@
 
       const list = document.getElementById('accounts-list');
       list.innerHTML = '';
+      if (!data.accounts || data.accounts.length === 0) {
+        selectedAccount = null;
+        document.getElementById('brand').textContent = 'Investments · empty profile';
+        list.innerHTML = `
+          <li class="px-3 py-2 text-xs text-zinc-500 border border-dashed border-zinc-800 rounded">
+            No accounts yet. Set up or import account data in the local app-data workspace.
+          </li>`;
+        renderNoAccountState();
+        return;
+      }
       for (const acc of data.accounts) {
         const li = document.createElement('li');
         li.dataset.acc = acc;
@@ -328,6 +338,11 @@
     }
 
     async function selectAccount(name, skipPush = false) {
+      if (!name) {
+        selectedAccount = null;
+        renderNoAccountState();
+        return;
+      }
       if (name === selectedAccount) return;
 
       // Tear down any live terminal — it is bound to the previous account.
@@ -354,6 +369,17 @@
       document.getElementById('brand').textContent = `Investments · ${name}`;
       highlightAccount(name);
       await Promise.all([loadHoldings(), loadReports()]);
+    }
+
+    function renderNoAccountState() {
+      document.getElementById('holdings-as-of').textContent = '';
+      document.getElementById('holdings-rows').innerHTML =
+        `<tr><td colspan="6" class="px-4 py-6 text-center text-zinc-500 text-sm">No local account profile yet</td></tr>`;
+      document.getElementById('reports-list').innerHTML =
+        `<li class="text-xs text-zinc-500 px-2 py-1">No account selected</li>`;
+      document.getElementById('page-indicator').textContent = '1 / 1';
+      document.getElementById('prev-page').disabled = true;
+      document.getElementById('next-page').disabled = true;
     }
 
     // -------------------------------------------------------------------------
@@ -917,7 +943,7 @@
 
       const fitAddon = new FitAddon.FitAddon();
 
-      const wsUrl = `ws://${location.host}/ws/terminal?agent=${encodeURIComponent(agent)}&account=${encodeURIComponent(selectedAccount)}`;
+      const wsUrl = `ws://${location.host}/ws/terminal?agent=${encodeURIComponent(agent)}&account=${encodeURIComponent(selectedAccount || '')}`;
       const ws = new WebSocket(wsUrl);
       ws.binaryType = 'arraybuffer';
 
@@ -998,14 +1024,21 @@
         const res = await fetch('/api/agents');
         const data = await res.json();
         const agents = (data.agents || []);
-        if (agents.length === 0) {
+        const installers = (data.installers || []);
+        if (agents.length === 0 && installers.length === 0) {
           container.innerHTML = `<span class="text-xs text-zinc-500">no agents on PATH</span>`;
           return;
         }
-        container.innerHTML = agents.map(a => `
+        const agentButtons = agents.map(a => `
           <button onclick="launchTerminal('${a.id.replace(/'/g, "\\'")}')"
             class="text-xs px-3 py-1.5 rounded bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 font-mono"
-          >${escHtml(a.label)}</button>`).join('');
+          >${escHtml(a.label)}</button>`);
+        const installerButtons = installers.map(a => `
+          <button onclick="launchTerminal('${a.id.replace(/'/g, "\\'")}')"
+            class="text-xs px-3 py-1.5 rounded bg-zinc-900 hover:bg-zinc-800 border border-dashed border-zinc-700 text-zinc-300 font-mono"
+            title="Open a local terminal with install guidance; optional agents are not bundled"
+          >${escHtml(a.label)}</button>`);
+        container.innerHTML = [...agentButtons, ...installerButtons].join('');
       } catch (err) {
         container.innerHTML = `<span class="text-xs text-red-400">agent list error</span>`;
       }

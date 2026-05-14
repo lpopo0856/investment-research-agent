@@ -26,10 +26,11 @@ import os
 import shutil
 import sys
 import time
-from pathlib import Path
 from typing import Set
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+from ui.runtime_paths import source_root, terminal_working_dir
+
+REPO_ROOT = source_root()
 
 _DEFAULT_COLS = 120
 _DEFAULT_ROWS = 32
@@ -196,10 +197,15 @@ else:
                     _os.kill(proc.pid, _signal.SIGKILL)
                 except (ProcessLookupError, OSError):
                     pass
-                try:
-                    _os.waitpid(proc.pid, 0)
-                except (ChildProcessError, OSError):
-                    pass
+                wait_deadline = time.monotonic() + 1.0
+                while time.monotonic() < wait_deadline:
+                    try:
+                        waited_pid, _ = _os.waitpid(proc.pid, _os.WNOHANG)
+                    except (ChildProcessError, OSError):
+                        break
+                    if waited_pid:
+                        break
+                    time.sleep(0.02)
             try:
                 proc.close()
             except (OSError, AttributeError):
@@ -249,10 +255,11 @@ class TerminalSession:
         full_argv = [which_result, *argv[1:]]
         env = os.environ.copy()
         env["INVESTMENTS_ACTIVE_ACCOUNT"] = account
+        env.setdefault("INVESTMENTS_DATA_ROOT", str(terminal_working_dir()))
 
         self._impl.spawn(
             argv=full_argv,
-            cwd=str(REPO_ROOT),
+            cwd=str(terminal_working_dir()),
             env=env,
             cols=_DEFAULT_COLS,
             rows=_DEFAULT_ROWS,

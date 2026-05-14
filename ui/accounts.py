@@ -11,8 +11,10 @@ import os
 import re
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
-ACCOUNTS_ROOT = (REPO_ROOT / "accounts").resolve()
+from ui.runtime_paths import accounts_root, source_root
+
+REPO_ROOT = source_root()
+ACCOUNTS_ROOT = accounts_root()
 
 ACCOUNT_NAME_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 

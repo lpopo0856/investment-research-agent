@@ -56,6 +56,8 @@ __pycache__/
 .coverage
 coverage.xml
 htmlcov/
+dist/
+build/
 
 # Timestamped SETTINGS.md backups written by the UI's safe-write flow
 # (atomic SETTINGS.md.bak.<UTC>); the live SETTINGS.md is already ignored above.
