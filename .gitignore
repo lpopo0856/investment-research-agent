@@ -46,3 +46,17 @@ temp/
 accounts/.active
 accounts/*/SETTINGS.md
 accounts/*/transactions.db.bak
+
+# Local UI server (scripts/run_ui_server.py + ui/ package)
+.venv*/
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Timestamped SETTINGS.md backups written by the UI's safe-write flow
+# (atomic SETTINGS.md.bak.<UTC>); the live SETTINGS.md is already ignored above.
+accounts/*/SETTINGS.md.bak.*

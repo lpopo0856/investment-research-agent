@@ -10,10 +10,13 @@ sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 from report_mode_policy import (  # noqa: E402
     TOTAL_ACCOUNT_SKIPPED_RENDERERS,
+    describe_policy,
     default_report_filename,
     effective_skipped_renderers,
+    forbidden_context_keys,
     hide_holdings_action_column,
     normalize_report_type,
+    required_context_keys,
 )
 
 
@@ -72,3 +75,26 @@ def test_default_report_filename_encodes_both_axes():
 def test_report_type_is_required_and_strict(value):
     with pytest.raises(ValueError):
         normalize_report_type(value)  # type: ignore[arg-type]
+
+
+def test_portfolio_policy_exposes_context_contract_for_agents():
+    policy = describe_policy("portfolio_report", "single_account")
+
+    assert policy["live_research_required"] is False
+    assert set(required_context_keys("portfolio_report", "single_account")) == {
+        "data_gaps",
+        "reviewer_pass",
+        "strategy_readout",
+        "theme_sector_audit",
+        "theme_sector_html",
+    }
+    assert {
+        "news",
+        "events",
+        "research_coverage",
+        "research_targets",
+        "adjustments",
+        "actions",
+        "trading_psychology",
+        "holdings_actions",
+    } <= set(forbidden_context_keys("portfolio_report", "single_account"))

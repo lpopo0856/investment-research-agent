@@ -1,0 +1,1033 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Investments</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5/css/xterm.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <script src="https://unpkg.com/htmx.org@2" defer></script>
+  <style>
+    body { font-family: 'Inter', sans-serif; }
+    .font-mono { font-family: 'JetBrains Mono', monospace; }
+    #xterm-container { background: #09090b; }
+    #xterm-container .xterm { height: 100%; }
+    .skeleton { animation: pulse 1.5s ease-in-out infinite; background: #27272a; border-radius: 4px; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+    .badge { display:inline-block; padding:1px 7px; border-radius:9999px; font-size:0.65rem; font-weight:600; text-transform:uppercase; letter-spacing:.04em; }
+  </style>
+</head>
+<body class="bg-zinc-950 text-zinc-100 h-screen flex flex-col overflow-hidden">
+
+  <!-- Header -->
+  <header class="flex items-center justify-between px-5 py-3 border-b border-zinc-800 shrink-0">
+    <span id="brand" class="font-semibold text-zinc-100 text-sm tracking-wide">Investments</span>
+    <span id="clock" class="font-mono text-xs text-zinc-400"></span>
+  </header>
+
+  <!-- Main -->
+  <main class="grid grid-cols-[320px_1fr] flex-1 min-h-0">
+
+    <!-- Sidebar -->
+    <aside class="border-r border-zinc-800 p-4 flex flex-col gap-5 overflow-y-auto">
+
+      <!-- Accounts -->
+      <div>
+        <p class="text-xs font-semibold text-zinc-500 uppercase tracking-widest mb-2">Accounts</p>
+        <ul id="accounts-list" class="flex flex-col gap-1"></ul>
+      </div>
+
+      <!-- Reports -->
+      <div class="flex-1 flex flex-col min-h-0">
+        <p class="text-xs font-semibold text-zinc-500 uppercase tracking-widest mb-2">Reports</p>
+        <ul id="reports-list" class="flex flex-col gap-1 flex-1 overflow-y-auto"></ul>
+        <div class="flex items-center justify-between mt-2 pt-2 border-t border-zinc-800">
+          <button id="prev-page" onclick="changePage(-1)"
+            class="text-xs px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 disabled:opacity-30 disabled:cursor-not-allowed">
+            &larr; Prev
+          </button>
+          <span id="page-indicator" class="font-mono text-xs text-zinc-400">1 / 1</span>
+          <button id="next-page" onclick="changePage(1)"
+            class="text-xs px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 disabled:opacity-30 disabled:cursor-not-allowed">
+            Next &rarr;
+          </button>
+        </div>
+      </div>
+
+    </aside>
+
+    <!-- Main pane -->
+    <section class="p-5 flex flex-col gap-4 overflow-hidden">
+
+      <!-- Scrollable top region: holdings only.
+           Terminal sits outside this wrapper, pinned at the bottom.
+           Settings moved to a modal opened from the sidebar. -->
+      <div class="flex-1 min-h-0 overflow-y-auto flex flex-col gap-4 pr-1">
+
+      <!-- Holdings Panel -->
+      <div class="bg-zinc-900 rounded-lg border border-zinc-800 overflow-hidden shrink-0">
+        <div class="flex items-center justify-between px-4 py-3 border-b border-zinc-800">
+          <span class="text-sm font-semibold">Holdings</span>
+          <div class="flex items-center gap-2 flex-wrap">
+            <span id="holdings-as-of" class="text-xs text-zinc-500"></span>
+            <button onclick="quickAction('daily')"
+              class="text-xs px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 border border-zinc-700">Daily report</button>
+            <button onclick="quickAction('portfolio')"
+              class="text-xs px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 border border-zinc-700">Portfolio report</button>
+            <button onclick="quickAction('snapshot')"
+              class="text-xs px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 border border-zinc-700">Snapshot</button>
+            <button onclick="openActionForm('deposit')"
+              class="text-xs px-2 py-1 rounded bg-emerald-900/40 hover:bg-emerald-800/60 border border-emerald-700/60 text-emerald-300">Deposit</button>
+            <button onclick="openActionForm('buy_new')"
+              class="text-xs px-2 py-1 rounded bg-emerald-900/40 hover:bg-emerald-800/60 border border-emerald-700/60 text-emerald-300">Buy new</button>
+            <button id="holdings-refresh" onclick="loadHoldings()"
+              class="text-xs px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700">Refresh</button>
+          </div>
+        </div>
+        <div id="holdings-body" class="max-h-72 overflow-auto">
+          <table class="w-full text-sm">
+            <thead class="sticky top-0 bg-zinc-900">
+              <tr class="text-left text-xs text-zinc-500 border-b border-zinc-800">
+                <th class="px-4 py-2 font-medium">Ticker</th>
+                <th class="px-4 py-2 font-medium text-right">Qty</th>
+                <th class="px-4 py-2 font-medium text-right">Avg Cost</th>
+                <th class="px-4 py-2 font-medium text-right">Total Cost</th>
+                <th class="px-4 py-2 font-medium text-right">CCY</th>
+                <th class="px-4 py-2 font-medium text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="holdings-rows"></tbody>
+          </table>
+        </div>
+      </div>
+
+      </div>
+      <!-- /scrollable top region -->
+
+      <!-- Terminal Panel — pinned at bottom, fixed reasonable height -->
+      <div class="bg-zinc-900 rounded-lg border border-zinc-800 flex flex-col overflow-hidden shrink-0"
+           style="height: clamp(360px, 50vh, 600px)">
+        <div class="flex items-center justify-between px-4 py-3 border-b border-zinc-800">
+          <span class="text-sm font-semibold">Terminal</span>
+          <div id="agent-buttons" class="flex gap-2">
+            <!-- buttons rendered by JS from GET /api/agents -->
+          </div>
+        </div>
+        <div id="xterm-container" class="flex-1 p-2 min-h-0"></div>
+      </div>
+
+    </section>
+  </main>
+
+  <!-- Action Form Modal — small floating form for Deposit / Buy new -->
+  <div id="action-form-modal" class="fixed inset-0 bg-black/70 z-50 hidden flex items-center justify-center">
+    <div class="bg-zinc-900 border border-zinc-700 rounded-xl w-[460px] max-w-[95vw] flex flex-col">
+      <div class="flex items-center justify-between px-5 py-3 border-b border-zinc-800">
+        <span id="action-form-title" class="font-semibold text-sm">Action</span>
+        <button onclick="closeActionForm()"
+          class="text-zinc-400 hover:text-zinc-200 text-lg leading-none px-2">&times;</button>
+      </div>
+      <form id="action-form-body" onsubmit="event.preventDefault(); submitActionForm()"
+            class="px-5 py-4 flex flex-col gap-3">
+        <!-- fields injected dynamically -->
+      </form>
+      <div class="flex gap-2 justify-end px-5 py-3 border-t border-zinc-800">
+        <button onclick="closeActionForm()" type="button"
+          class="text-xs px-3 py-1.5 rounded bg-zinc-700 hover:bg-zinc-600">Cancel</button>
+        <button onclick="submitActionForm()" type="button"
+          class="text-xs px-3 py-1.5 rounded bg-emerald-700 hover:bg-emerald-600 text-white">Send to terminal</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Report Viewer Modal — near-fullscreen iframe with a close button -->
+  <div id="report-modal" class="fixed inset-0 bg-black/80 z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-zinc-900 border border-zinc-700 rounded-xl flex flex-col"
+         style="width: 96vw; height: 94vh;">
+      <div class="flex items-center justify-between px-5 py-3 border-b border-zinc-800 shrink-0">
+        <div class="flex items-center gap-3 min-w-0">
+          <span class="font-semibold text-sm">Report</span>
+          <span id="report-modal-title" class="text-xs text-zinc-500 font-mono truncate"></span>
+        </div>
+        <div class="flex items-center gap-2 shrink-0">
+          <a id="report-modal-open-tab" href="#" target="_blank" rel="noopener"
+             class="text-xs px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200">Open in tab</a>
+          <button onclick="closeReportModal()"
+            class="text-zinc-400 hover:text-zinc-200 text-2xl leading-none px-2">&times;</button>
+        </div>
+      </div>
+      <iframe id="report-modal-iframe" src="about:blank"
+              class="flex-1 w-full bg-white rounded-b-xl"
+              style="border: 0;"></iframe>
+    </div>
+  </div>
+
+  <!-- Settings Modal -->
+  <div id="settings-modal" class="fixed inset-0 bg-black/70 flex items-center justify-center z-40 hidden">
+    <div class="bg-zinc-900 border border-zinc-700 rounded-xl w-[900px] max-w-[95vw] flex flex-col max-h-[85vh]">
+      <div class="flex items-center justify-between px-5 py-3 border-b border-zinc-800">
+        <div class="flex items-center gap-3">
+          <span class="font-semibold text-sm">SETTINGS.md</span>
+          <span id="settings-modal-account" class="text-xs text-zinc-500 font-mono"></span>
+          <span id="settings-section-count" class="text-xs text-zinc-500"></span>
+        </div>
+        <button onclick="closeSettingsModal()"
+          class="text-zinc-400 hover:text-zinc-200 text-lg leading-none px-2">&times;</button>
+      </div>
+      <div id="settings-sections" class="overflow-auto divide-y divide-zinc-800/60 flex-1">
+        <div class="px-4 py-6 text-xs text-zinc-500 text-center">Select an account to view settings.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Diff Modal -->
+  <div id="diff-modal" class="fixed inset-0 bg-black/70 flex items-center justify-center z-50 hidden">
+    <div class="bg-zinc-900 border border-zinc-700 rounded-xl w-[700px] max-w-[95vw] flex flex-col max-h-[80vh]">
+      <div class="flex items-center justify-between px-5 py-3 border-b border-zinc-800">
+        <span class="font-semibold text-sm diff-modal-title">Preview Changes — SETTINGS.md</span>
+        <button onclick="closeDiffModal()"
+          class="text-zinc-400 hover:text-zinc-200 text-lg leading-none">&times;</button>
+      </div>
+      <div class="flex-1 overflow-auto px-5 py-4">
+        <pre id="diff-pre" class="font-mono text-xs text-zinc-300 whitespace-pre leading-5"></pre>
+      </div>
+      <div class="flex gap-2 justify-end px-5 py-3 border-t border-zinc-800">
+        <button onclick="closeDiffModal()"
+          class="text-xs px-3 py-1.5 rounded bg-zinc-700 hover:bg-zinc-600">Cancel</button>
+        <button onclick="confirmSettings()"
+          class="text-xs px-3 py-1.5 rounded bg-emerald-700 hover:bg-emerald-600 text-white">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast container -->
+  <div id="toast-container" class="fixed top-4 right-4 flex flex-col gap-2 z-50 pointer-events-none"></div>
+
+  <!-- xterm.js + addons -->
+  <script src="https://cdn.jsdelivr.net/npm/xterm@5/lib/xterm.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xterm-addon-attach@0.9.0/lib/xterm-addon-attach.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
+
+  <script type="module">
+    // -------------------------------------------------------------------------
+    // State
+    // -------------------------------------------------------------------------
+    let selectedAccount = null;
+    let reportsPage = 1;
+    let reportsTotalPages = 1;
+    let activeWs = null;
+    let activeTerm = null;
+    let activeFitAddon = null;
+    let activeAgentId = null; // id used in the last successful launchTerminal call
+    let pendingDiff = null; // { kind, sectionIndex, new_body, token }
+    let settingsDirty = false; // any section saved since modal opened
+    let lastHoldingsData = null; // cache for re-render on action toggle
+
+    // -------------------------------------------------------------------------
+    // Clock
+    // -------------------------------------------------------------------------
+    function updateClock() {
+      document.getElementById('clock').textContent = new Date().toLocaleTimeString();
+    }
+    setInterval(updateClock, 1000);
+    updateClock();
+
+    // -------------------------------------------------------------------------
+    // URL helpers
+    // -------------------------------------------------------------------------
+    function getUrlAccount() {
+      return new URLSearchParams(location.search).get('account');
+    }
+    function getUrlPage() {
+      const p = parseInt(new URLSearchParams(location.search).get('page') || '1', 10);
+      return isNaN(p) || p < 1 ? 1 : p;
+    }
+    function pushUrlState(account, page) {
+      const params = new URLSearchParams();
+      params.set('account', account);
+      if (page > 1) params.set('page', page);
+      history.replaceState(null, '', '?' + params.toString());
+    }
+
+    // -------------------------------------------------------------------------
+    // Toast
+    // -------------------------------------------------------------------------
+    function showToast(msg, isError = false) {
+      const el = document.createElement('div');
+      el.className = `pointer-events-auto px-4 py-2 rounded-lg text-sm shadow-lg border max-w-sm ${
+        isError
+          ? 'bg-red-900 border-red-700 text-red-100'
+          : 'bg-zinc-800 border-zinc-700 text-zinc-100'
+      }`;
+      el.textContent = msg;
+      const container = document.getElementById('toast-container');
+      container.appendChild(el);
+      setTimeout(() => el.remove(), 5000);
+    }
+
+    // -------------------------------------------------------------------------
+    // Accounts
+    // -------------------------------------------------------------------------
+    async function loadAccounts() {
+      const res = await fetch('/api/accounts');
+      const data = await res.json();
+
+      const urlAcc = getUrlAccount();
+      const def = urlAcc && data.accounts.includes(urlAcc) ? urlAcc : data.default;
+      reportsPage = getUrlPage();
+
+      const list = document.getElementById('accounts-list');
+      list.innerHTML = '';
+      for (const acc of data.accounts) {
+        const li = document.createElement('li');
+        li.dataset.acc = acc;
+        li.className = `flex items-center rounded transition-colors ${
+          acc === def
+            ? 'bg-emerald-900/50 text-emerald-300 font-medium'
+            : 'text-zinc-300 hover:bg-zinc-800'
+        }`;
+
+        const btn = document.createElement('button');
+        btn.textContent = acc;
+        btn.className = 'flex-1 text-left px-3 py-1.5 text-sm bg-transparent';
+        btn.onclick = () => selectAccount(acc);
+
+        const gear = document.createElement('button');
+        gear.innerHTML = '⚙'; // gear icon
+        gear.title = 'Settings for this account';
+        gear.className =
+          'px-2 py-1.5 text-sm text-zinc-400 hover:text-emerald-300 hidden';
+        gear.dataset.role = 'settings-gear';
+        gear.onclick = (e) => {
+          e.stopPropagation();
+          openSettingsModal(acc);
+        };
+
+        li.appendChild(btn);
+        li.appendChild(gear);
+        list.appendChild(li);
+      }
+
+      await selectAccount(def, /* skipPush */ false);
+    }
+
+    function highlightAccount(name) {
+      document.querySelectorAll('#accounts-list li').forEach(li => {
+        const isActive = li.dataset.acc === name;
+        li.className = `flex items-center rounded transition-colors ${
+          isActive
+            ? 'bg-emerald-900/50 text-emerald-300 font-medium'
+            : 'text-zinc-300 hover:bg-zinc-800'
+        }`;
+        const gear = li.querySelector('[data-role="settings-gear"]');
+        if (gear) gear.classList.toggle('hidden', !isActive);
+      });
+    }
+
+    async function selectAccount(name, skipPush = false) {
+      if (name === selectedAccount) return;
+
+      // Tear down any live terminal — it is bound to the previous account.
+      // Without this, the PTY child keeps running with INVESTMENTS_ACTIVE_ACCOUNT
+      // set to the old account, silently mismatching what the UI shows.
+      if (activeWs) {
+        try { activeWs.close(); } catch (_) {}
+        activeWs = null;
+      }
+      if (activeTerm) {
+        try { activeTerm.dispose(); } catch (_) {}
+        activeTerm = null;
+        activeFitAddon = null;
+        const container = document.getElementById('xterm-container');
+        if (container) container.innerHTML = '';
+      }
+
+      // Reset paging — keeping page N from a previous account can land
+      // outside the new account's range (server clamps, but the URL lies).
+      reportsPage = 1;
+
+      selectedAccount = name;
+      if (!skipPush) pushUrlState(name, reportsPage);
+      document.getElementById('brand').textContent = `Investments · ${name}`;
+      highlightAccount(name);
+      await Promise.all([loadHoldings(), loadReports()]);
+    }
+
+    // -------------------------------------------------------------------------
+    // Holdings
+    // -------------------------------------------------------------------------
+    const fmtQty = new Intl.NumberFormat('en-US', { maximumFractionDigits: 6 });
+    const fmtNum2 = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+    function renderHoldingsSkeleton() {
+      const tbody = document.getElementById('holdings-rows');
+      tbody.innerHTML = [1,2,3].map(() => `
+        <tr class="border-b border-zinc-800">
+          ${[1,2,3,4,5,6].map(() => `<td class="px-4 py-3"><div class="skeleton h-4 w-full"></div></td>`).join('')}
+        </tr>`).join('');
+      document.getElementById('holdings-as-of').textContent = '';
+    }
+
+    async function loadHoldings() {
+      if (!selectedAccount) return;
+      renderHoldingsSkeleton();
+      holdingActions.clear(); // collapse any open action forms across reloads
+      try {
+        const res = await fetch(`/api/accounts/${encodeURIComponent(selectedAccount)}/holdings`);
+        const data = await res.json();
+        if (!res.ok) {
+          lastHoldingsData = null;
+          renderHoldingsError(data.error || `HTTP ${res.status}`);
+          return;
+        }
+        lastHoldingsData = data;
+        renderHoldingsRows(data);
+      } catch (err) {
+        lastHoldingsData = null;
+        renderHoldingsError(String(err));
+      }
+    }
+
+    // Action form configs — kind -> { title, fields, build(values) }.
+    // ``fields`` is a list of { id, label, type, placeholder, required }
+    // rendered as <input> elements. ``build`` returns the terminal prompt.
+    const ACTION_FORMS = {
+      deposit: {
+        title: 'Deposit',
+        fields: [
+          { id: 'amount', label: 'Amount', type: 'number', placeholder: '10000', required: true },
+          { id: 'currency', label: 'Currency', type: 'text', placeholder: 'USD', required: true },
+          { id: 'note', label: 'Note (optional)', type: 'text', placeholder: 'monthly contribution' },
+        ],
+        build: (v, acct) => {
+          const tail = v.note ? ` (note: ${v.note})` : '';
+          return `Please record a deposit of ${v.amount} ${v.currency} into the ${acct} account${tail}.`;
+        },
+      },
+      buy_new: {
+        title: 'Buy new asset',
+        fields: [
+          { id: 'ticker', label: 'Ticker', type: 'text', placeholder: 'NVDA', required: true },
+          { id: 'qty', label: 'Quantity', type: 'number', placeholder: '10', required: true },
+          { id: 'price', label: 'Buy price', type: 'number', placeholder: '180.50', required: true },
+          { id: 'currency', label: 'Currency', type: 'text', placeholder: 'USD', required: true },
+        ],
+        build: (v, acct) => `Please buy ${v.qty} ${v.ticker.toUpperCase()} at ${v.price} ${v.currency} for the ${acct} account.`,
+      },
+    };
+
+    let currentActionKind = null;
+
+    window.openActionForm = function(kind) {
+      const cfg = ACTION_FORMS[kind];
+      if (!cfg) return;
+      currentActionKind = kind;
+      document.getElementById('action-form-title').textContent = cfg.title;
+      const body = document.getElementById('action-form-body');
+      body.innerHTML = cfg.fields.map(f => `
+        <label class="flex flex-col gap-1 text-xs">
+          <span class="text-zinc-400">${escHtml(f.label)}${f.required ? '' : ' <span class="text-zinc-600">(optional)</span>'}</span>
+          <input id="action-field-${f.id}" type="${f.type}" ${f.required ? 'required' : ''}
+            step="any" min="0" placeholder="${escHtml(f.placeholder)}"
+            class="bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-zinc-100 font-mono focus:outline-none focus:border-emerald-500" />
+        </label>`).join('');
+      document.getElementById('action-form-modal').classList.remove('hidden');
+      requestAnimationFrame(() => {
+        const first = body.querySelector('input');
+        if (first) first.focus();
+      });
+    };
+
+    window.closeActionForm = function() {
+      document.getElementById('action-form-modal').classList.add('hidden');
+      currentActionKind = null;
+    };
+
+    window.submitActionForm = function() {
+      if (!currentActionKind) return;
+      const cfg = ACTION_FORMS[currentActionKind];
+      const values = {};
+      for (const f of cfg.fields) {
+        const el = document.getElementById(`action-field-${f.id}`);
+        values[f.id] = (el?.value || '').trim();
+        if (f.required && !values[f.id]) {
+          showToast(`${f.label} is required`, true);
+          el?.focus();
+          return;
+        }
+      }
+      const prompt = cfg.build(values, selectedAccount || 'default');
+      if (typeToTerminal(prompt)) closeActionForm();
+    };
+
+    // Header quick-action buttons: type a templated prompt into the active
+    // terminal so the user can review and hit Enter.
+    window.quickAction = function(kind) {
+      const acct = selectedAccount || 'default';
+      const prompts = {
+        daily: `Generate today's daily report for the ${acct} account and show me the highlights.`,
+        portfolio: `Generate a fresh portfolio report for the ${acct} account.`,
+        snapshot: `Show me a quick snapshot of the ${acct} account — current positions, cash, and biggest movers.`,
+      };
+      const text = prompts[kind];
+      if (!text) return;
+      typeToTerminal(text);
+    };
+
+    function renderHoldingsError(msg) {
+      const tbody = document.getElementById('holdings-rows');
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="6" class="px-4 py-6 text-center">
+            <p class="text-red-400 text-sm mb-3">${escHtml(msg)}</p>
+            <button onclick="window.loadHoldings()"
+              class="text-xs px-3 py-1.5 rounded bg-zinc-700 hover:bg-zinc-600">Retry</button>
+          </td>
+        </tr>`;
+      document.getElementById('holdings-as-of').textContent = '';
+    }
+
+    // Track which tickers have their action form expanded, and which mode
+    // (sell/buy) they're in.
+    const holdingActions = new Map(); // ticker -> { mode: 'sell'|'buy' }
+
+    function renderHoldingsRows(data) {
+      document.getElementById('holdings-as-of').textContent = data.as_of ? `as of ${data.as_of}` : '';
+      const tbody = document.getElementById('holdings-rows');
+      if (!data.rows || data.rows.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="6" class="px-4 py-6 text-center text-zinc-500 text-sm">No holdings</td></tr>`;
+        return;
+      }
+      const fmtOrDash = (fn, v) => (v === null || v === undefined || Number.isNaN(v)) ? '—' : fn.format(v);
+      tbody.innerHTML = data.rows.map(r => {
+        const ticker = r.ticker || '';
+        const safeTicker = ticker.replace(/'/g, "\\'");
+        const ccy = r.trade_currency || '';
+        const action = holdingActions.get(ticker);
+        const expanded = !!action;
+        const actionRow = expanded ? `
+          <tr class="bg-zinc-950/60 border-b border-zinc-800/60">
+            <td colspan="6" class="px-4 py-3">
+              <form onsubmit="event.preventDefault(); submitHoldingAction('${safeTicker}', '${ccy}')"
+                    class="flex items-center gap-2 text-xs">
+                <span class="font-mono font-medium uppercase ${action.mode === 'sell' ? 'text-red-400' : 'text-emerald-400'}">${action.mode}</span>
+                <span class="font-mono text-zinc-300">${escHtml(ticker)}</span>
+                <label class="text-zinc-500">Qty</label>
+                <input id="action-qty-${escHtml(ticker)}" type="number" step="any" min="0"
+                  class="bg-zinc-800 border border-zinc-700 rounded px-2 py-1 w-24 text-zinc-100 font-mono focus:outline-none focus:border-emerald-500"
+                  placeholder="${fmtOrDash(fmtQty, r.qty)}"/>
+                <label class="text-zinc-500">${action.mode === 'sell' ? 'Sell' : 'Buy'} Price</label>
+                <input id="action-price-${escHtml(ticker)}" type="number" step="any" min="0"
+                  class="bg-zinc-800 border border-zinc-700 rounded px-2 py-1 w-24 text-zinc-100 font-mono focus:outline-none focus:border-emerald-500"
+                  placeholder="${fmtOrDash(fmtNum2, r.avg_cost)}"/>
+                <span class="text-zinc-500 font-mono">${escHtml(ccy)}</span>
+                <button type="submit"
+                  class="ml-auto text-xs px-3 py-1 rounded ${action.mode === 'sell' ? 'bg-red-700 hover:bg-red-600' : 'bg-emerald-700 hover:bg-emerald-600'} text-white">Send to terminal</button>
+                <button type="button" onclick="toggleHoldingAction('${safeTicker}', null)"
+                  class="text-xs px-2 py-1 rounded bg-zinc-700 hover:bg-zinc-600">Cancel</button>
+              </form>
+            </td>
+          </tr>` : '';
+        return `
+          <tr class="border-b border-zinc-800/60 hover:bg-zinc-800/30 transition-colors">
+            <td class="px-4 py-2.5 font-mono font-medium text-zinc-100">${escHtml(ticker)}</td>
+            <td class="px-4 py-2.5 font-mono text-right text-zinc-300">${fmtOrDash(fmtQty, r.qty)}</td>
+            <td class="px-4 py-2.5 font-mono text-right text-zinc-300">${fmtOrDash(fmtNum2, r.avg_cost)}</td>
+            <td class="px-4 py-2.5 font-mono text-right text-zinc-200">${fmtOrDash(fmtNum2, r.total_cost)}</td>
+            <td class="px-4 py-2.5 font-mono text-right text-xs text-zinc-500">${escHtml(ccy)}</td>
+            <td class="px-4 py-2.5 text-right">
+              <span class="inline-flex gap-1">
+                <button onclick="toggleHoldingAction('${safeTicker}', 'sell')"
+                  class="text-[11px] px-2 py-0.5 rounded bg-red-900/40 hover:bg-red-800/60 text-red-300 font-medium"
+                  title="Prefill a sell into the terminal">Sell</button>
+                <button onclick="toggleHoldingAction('${safeTicker}', 'buy')"
+                  class="text-[11px] px-2 py-0.5 rounded bg-emerald-900/40 hover:bg-emerald-800/60 text-emerald-300 font-medium"
+                  title="Prefill a buy into the terminal">Buy</button>
+                <button onclick="discussHolding('${safeTicker}')"
+                  class="text-[11px] px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300"
+                  title="Ask the agent to analyze this position">Ask</button>
+              </span>
+            </td>
+          </tr>${actionRow}`;
+      }).join('');
+    }
+
+    // Toggle the inline Sell/Buy form for a ticker. mode=null collapses.
+    window.toggleHoldingAction = function(ticker, mode) {
+      const prev = holdingActions.get(ticker);
+      if (!mode || (prev && prev.mode === mode)) {
+        holdingActions.delete(ticker);
+      } else {
+        // Only one open at a time keeps the table compact.
+        holdingActions.clear();
+        holdingActions.set(ticker, { mode });
+      }
+      // Re-render last loaded rows. We need the data — cache it.
+      if (lastHoldingsData) renderHoldingsRows(lastHoldingsData);
+      // Focus the qty input if opening.
+      if (mode) {
+        requestAnimationFrame(() => {
+          const el = document.getElementById(`action-qty-${ticker}`);
+          if (el) el.focus();
+        });
+      }
+    };
+
+    window.submitHoldingAction = function(ticker, ccy) {
+      const action = holdingActions.get(ticker);
+      if (!action) return;
+      const qty = document.getElementById(`action-qty-${ticker}`).value.trim();
+      const price = document.getElementById(`action-price-${ticker}`).value.trim();
+      if (!qty || !price) { showToast('Enter both qty and price', true); return; }
+      const verb = action.mode === 'sell' ? 'sell' : 'buy';
+      const tail = ccy ? ` (${ccy})` : '';
+      const prompt = `Please ${verb} ${qty} ${ticker} at ${price}${tail}`;
+      if (typeToTerminal(prompt)) {
+        holdingActions.delete(ticker);
+        if (lastHoldingsData) renderHoldingsRows(lastHoldingsData);
+      }
+    };
+
+    window.discussHolding = function(ticker) {
+      typeToTerminal(`Walk me through my ${ticker} position — thesis, risk, what I should do next.`);
+    };
+
+    // -------------------------------------------------------------------------
+    // Reports
+    // -------------------------------------------------------------------------
+    async function loadReports() {
+      if (!selectedAccount) return;
+      const res = await fetch(`/api/accounts/${encodeURIComponent(selectedAccount)}/reports?page=${reportsPage}&size=12`);
+      const data = await res.json();
+      if (!res.ok) {
+        document.getElementById('reports-list').innerHTML =
+          `<li class="text-xs text-red-400 px-2">${escHtml(data.error || 'Error')}</li>`;
+        return;
+      }
+      reportsTotalPages = data.total_pages || 1;
+      renderReports(data.items);
+      document.getElementById('page-indicator').textContent = `${reportsPage} / ${reportsTotalPages}`;
+      document.getElementById('prev-page').disabled = reportsPage <= 1;
+      document.getElementById('next-page').disabled = reportsPage >= reportsTotalPages;
+    }
+
+    function renderReports(items) {
+      const list = document.getElementById('reports-list');
+      if (!items || items.length === 0) {
+        list.innerHTML = `<li class="text-xs text-zinc-500 px-2 py-1">No reports</li>`;
+        return;
+      }
+      list.innerHTML = items.map(r => {
+        const badgeClass = r.kind === 'daily'
+          ? 'bg-emerald-900/60 text-emerald-300'
+          : 'bg-violet-900/60 text-violet-300';
+        const dateStr = r.date || '';
+        const timeStr = r.time ? r.time.slice(0,2)+':'+r.time.slice(2) : '';
+        const safeName = r.filename.replace(/'/g, "\\'");
+        const label = `${escHtml(dateStr)} ${escHtml(timeStr)} · ${escHtml(r.kind)}`;
+        return `
+          <li class="flex items-center group rounded hover:bg-zinc-800 transition-colors">
+            <button onclick="openReportModal('${safeName}', '${label}')"
+               class="flex-1 flex items-center gap-2 px-2 py-1.5 cursor-pointer text-left">
+              <span class="font-mono text-xs text-zinc-400 group-hover:text-zinc-200">${escHtml(dateStr)} ${escHtml(timeStr)}</span>
+              <span class="badge ${badgeClass}">${escHtml(r.kind)}</span>
+            </button>
+            <button onclick="discussReport('${safeName}', '${escHtml(r.kind)}')"
+              class="px-2 py-1 text-[11px] text-zinc-500 hover:text-emerald-300 opacity-0 group-hover:opacity-100 transition-opacity"
+              title="Ask the agent about this report">💬</button>
+          </li>`;
+      }).join('');
+    }
+
+    window.discussReport = function(filename, kind) {
+      const acct = selectedAccount || 'default';
+      typeToTerminal(`Walk me through the ${kind} report at accounts/${acct}/reports/${filename} — what stands out and what should I do.`);
+    };
+
+    // expose for inline onclick
+    window.changePage = function(delta) {
+      const newPage = reportsPage + delta;
+      if (newPage < 1 || newPage > reportsTotalPages) return;
+      reportsPage = newPage;
+      pushUrlState(selectedAccount, reportsPage);
+      loadReports();
+    };
+
+    // -------------------------------------------------------------------------
+    // Settings — per-section cards
+    // -------------------------------------------------------------------------
+    // sectionsState[index] = { name, body, editing: bool, draft: string|null }
+    let sectionsState = [];
+    let preambleText = '';
+
+    async function loadSettings() {
+      if (!selectedAccount) return;
+      const container = document.getElementById('settings-sections');
+      container.innerHTML = `<div class="px-4 py-6 text-xs text-zinc-500 text-center">Loading…</div>`;
+      try {
+        const res = await fetch(`/api/accounts/${encodeURIComponent(selectedAccount)}/settings/sections`);
+        const data = await res.json();
+        if (!res.ok) {
+          container.innerHTML = `<div class="px-4 py-4 text-xs text-red-400">${escHtml(data.error || 'Error loading settings')}</div>`;
+          return;
+        }
+        preambleText = data.preamble || '';
+        sectionsState = (data.sections || []).map(s => ({ name: s.name, body: s.body, editing: false, draft: null }));
+        renderSections();
+      } catch (err) {
+        container.innerHTML = `<div class="px-4 py-4 text-xs text-red-400">${escHtml(String(err))}</div>`;
+      }
+    }
+
+    function renderSections() {
+      const container = document.getElementById('settings-sections');
+      const count = sectionsState.length;
+      document.getElementById('settings-section-count').textContent =
+        count === 0 ? '' : `${count} section${count === 1 ? '' : 's'}`;
+
+      const parts = [];
+      if (preambleText && preambleText.trim().length > 0) {
+        parts.push(`
+          <div class="px-4 py-2 bg-zinc-950/40">
+            <p class="text-[10px] uppercase tracking-widest text-zinc-600 mb-1">Preamble (read-only)</p>
+            <pre class="font-mono text-[11px] text-zinc-500 whitespace-pre-wrap leading-5">${escHtml(preambleText)}</pre>
+          </div>`);
+      }
+      if (count === 0) {
+        parts.push(`<div class="px-4 py-6 text-xs text-zinc-500 text-center">No <code>## sections</code> detected in this file.</div>`);
+      } else {
+        sectionsState.forEach((s, idx) => parts.push(renderSectionCard(idx, s)));
+      }
+      container.innerHTML = parts.join('');
+    }
+
+    function renderSectionCard(idx, s) {
+      if (s.editing) {
+        const draft = s.draft !== null ? s.draft : s.body;
+        return `
+          <div class="px-4 py-3" data-section-index="${idx}">
+            <div class="flex items-center justify-between mb-2">
+              <span class="text-xs font-semibold text-zinc-200">${escHtml(s.name)}</span>
+              <div class="flex gap-2">
+                <button onclick="cancelSectionEdit(${idx})"
+                  class="text-xs px-2 py-0.5 rounded bg-zinc-700 hover:bg-zinc-600">Cancel</button>
+                <button onclick="saveSection(${idx})"
+                  class="text-xs px-2 py-0.5 rounded bg-emerald-700 hover:bg-emerald-600 text-white">Save</button>
+              </div>
+            </div>
+            <textarea id="section-textarea-${idx}"
+              oninput="onSectionDraftChange(${idx}, this.value)"
+              class="w-full bg-zinc-800 text-zinc-100 font-mono text-xs rounded p-3 border border-zinc-700 focus:outline-none focus:border-emerald-500 resize-y"
+              style="height: 240px;">${escHtml(draft)}</textarea>
+          </div>`;
+      }
+      return `
+        <div class="px-4 py-3" data-section-index="${idx}">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-xs font-semibold text-zinc-200">${escHtml(s.name)}</span>
+            <button onclick="editSection(${idx})"
+              class="text-xs px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700">Edit</button>
+          </div>
+          <pre class="font-mono text-xs text-zinc-400 whitespace-pre-wrap leading-5 max-h-40 overflow-auto">${escHtml(s.body)}</pre>
+        </div>`;
+    }
+
+    window.editSection = function(idx) {
+      // Only one section at a time may be in edit mode.
+      sectionsState.forEach((s, i) => {
+        if (i !== idx && s.editing) { s.editing = false; s.draft = null; }
+      });
+      const s = sectionsState[idx];
+      if (!s) return;
+      s.editing = true;
+      s.draft = s.body;
+      renderSections();
+      // Focus the textarea after render.
+      requestAnimationFrame(() => {
+        const t = document.getElementById(`section-textarea-${idx}`);
+        if (t) t.focus();
+      });
+    };
+
+    window.cancelSectionEdit = function(idx) {
+      const s = sectionsState[idx];
+      if (!s) return;
+      s.editing = false;
+      s.draft = null;
+      renderSections();
+    };
+
+    window.onSectionDraftChange = function(idx, value) {
+      const s = sectionsState[idx];
+      if (s) s.draft = value;
+    };
+
+    window.saveSection = async function(idx) {
+      const s = sectionsState[idx];
+      if (!s) return;
+      const newBody = s.draft !== null ? s.draft : s.body;
+      if (newBody === s.body) {
+        showToast('No changes in this section.');
+        return;
+      }
+      try {
+        const res = await fetch(
+          `/api/accounts/${encodeURIComponent(selectedAccount)}/settings/sections/${idx}/preview`,
+          { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ new_body: newBody }) }
+        );
+        const data = await res.json();
+        if (!res.ok) {
+          showToast(data.error || 'Preview failed', true);
+          return;
+        }
+        pendingDiff = { kind: 'section', sectionIndex: idx, sectionName: s.name, new_body: newBody, token: data.token };
+        document.getElementById('diff-pre').textContent = data.unified_diff || '(no changes)';
+        document.querySelector('#diff-modal .diff-modal-title').textContent =
+          `Preview Changes — SETTINGS.md  ·  ${s.name}`;
+        document.getElementById('diff-modal').classList.remove('hidden');
+      } catch (err) {
+        showToast(String(err), true);
+      }
+    };
+
+    window.closeDiffModal = function() {
+      document.getElementById('diff-modal').classList.add('hidden');
+      pendingDiff = null;
+    };
+
+    window.openReportModal = function(filename, label) {
+      if (!selectedAccount || !filename) return;
+      const url = `/accounts/${encodeURIComponent(selectedAccount)}/reports/${encodeURIComponent(filename)}`;
+      document.getElementById('report-modal-iframe').src = url;
+      document.getElementById('report-modal-title').textContent = label || filename;
+      document.getElementById('report-modal-open-tab').href = url;
+      document.getElementById('report-modal').classList.remove('hidden');
+    };
+
+    window.closeReportModal = function() {
+      const m = document.getElementById('report-modal');
+      m.classList.add('hidden');
+      // Reset iframe src so the report's JS/timers stop running in the background.
+      document.getElementById('report-modal-iframe').src = 'about:blank';
+    };
+
+    // ESC closes whichever modal is on top. Report > action-form > settings.
+    document.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape') return;
+      const rm = document.getElementById('report-modal');
+      const af = document.getElementById('action-form-modal');
+      const sm = document.getElementById('settings-modal');
+      if (!rm.classList.contains('hidden')) { closeReportModal(); return; }
+      if (!af.classList.contains('hidden')) { closeActionForm(); return; }
+      if (!sm.classList.contains('hidden')) { closeSettingsModal(); return; }
+    });
+
+    // Backdrop click closes the report modal.
+    document.getElementById('report-modal').addEventListener('click', (e) => {
+      if (e.target.id === 'report-modal') closeReportModal();
+    });
+
+    window.openSettingsModal = function(account) {
+      if (!account) return;
+      settingsDirty = false;
+      document.getElementById('settings-modal-account').textContent = account;
+      document.getElementById('settings-modal').classList.remove('hidden');
+      loadSettings(); // populates #settings-sections + count
+    };
+
+    window.closeSettingsModal = function() {
+      document.getElementById('settings-modal').classList.add('hidden');
+      // Cancel any in-flight section edit by clearing draft state.
+      sectionsState.forEach(s => { if (s.editing) { s.editing = false; s.draft = null; } });
+
+      // If anything was saved during this modal session and a terminal is
+      // currently running, restart it so the agent picks up the new
+      // SETTINGS.md content. Same account, same agent id.
+      if (settingsDirty && activeWs && activeWs.readyState !== WebSocket.CLOSED && activeAgentId) {
+        const agentId = activeAgentId;
+        // Force-tear-down the existing session (launchTerminal would prompt
+        // a confirm dialog otherwise).
+        try { activeWs.close(); } catch (_) {}
+        if (activeTerm) { try { activeTerm.dispose(); } catch (_) {} }
+        activeWs = null; activeTerm = null; activeFitAddon = null;
+        const container = document.getElementById('xterm-container');
+        if (container) container.innerHTML = '';
+        showToast('Settings saved — reloading terminal');
+        launchTerminal(agentId);
+      }
+      settingsDirty = false;
+    };
+
+    window.confirmSettings = async function() {
+      if (!pendingDiff || pendingDiff.kind !== 'section') {
+        closeDiffModal();
+        return;
+      }
+      const { sectionIndex, new_body, token } = pendingDiff;
+      try {
+        const res = await fetch(
+          `/api/accounts/${encodeURIComponent(selectedAccount)}/settings/sections/${sectionIndex}`,
+          { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ new_body, token }) }
+        );
+        const data = await res.json();
+        if (res.status === 409) {
+          showToast('SETTINGS.md changed externally — re-opening editor.', true);
+          closeDiffModal();
+          await loadSettings();
+          return;
+        }
+        if (!res.ok) {
+          showToast(data.error || 'Save failed', true);
+          return;
+        }
+        showToast(`Saved. Backup: ${data.backup_path.split('/').pop()}`);
+        settingsDirty = true;
+        closeDiffModal();
+        await loadSettings();
+      } catch (err) {
+        showToast(String(err), true);
+      }
+    };
+
+    // -------------------------------------------------------------------------
+    // Terminal
+    // -------------------------------------------------------------------------
+    window.launchTerminal = function(agent) {
+      if (activeWs && activeWs.readyState !== WebSocket.CLOSED) {
+        if (!confirm(`Switch agent? This will terminate the current session.`)) return;
+        activeWs.close();
+        if (activeTerm) { activeTerm.dispose(); activeTerm = null; }
+        activeWs = null;
+        activeFitAddon = null;
+      }
+
+      const container = document.getElementById('xterm-container');
+      container.innerHTML = '';
+
+      const term = new Terminal({
+        fontFamily: '"JetBrains Mono", monospace',
+        fontSize: 13,
+        theme: { background: '#09090b', foreground: '#fafafa', cursor: '#a1a1aa' },
+        convertEol: true,
+        scrollback: 5000,
+      });
+
+      const fitAddon = new FitAddon.FitAddon();
+
+      const wsUrl = `ws://${location.host}/ws/terminal?agent=${encodeURIComponent(agent)}&account=${encodeURIComponent(selectedAccount)}`;
+      const ws = new WebSocket(wsUrl);
+      ws.binaryType = 'arraybuffer';
+
+      // Send the current xterm dims to the PTY. Idempotent and called any
+      // time the dimensions may have changed (initial fit, ws.onopen, window
+      // resize). Without this the PTY stays at 80x24 default while xterm
+      // renders at the fitted size — that mismatch breaks line wrap and
+      // makes xterm's autoscroll math drift off the visible bottom.
+      function sendResize() {
+        if (ws.readyState !== WebSocket.OPEN) return;
+        const cols = term.cols, rows = term.rows;
+        const payload = new TextEncoder().encode(JSON.stringify({ cols, rows }));
+        const frame = new Uint8Array(payload.length + 1);
+        frame[0] = 0x01;
+        frame.set(payload, 1);
+        ws.send(frame);
+      }
+
+      // Register resize handler BEFORE the first fit so the initial resize
+      // event is observed (xterm fires onResize once when dims change from
+      // its default 80x24 to the fitted size).
+      term.onResize(sendResize);
+
+      term.loadAddon(fitAddon);
+      term.open(container);
+      fitAddon.fit();
+
+      // AttachAddon pumps both directions: term.onData → ws.send (stdin)
+      // and ws.onmessage → term.write (stdout). Do NOT also wire term.onData
+      // manually — that double-sends every keystroke.
+      const attach = new AttachAddon.AttachAddon(ws);
+      term.loadAddon(attach);
+
+      // On WS open, fit again (container may have settled in the meantime)
+      // and unconditionally re-send the current dims so the PTY is always
+      // in sync, even if the earlier onResize-driven send happened before
+      // the WS was ready.
+      ws.onopen = () => {
+        fitAddon.fit();
+        sendResize();
+      };
+
+      ws.onclose = (ev) => {
+        if (ev.code === 4404 || ev.code === 4400) {
+          showToast(`Terminal closed: ${ev.reason || 'connection refused'}`, true);
+        }
+      };
+
+      activeTerm = term;
+      activeWs = ws;
+      activeFitAddon = fitAddon;
+      activeAgentId = agent;
+    };
+
+    // -------------------------------------------------------------------------
+    // Fast actions — prefill the active terminal with a templated prompt.
+    // -------------------------------------------------------------------------
+    function typeToTerminal(text, opts = {}) {
+      if (!activeWs || activeWs.readyState !== WebSocket.OPEN) {
+        showToast('Launch a terminal first (claude / codex / codex(omx))', true);
+        return false;
+      }
+      activeWs.send(text);
+      if (opts.submit) activeWs.send('\r');
+      // Visually focus the xterm so the user can immediately review/edit.
+      try { activeTerm?.focus(); } catch (_) {}
+      return true;
+    }
+    window.typeToTerminal = typeToTerminal;
+
+    window.addEventListener('resize', () => {
+      if (activeFitAddon) activeFitAddon.fit();
+    });
+
+    async function loadAgents() {
+      const container = document.getElementById('agent-buttons');
+      try {
+        const res = await fetch('/api/agents');
+        const data = await res.json();
+        const agents = (data.agents || []);
+        if (agents.length === 0) {
+          container.innerHTML = `<span class="text-xs text-zinc-500">no agents on PATH</span>`;
+          return;
+        }
+        container.innerHTML = agents.map(a => `
+          <button onclick="launchTerminal('${a.id.replace(/'/g, "\\'")}')"
+            class="text-xs px-3 py-1.5 rounded bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 font-mono"
+          >${escHtml(a.label)}</button>`).join('');
+      } catch (err) {
+        container.innerHTML = `<span class="text-xs text-red-400">agent list error</span>`;
+      }
+    }
+
+    // -------------------------------------------------------------------------
+    // Init
+    // -------------------------------------------------------------------------
+    window.loadHoldings = loadHoldings;
+
+    await Promise.all([loadAccounts(), loadAgents()]);
+  </script>
+
+  <script>
+    // escHtml must be available to non-module inline code (Retry button onclick)
+    function escHtml(s) {
+      return String(s)
+        .replace(/&/g,'&amp;')
+        .replace(/</g,'&lt;')
+        .replace(/>/g,'&gt;')
+        .replace(/"/g,'&quot;');
+    }
+  </script>
+</body>
+</html>

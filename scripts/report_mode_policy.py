@@ -11,7 +11,9 @@ requirements, holdings Action-column behavior, and default filenames cannot drif
 
 from __future__ import annotations
 
-from typing import Optional
+import argparse
+import json
+from typing import Any, Dict, Optional
 
 REPORT_TYPE_DAILY = "daily_report"
 REPORT_TYPE_PORTFOLIO = "portfolio_report"
@@ -75,6 +77,34 @@ _VALIDATION_RENDERERS = {
 
 _RESEARCH_COVERAGE_RENDERERS = ("render_news", "render_events", "render_high_risk_opp")
 
+ALL_RENDERERS = frozenset().union(
+    *REPORT_TYPE_SKIPPED_RENDERERS.values(),
+    TOTAL_ACCOUNT_SKIPPED_RENDERERS,
+    *(frozenset(renderers) for renderers in _VALIDATION_RENDERERS.values()),
+    frozenset(_RESEARCH_COVERAGE_RENDERERS),
+    {
+        "render_masthead",
+        "render_dashboard",
+        "render_trade_quality",
+        "render_allocation_and_weight",
+        "render_holdings_table",
+        "render_sources",
+    },
+)
+
+CONTEXT_KEYS_BY_SECTION = {
+    "today_summary": ("today_summary",),
+    "strategy_readout": ("strategy_readout", "style_readout"),
+    "data_gaps": ("data_gaps",),
+    "theme_sector": ("theme_sector_html", "theme_sector_audit"),
+    "research_coverage": ("research_targets", "research_coverage", "news", "events"),
+    "adjustments": ("adjustments",),
+    "high_opps": ("high_opps",),
+    "actions": ("actions", "holdings_actions"),
+    "trading_psychology": ("trading_psychology",),
+    "reviewer_pass": ("reviewer_pass",),
+}
+
 
 def _normalize_choice(value: Optional[str], choices: tuple[str, ...], label: str) -> str:
     if not isinstance(value, str) or not value.strip():
@@ -136,6 +166,74 @@ def hide_holdings_action_column(report_type: str, account_scope: str) -> bool:
     )
 
 
+def validation_sections(report_type: str, account_scope: str) -> tuple[str, ...]:
+    """Return context sections validated for this report mode."""
+    sections = sorted(CONTEXT_KEYS_BY_SECTION)
+    return tuple(section for section in sections if should_validate(section, report_type, account_scope))
+
+
+def required_context_keys(report_type: str, account_scope: str) -> tuple[str, ...]:
+    """Return top-level context keys that should be authored for this mode."""
+    keys: list[str] = []
+    for section in validation_sections(report_type, account_scope):
+        # style_readout is a backwards-compatible alias accepted by the
+        # validator, but new report runs should author strategy_readout.
+        for key in CONTEXT_KEYS_BY_SECTION[section]:
+            if key == "style_readout":
+                continue
+            keys.append(key)
+    return tuple(dict.fromkeys(keys))
+
+
+def forbidden_context_keys(report_type: str, account_scope: str) -> tuple[str, ...]:
+    """Return context keys whose section is skipped for this mode.
+
+    This is intentionally conservative: it lists canonical report-context keys
+    that belong to skipped renderer sections. Debug-only metadata may still be
+    present, but canonical agent runs should not author these keys.
+    """
+    forbidden: list[str] = []
+    active = set(validation_sections(report_type, account_scope))
+    for section, keys in CONTEXT_KEYS_BY_SECTION.items():
+        if section in active:
+            continue
+        forbidden.extend(key for key in keys if key != "style_readout")
+    return tuple(dict.fromkeys(forbidden))
+
+
+def live_research_required(report_type: str, account_scope: str) -> bool:
+    """Whether this mode should run news/events/research delegation."""
+    skipped = effective_skipped_renderers(report_type, account_scope)
+    research_triggers = {
+        "render_news",
+        "render_events",
+        "render_high_risk_opp",
+        "render_adjustments",
+        "render_actions",
+        "render_alerts",
+        "render_today_summary",
+    }
+    return any(renderer not in skipped for renderer in research_triggers)
+
+
+def describe_policy(report_type: str, account_scope: str) -> Dict[str, Any]:
+    """Machine-readable summary for agents and wrapper scripts."""
+    rt = normalize_report_type(report_type)
+    scope = normalize_account_scope(value=account_scope)
+    skipped = effective_skipped_renderers(rt, scope)
+    return {
+        "report_type": rt,
+        "account_scope": scope,
+        "rendered_renderers": sorted(ALL_RENDERERS - skipped),
+        "skipped_renderers": sorted(skipped),
+        "validation_sections": list(validation_sections(rt, scope)),
+        "required_context_keys": list(required_context_keys(rt, scope)),
+        "forbidden_context_keys": list(forbidden_context_keys(rt, scope)),
+        "hide_holdings_action_column": hide_holdings_action_column(rt, scope),
+        "live_research_required": live_research_required(rt, scope),
+    }
+
+
 def default_report_filename(timestamp: str, report_type: str, account_scope: str) -> str:
     """Build the default report filename that explicitly encodes both axes."""
     rt = normalize_report_type(report_type)
@@ -144,3 +242,34 @@ def default_report_filename(timestamp: str, report_type: str, account_scope: str
     if not ts:
         raise ValueError("timestamp must be non-empty")
     return f"{ts}_{scope}_{rt}.html"
+
+
+def _cli(argv: Optional[list[str]] = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--report-type", choices=list(REPORT_TYPES), required=True)
+    parser.add_argument("--account-scope", choices=list(ACCOUNT_SCOPES), default=None)
+    parser.add_argument("--all-accounts", action="store_true")
+    parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
+    return parser.parse_args(argv)
+
+
+def main(argv: Optional[list[str]] = None) -> int:
+    args = _cli(argv)
+    scope = normalize_account_scope(all_accounts=args.all_accounts, value=args.account_scope)
+    policy = describe_policy(args.report_type, scope)
+    if args.json:
+        print(json.dumps(policy, ensure_ascii=False, indent=2))
+        return 0
+
+    print(f"report_type: {policy['report_type']}")
+    print(f"account_scope: {policy['account_scope']}")
+    print(f"live_research_required: {str(policy['live_research_required']).lower()}")
+    print(f"hide_holdings_action_column: {str(policy['hide_holdings_action_column']).lower()}")
+    print("required_context_keys: " + ", ".join(policy["required_context_keys"]))
+    print("forbidden_context_keys: " + ", ".join(policy["forbidden_context_keys"]))
+    print("skipped_renderers: " + ", ".join(policy["skipped_renderers"]))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -6,8 +6,10 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
 from check_report_html import check_html_text  # noqa: E402
+from build_portfolio_report_context import build_context  # noqa: E402
 from fetch_prices import _is_valid_latest_price, _try_no_token_twse_stock_day  # noqa: E402
 from transactions import load_fetch_universe_lots_markdown  # noqa: E402
+from validate_report_context import validate_report_context  # noqa: E402
 
 
 def _write_event(ledger_dir: Path, name: str, body: str) -> None:
@@ -119,3 +121,44 @@ def test_report_html_check_catches_external_assets_and_nan():
 
     assert any("external script" in error for error in errors)
     assert any("raw NaN" in error for error in errors)
+
+
+def test_portfolio_context_builder_authors_only_portfolio_keys():
+    snapshot = {
+        "today": "2026-05-14",
+        "settings": {"locale": "zh-Hant", "display_name": "繁體中文"},
+        "aggregates": [
+            {"ticker": "NVDA", "market": "US", "market_value": 16000, "lots": []},
+            {"ticker": "QQQ", "market": "US", "market_value": 10000, "lots": []},
+            {"ticker": "USD", "market": "cash", "is_cash": True, "market_value": 5000, "lots": []},
+        ],
+        "totals": {"total_assets": 31000},
+        "report_accuracy": {
+            "dimensions": [
+                {"id": "quote_coverage", "score": 100, "detail": {}},
+                {"id": "profit_reconciliation", "score": 92.5, "detail": {"max_abs_gap": 12.3}},
+            ]
+        },
+    }
+
+    context = build_context(snapshot, "## Investment Style And Strategy\n- test")
+
+    assert validate_report_context(context, snapshot, report_type="portfolio_report") == []
+    assert "我" in context["strategy_readout"]
+    assert "theme_sector_html" in context
+    assert "theme_sector_audit" in context
+    assert set(context["theme_sector_audit"]["tickers"]) == {"NVDA", "QQQ"}
+    assert any(gap["summary"].startswith("資料品質") for gap in context["data_gaps"])
+    assert any("ETF" in gap["summary"] for gap in context["data_gaps"])
+    for forbidden in [
+        "news",
+        "events",
+        "research_coverage",
+        "research_targets",
+        "high_opps",
+        "adjustments",
+        "actions",
+        "trading_psychology",
+        "holdings_actions",
+    ]:
+        assert forbidden not in context
