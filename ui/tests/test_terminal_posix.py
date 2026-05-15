@@ -50,3 +50,28 @@ def test_spawn_bash_echo_hello():
     assert b"HELLO" in output, f"expected HELLO in PTY output, got {output!r}"
     assert not session.is_alive()
     assert session not in _active_sessions
+
+
+# ---------------------------------------------------------------------------
+# close escalates when a child ignores SIGHUP
+# ---------------------------------------------------------------------------
+
+def test_close_kills_child_that_ignores_hup():
+    session = TerminalSession()
+    session.spawn(
+        [
+            sys.executable,
+            "-c",
+            "import signal, time; signal.signal(signal.SIGHUP, signal.SIG_IGN); time.sleep(30)",
+        ],
+        "default",
+    )
+    assert session in _active_sessions
+
+    start = time.monotonic()
+    session.close()
+    elapsed = time.monotonic() - start
+
+    assert elapsed < 3.5
+    assert not session.is_alive()
+    assert session not in _active_sessions

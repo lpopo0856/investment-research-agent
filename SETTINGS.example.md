@@ -78,7 +78,7 @@ if you want a different comparison set.
 - Global benchmark: VT
 - US market benchmark: VTI
 - Taiwan listed benchmark: 0050.TW
-- Taiwan OTC benchmark: 00928.TW
+- Taiwan OTC benchmark: 006201.TWO
 - Japan market benchmark: EWJ
 - Hong Kong market benchmark: EWH
 - London market benchmark: EWU

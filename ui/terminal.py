@@ -117,7 +117,10 @@ if sys.platform == "win32":
             return bool(proc.isalive())
 
 else:
+    import errno
+    import os as _os
     import select
+    import signal as _signal
 
     from ptyprocess import PtyProcess as _PosixPtyProcess  # type: ignore[import-not-found]
 
@@ -174,36 +177,79 @@ else:
                 return
             proc.setwinsize(rows, cols)
 
+        def _signal_child(self, sig: int) -> None:
+            proc = self._proc
+            if proc is None:
+                return
+            try:
+                pgid = _os.getpgid(proc.pid)
+                if pgid != _os.getpgrp():
+                    _os.killpg(pgid, sig)
+                    return
+            except (ProcessLookupError, PermissionError, OSError):
+                pass
+            try:
+                _os.kill(proc.pid, sig)
+            except (ProcessLookupError, OSError):
+                pass
+
+        def _reap_child(self, timeout_s: float) -> bool:
+            proc = self._proc
+            if proc is None:
+                return True
+            deadline = time.monotonic() + timeout_s
+            while time.monotonic() < deadline:
+                try:
+                    pid, status = _os.waitpid(proc.pid, _os.WNOHANG)
+                except ChildProcessError:
+                    proc.terminated = True
+                    return True
+                except OSError as exc:
+                    if exc.errno == errno.ECHILD:
+                        proc.terminated = True
+                        return True
+                    return False
+                if pid == proc.pid:
+                    proc.status = status
+                    proc.exitstatus = _os.WEXITSTATUS(status) if _os.WIFEXITED(status) else None
+                    proc.signalstatus = _os.WTERMSIG(status) if _os.WIFSIGNALED(status) else None
+                    proc.terminated = True
+                    return True
+                time.sleep(0.02)
+            return False
+
+        def _close_master_fd(self) -> None:
+            proc = self._proc
+            if proc is None:
+                return
+            try:
+                proc.fileobj.close()
+            except (OSError, AttributeError):
+                try:
+                    if proc.fd is not None and proc.fd >= 0:
+                        _os.close(proc.fd)
+                except (OSError, TypeError):
+                    pass
+            proc.fd = -1
+            proc.closed = True
+
         def terminate(self) -> None:
             proc = self._proc
             if proc is None:
                 return
-            proc.terminate(force=False)
+            # ``ptyprocess.terminate(force=False)`` sleeps internally and can
+            # make the UI server appear frozen during agent switches. Send the
+            # signal directly; ``TerminalSession.close`` owns the bounded wait
+            # and escalation policy.
+            self._signal_child(_signal.SIGHUP)
 
         def kill(self) -> None:
             proc = self._proc
             if proc is None:
                 return
-            # First ask ptyprocess to escalate (SIGHUP -> SIGINT -> SIGKILL).
-            proc.terminate(force=True)
-            # Belt-and-suspenders: direct SIGKILL + waitpid. ptyprocess's
-            # internal wait can race the kernel reaping the child; this
-            # ensures isalive() flips False before we return.
-            if proc.isalive():
-                import os as _os
-                import signal as _signal
-                try:
-                    _os.kill(proc.pid, _signal.SIGKILL)
-                except (ProcessLookupError, OSError):
-                    pass
-                try:
-                    _os.waitpid(proc.pid, 0)
-                except (ChildProcessError, OSError):
-                    pass
-            try:
-                proc.close()
-            except (OSError, AttributeError):
-                pass
+            self._signal_child(_signal.SIGKILL)
+            self._reap_child(timeout_s=1.0)
+            self._close_master_fd()
 
         def is_alive(self) -> bool:
             proc = self._proc
@@ -229,7 +275,13 @@ class TerminalSession:
         self._impl: _Impl = _Impl()
         self._spawned: bool = False
 
-    def spawn(self, argv, account: str) -> None:
+    def spawn(
+        self,
+        argv,
+        account: str,
+        cols: int = _DEFAULT_COLS,
+        rows: int = _DEFAULT_ROWS,
+    ) -> None:
         """Launch ``argv`` under a fresh PTY.
 
         ``argv`` may be a bare binary name (``"claude"``) or a list of
@@ -249,13 +301,15 @@ class TerminalSession:
         full_argv = [which_result, *argv[1:]]
         env = os.environ.copy()
         env["INVESTMENTS_ACTIVE_ACCOUNT"] = account
+        env.setdefault("TERM", "xterm-256color")
+        env.setdefault("COLORTERM", "truecolor")
 
         self._impl.spawn(
             argv=full_argv,
             cwd=str(REPO_ROOT),
             env=env,
-            cols=_DEFAULT_COLS,
-            rows=_DEFAULT_ROWS,
+            cols=cols,
+            rows=rows,
         )
         self._spawned = True
         _active_sessions.add(self)

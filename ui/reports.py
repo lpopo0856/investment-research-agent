@@ -10,6 +10,7 @@ from __future__ import annotations
 import math
 import os
 import re
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from ui.accounts import resolve_account_path
@@ -75,6 +76,46 @@ def paginate(items: list, page: int, size: int = 12) -> dict:
         "total_pages": total_pages,
         "total": total,
         "size": size,
+    }
+
+
+def clear_old_reports(account: str, *, days: int = 30, today: date | None = None) -> dict:
+    """Delete report HTML files dated at least ``days`` old for *account*.
+
+    Only files matching :data:`REPORT_RE` are eligible. The age is based on the
+    report date embedded in the filename, not filesystem mtime, so cleanup is
+    deterministic and matches the report list order.
+    """
+    if days < 1:
+        raise ValueError("days must be >= 1")
+
+    account_dir = resolve_account_path(account)
+    reports_dir = account_dir / "reports"
+    cutoff = (today or date.today()) - timedelta(days=days)
+    deleted: list[str] = []
+
+    if not reports_dir.is_dir():
+        return {"deleted": deleted, "deleted_count": 0, "cutoff_date": cutoff.isoformat()}
+
+    for entry in reports_dir.iterdir():
+        if not entry.is_file():
+            continue
+        m = REPORT_RE.match(entry.name)
+        if m is None:
+            continue
+        try:
+            report_date = datetime.strptime(m.group("date"), "%Y-%m-%d").date()
+        except ValueError:
+            continue
+        if report_date <= cutoff:
+            entry.unlink()
+            deleted.append(entry.name)
+
+    deleted.sort(reverse=True)
+    return {
+        "deleted": deleted,
+        "deleted_count": len(deleted),
+        "cutoff_date": cutoff.isoformat(),
     }
 
 

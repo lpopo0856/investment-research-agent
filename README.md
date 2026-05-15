@@ -4,7 +4,7 @@
 
 The English README is the canonical version. Other languages are reader-friendly translations.
 
-Investment Research Agent is a private, local assistant for tracking your portfolio, recording trades, importing brokerage statements, and turning your holdings into clear research and action plans. Open the workspace with your assistant and describe what you want in normal language.
+Investment Research Agent is a private, local assistant for tracking your portfolio, recording trades, importing brokerage statements, and turning your holdings into clear research and action plans. The recommended entry point is the local web UI: start the UI server directly from your terminal, use the browser controls for routine account/holding/report/settings work, and use the embedded agent CLI only when you want natural-language automation or analysis.
 
 ## Report Demo
 
@@ -18,7 +18,7 @@ Investment Research Agent is a private, local assistant for tracking your portfo
 - Git is recommended for installing this repo from GitHub. A ZIP download works for a one-time trial, but it is a standalone copy and cannot use the assistant-managed upgrade flow.
 - Optional broker data, such as a statement, CSV, spreadsheet, PDF, screenshot, or pasted transaction history, if you want the assistant to build your real portfolio.
 
-You do not need to learn project scripts or install technical packages by hand. During onboarding, the assistant checks the local setup, installs the small dependency set if needed, and tells you if something requires your attention.
+You do not need to learn the project internals. Start the local UI from a normal terminal, then use the browser interface directly for routine work. The embedded agent CLI is there for tasks that benefit from natural language, such as importing messy files, recording complex activity, researching investments, generating new reports, or maintenance.
 
 ### Start using it
 
@@ -30,13 +30,24 @@ You do not need to learn project scripts or install technical packages by hand. 
    git checkout "$(git tag --sort=-v:refname | head -n 1)"
    ```
 
-2. **Open the folder with your assistant.** Use a local assistant that can work with files in this workspace.
-3. **Start in normal language.** Good first prompts are:
+2. **Start the local UI from your terminal.** Run the UI server from the repo root so it stays in a visible terminal window you can close when finished:
+
+   ```bash
+   python3 -m venv .venv-ui
+   source .venv-ui/bin/activate
+   pip install -r requirements-ui.txt
+   python3 scripts/run_ui_server.py
+   ```
+
+   Then open `http://127.0.0.1:8765/` if your browser does not open automatically. From there you can use the UI directly to select or create accounts, review holdings, open existing reports, and edit settings with previews.
+
+3. **Use the UI first; use the embedded agent CLI when helpful.** Routine navigation and edits should usually happen through the browser controls. Use the embedded Claude/Codex agent CLI for natural-language jobs such as:
 
    > "Help me get started."
-   > "Create my first investment account."
    > "Import this broker statement and show me what you found before saving."
+   > "Record these trades from my notes."
    > "Generate a portfolio report from the demo data."
+   > "Analyze NVDA against my current portfolio."
 
 4. **Review before anything is saved.** The assistant previews settings, transaction, and import changes before writing portfolio data, so you can confirm or edit the plan first.
 
@@ -60,7 +71,7 @@ The assistant will use the `upgrade-management` skill to back up private portfol
 
 ## Main features
 
-You do not need technical setup knowledge. Describe your intention in plain language, and the assistant will handle the workflow. If anything changes saved portfolio data, it will show you the proposed change and ask for confirmation before saving.
+You do not need technical setup knowledge. Use the local UI as the home base: click through accounts, holdings, reports, and settings directly, and use the embedded agent CLI for natural-language automation or analysis. If anything changes saved portfolio data, the UI/agent workflow previews the change so you can confirm or edit the plan first.
 
 - **Get started** — create your first account, import your starting portfolio, and set up your investing style.
 - **Set your strategy** — define risk tolerance, sizing style, holding period, language, base currency, and off-limits areas.
@@ -76,19 +87,38 @@ You do not need technical setup knowledge. Describe your intention in plain lang
 
 ## Detailed usage
 
+### Open the local UI
+
+The local UI is the easiest way to use this project day to day. Start it from a visible terminal in the repo root:
+
+```bash
+source .venv-ui/bin/activate  # if you created the venv above
+python3 scripts/run_ui_server.py
+```
+
+Then open `http://127.0.0.1:8765/`. The browser dashboard becomes the front door for normal use. Prefer direct UI controls for routine work:
+
+- select, create, and switch accounts,
+- review holdings and use quick actions,
+- open existing reports in the report viewer,
+- edit settings section by section with previews,
+- launch the embedded Claude/Codex agent CLI when a task needs natural-language help.
+
+Use the embedded agent CLI for work that is easier to describe than click through: recording trades from notes, importing broker files, reconciling confusing records, researching a holding, generating a new report, or upgrading/maintaining the repo. The same confirmation gates still apply before settings or ledger data is saved.
+
 ### Ask what is possible
 
-If you are not sure where to start, say something like:
+If you are not sure where to start, first scan the UI tabs for accounts, holdings, reports, and settings. If you still want guidance, ask the embedded agent CLI:
 
 > "What can I do here?"
 > "Show me what is possible."
 > "Help."
 
-The assistant will give you a simple menu for onboarding, recording transactions, researching investments, and producing reports.
+The agent will give you a simple menu for onboarding, recording transactions, researching investments, and producing reports.
 
 ### Get started or onboard a portfolio
 
-For a new setup, describe the goal:
+For a new setup, use the UI to create/select the account when that is straightforward. Use the embedded agent CLI when you want guided setup or are importing broker data:
 
 > "Help me get started."
 > "Onboard me."
@@ -99,7 +129,7 @@ You can attach a brokerage statement, spreadsheet, PDF, screenshot, or pasted tr
 
 ### Set or review your investing style
 
-Tell the assistant how you invest so future research sounds and acts like you:
+For simple settings changes, use the UI settings editor directly; it shows section previews before saving. Use the embedded agent CLI when you want help wording strategy, reviewing consistency, or changing several related settings:
 
 > "Walk me through my settings."
 > "Review my strategy."
@@ -115,15 +145,10 @@ This can include account purpose, risk tolerance, position sizing, holding perio
 
 Accounts here are just separate ledgers — split them however suits your bookkeeping. Common ways: by person (yourself, spouse, a kid's college fund), by goal (retirement, house, emergency cash), by strategy (core, satellite, speculative), by tax bucket (taxable, tax-advantaged), or, if it fits how you think, by stock market (Taiwan, US, Japan). The tool does not prescribe a split.
 
-> "Add a retirement account."
-> "Open an account for my spouse."
-> "Add a college fund ledger for my kid."
+Use the account controls in the UI for ordinary create/list/switch actions. Use the embedded agent CLI only when the account setup needs explanation, multiple steps, or a report/action generated from the selected account:
+
 > "Add a satellite strategy account for higher-risk bets."
 > "Create a new account for my Japan portfolio."
-> "Show all my accounts."
-> "Which account am I using now?"
-> "Switch to my default account."
-> "Switch to my Taiwan account."
 > "Generate a report for my retirement account."
 > "Generate a total report across all accounts."
 
@@ -209,7 +234,7 @@ The portfolio report focuses on holdings, cash, allocation, profit and loss, con
 
 ### Generate a total report across accounts
 
-When you have more than one account, ask for a combined view:
+When you have more than one account, use the UI to switch between accounts or ask the embedded agent CLI for a combined view:
 
 > "Generate a total report across all accounts."
 > "Show my total portfolio."

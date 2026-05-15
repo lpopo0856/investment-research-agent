@@ -27,7 +27,9 @@ DEFAULT_GLOBAL_BENCHMARK = BenchmarkSpec("VT", "US")
 DEFAULT_MARKET_BENCHMARKS: Dict[str, Optional[BenchmarkSpec]] = {
     "us": BenchmarkSpec("VTI", "US"),
     "tw": BenchmarkSpec("0050.TW", "TW"),
-    "two": BenchmarkSpec("00928.TW", "TW"),
+    # Yuanta Taiwan GreTai 50 ETF has a longer live history than 00928 and
+    # tracks the GreTai/TPEx 50 index, making it the default OTC benchmark.
+    "two": BenchmarkSpec("006201.TWO", "TWO"),
     "jp": BenchmarkSpec("EWJ", "US"),
     "hk": BenchmarkSpec("EWH", "US"),
     "lse": BenchmarkSpec("EWU", "US"),

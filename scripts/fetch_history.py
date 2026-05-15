@@ -747,7 +747,14 @@ def collect_history(
         rows, reason = fetch_ticker_history(ticker, market, lookback_days)
         if rows:
             if use_cache and cache_path:
-                cache_put_price_rows(cache_path, ticker, market, rows, source="api_fallback_chain")
+                cache_put_price_rows(
+                    cache_path,
+                    ticker,
+                    market,
+                    rows,
+                    source="api_fallback_chain",
+                    currency=_native_ccy_for_market(market),
+                )
                 rows = cache_get_price_rows(cache_path, ticker, market, lookback_days)
             else:
                 rows = _dedupe_rows(cached + rows)

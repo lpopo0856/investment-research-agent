@@ -28,11 +28,25 @@ from report_mode_policy import describe_policy  # noqa: E402
 
 
 WROTE_RE = re.compile(r"Wrote\s+(?P<path>/.+?\.html)\b")
+FETCH_PRICES_TIMEOUT_SEC = 5 * 60
+FETCH_HISTORY_TIMEOUT_SEC = 5 * 60
 
 
-def _run(cmd: List[str], *, cwd: Path = REPO_ROOT) -> subprocess.CompletedProcess[str]:
+def _run(
+    cmd: List[str],
+    *,
+    cwd: Path = REPO_ROOT,
+    timeout: Optional[float] = None,
+) -> subprocess.CompletedProcess[str]:
     print("+ " + " ".join(cmd), flush=True)
-    return subprocess.run(cmd, cwd=cwd, text=True, capture_output=True, check=True)
+    return subprocess.run(
+        cmd,
+        cwd=cwd,
+        text=True,
+        capture_output=True,
+        check=True,
+        timeout=timeout,
+    )
 
 
 def _print_completed(completed: subprocess.CompletedProcess[str]) -> None:
@@ -71,8 +85,28 @@ def run_single_account_portfolio_report(*, account: str, keep_run_dir: bool = Fa
         context = run_dir / "report_context.json"
 
         for completed in [
-            _run([sys.executable, "scripts/fetch_prices.py", "--account", account, "--output", str(prices)]),
-            _run([sys.executable, "scripts/fetch_history.py", "--account", account, "--merge-into", str(prices)]),
+            _run(
+                [
+                    sys.executable,
+                    "scripts/fetch_prices.py",
+                    "--account",
+                    account,
+                    "--output",
+                    str(prices),
+                ],
+                timeout=FETCH_PRICES_TIMEOUT_SEC,
+            ),
+            _run(
+                [
+                    sys.executable,
+                    "scripts/fetch_history.py",
+                    "--account",
+                    account,
+                    "--merge-into",
+                    str(prices),
+                ],
+                timeout=FETCH_HISTORY_TIMEOUT_SEC,
+            ),
             _run(
                 [
                     sys.executable,

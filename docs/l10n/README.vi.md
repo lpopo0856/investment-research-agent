@@ -4,7 +4,7 @@
 
 README tiếng Anh là bản được duy trì chính; các ngôn ngữ khác là bản dịch để đọc thuận tiện.
 
-Investment Research Agent là trợ lý đầu tư riêng tư chạy trong máy của bạn. Nó giúp theo dõi danh mục, ghi nhận giao dịch, nhập dữ liệu từ công ty chứng khoán, rồi biến các khoản nắm giữ thành nghiên cứu và kế hoạch hành động rõ ràng. Mở không gian làm việc và mô tả điều bạn muốn bằng ngôn ngữ tự nhiên.
+Investment Research Agent là trợ lý đầu tư riêng tư chạy trong máy của bạn. Nó giúp theo dõi danh mục, ghi nhận giao dịch, nhập dữ liệu từ công ty chứng khoán, rồi biến các khoản nắm giữ thành nghiên cứu và kế hoạch hành động rõ ràng. Điểm vào khuyến nghị là UI web cục bộ: khởi động UI server trực tiếp từ terminal thường, dùng giao diện trình duyệt cho các thao tác tài khoản/vị thế/báo cáo/cài đặt hằng ngày, và chỉ dùng agent CLI nhúng khi cần tự động hóa hoặc phân tích bằng ngôn ngữ tự nhiên.
 
 ## Ví dụ báo cáo
 
@@ -18,18 +18,29 @@ Investment Research Agent là trợ lý đầu tư riêng tư chạy trong máy 
 - Nên cài repo này từ GitHub bằng Git. Nếu bạn chưa biết Git hoặc chưa cài Git, hãy bắt đầu với [hướng dẫn cài Git cho người mới](git-install.vi.md). Tải ZIP vẫn dùng được để thử một lần, nhưng đó là bản sao độc lập và không dùng được quy trình nâng cấp do trợ lý quản lý.
 - Dữ liệu công ty chứng khoán tùy chọn nếu bạn muốn trợ lý dựng danh mục thật, như sao kê, CSV, bảng tính, PDF, ảnh chụp màn hình hoặc lịch sử giao dịch dán vào.
 
-Bạn không cần học script của dự án hoặc tự cài các gói kỹ thuật. Trong onboarding, trợ lý sẽ kiểm tra môi trường cục bộ, cài bộ dependency nhỏ nếu cần, và cho bạn biết nếu có việc cần chú ý.
+Bạn không cần hiểu nội bộ dự án. Hãy khởi động UI cục bộ từ terminal thường, rồi dùng giao diện trình duyệt trực tiếp cho công việc thường ngày. Agent CLI nhúng dành cho các việc hợp với ngôn ngữ tự nhiên hơn, như nhập file phức tạp, ghi hoạt động phức tạp, nghiên cứu đầu tư, tạo báo cáo mới hoặc bảo trì.
 
 ### Bắt đầu sử dụng
 
 1. **Cài repo này bằng Git (khuyến nghị).** Clone từ `https://github.com/lpopo0856/investment-research-agent.git`, rồi mở thư mục. Nếu Git còn mới với bạn, hãy làm theo [hướng dẫn cài Git cho người mới](git-install.vi.md). Nếu bạn chỉ tải ZIP, bạn vẫn có thể dùng thử, nhưng cập nhật sau này phải làm thủ công; để dùng lâu dài, nên cài bằng Git.
-2. **Mở thư mục bằng trợ lý của bạn.** Dùng trợ lý cục bộ có thể làm việc với file trong workspace này.
-3. **Bắt đầu bằng ngôn ngữ bình thường.** Bạn có thể bắt đầu như sau:
+2. **Khởi động UI cục bộ từ terminal.** Chạy UI server từ repo root để server nằm trong một cửa sổ terminal nhìn thấy được và bạn có thể đóng khi xong:
+
+   ```bash
+   python3 -m venv .venv-ui
+   source .venv-ui/bin/activate
+   pip install -r requirements-ui.txt
+   python3 scripts/run_ui_server.py
+   ```
+
+   Nếu trình duyệt không tự mở, hãy mở `http://127.0.0.1:8765/`. Từ đó bạn có thể dùng UI trực tiếp để chọn hoặc tạo tài khoản, xem vị thế, mở báo cáo đã có, sửa cài đặt và xem trước thay đổi.
+
+3. **Dùng UI trước; dùng agent CLI nhúng khi hữu ích.** Điều hướng và chỉnh sửa đơn giản thường nên làm bằng các điều khiển trong trình duyệt. Dùng Claude/Codex agent CLI nhúng cho các việc bằng ngôn ngữ tự nhiên như:
 
    > "Hãy chuyển repo này sang release tag mới nhất, rồi giúp tôi bắt đầu."
-   > "Tạo tài khoản đầu tư đầu tiên cho tôi."
    > "Nhập sao kê công ty chứng khoán này và cho tôi xem bạn đọc được gì trước khi lưu."
+   > "Ghi các giao dịch này từ ghi chú của tôi."
    > "Tạo báo cáo danh mục từ dữ liệu demo."
+   > "Phân tích NVDA so với danh mục hiện tại của tôi."
 
    Câu mở đầu nên dùng đúng dòng chuyển release tag ở trên — nó đảm bảo bạn đang ở bản phát hành mới nhất trước khi có dữ liệu danh mục nào bị ghi, và hoạt động cho cả người cài bằng Git CLI lẫn GitHub Desktop.
 
@@ -55,7 +66,7 @@ Trợ lý sẽ dùng skill `upgrade-management` để sao lưu dữ liệu danh 
 
 ## Tính năng chính
 
-Bạn không cần biết chi tiết kỹ thuật. Chỉ cần mô tả ý định bằng lời nói thường ngày, trợ lý sẽ xử lý quy trình. Nếu có thao tác thay đổi dữ liệu danh mục đã lưu, trợ lý sẽ cho bạn xem thay đổi dự kiến và chờ xác nhận trước khi lưu.
+Bạn không cần biết chi tiết kỹ thuật. Hãy dùng UI cục bộ làm trang chính: bấm qua tài khoản, vị thế, báo cáo và cài đặt trực tiếp, rồi dùng agent CLI nhúng cho tự động hóa hoặc phân tích bằng ngôn ngữ tự nhiên. Nếu có thao tác thay đổi dữ liệu danh mục đã lưu, luồng UI/agent sẽ cho bạn xem thay đổi dự kiến và chờ xác nhận trước khi lưu.
 
 - **Bắt đầu sử dụng** — tạo tài khoản đầu tiên, nhập danh mục ban đầu và thiết lập phong cách đầu tư của bạn.
 - **Thiết lập chiến lược** — xác định khẩu vị rủi ro, cách phân bổ vị thế, thời gian nắm giữ, ngôn ngữ, tiền tệ gốc và những lĩnh vực không muốn đụng tới.
@@ -71,19 +82,38 @@ Bạn không cần biết chi tiết kỹ thuật. Chỉ cần mô tả ý đị
 
 ## Cách dùng chi tiết
 
+### Mở UI cục bộ
+
+UI cục bộ là cách dễ nhất để dùng dự án hằng ngày. Khởi động nó từ terminal nhìn thấy được trong repo root:
+
+```bash
+source .venv-ui/bin/activate  # nếu bạn đã tạo venv ở trên
+python3 scripts/run_ui_server.py
+```
+
+Sau đó mở `http://127.0.0.1:8765/`. Dashboard trong trình duyệt trở thành cửa vào chính. Ưu tiên dùng điều khiển UI cho công việc thường ngày:
+
+- chọn, tạo và chuyển tài khoản
+- xem vị thế và dùng thao tác nhanh
+- mở báo cáo đã có trong trình xem báo cáo
+- sửa cài đặt từng phần kèm bản xem trước
+- chỉ mở Claude/Codex agent CLI nhúng khi tác vụ cần trợ giúp bằng ngôn ngữ tự nhiên
+
+Agent CLI nhúng phù hợp với việc dễ mô tả bằng chữ hơn là bấm qua: ghi giao dịch từ ghi chú, nhập file công ty chứng khoán, đối chiếu bản ghi phức tạp, nghiên cứu một khoản nắm giữ, tạo báo cáo mới, hoặc nâng cấp/bảo trì repo. Các gate xác nhận vẫn áp dụng trước khi lưu cài đặt hoặc dữ liệu ledger.
+
 ### Hỏi xem có thể làm gì
 
-Nếu chưa biết bắt đầu từ đâu, hãy nói như sau:
+Nếu chưa biết bắt đầu từ đâu, trước tiên hãy xem các tab tài khoản, vị thế, báo cáo và cài đặt trong UI. Nếu vẫn muốn được hướng dẫn, hãy hỏi agent CLI nhúng:
 
 > "Ở đây tôi có thể làm gì?"
 > "Cho tôi xem các tính năng."
 > "Trợ giúp."
 
-Trợ lý sẽ đưa một menu đơn giản cho việc bắt đầu, ghi giao dịch, nghiên cứu đầu tư và tạo báo cáo.
+Agent nhúng sẽ đưa một menu đơn giản cho việc bắt đầu, ghi giao dịch, nghiên cứu đầu tư và tạo báo cáo.
 
 ### Bắt đầu hoặc thiết lập danh mục
 
-Khi thiết lập lần đầu, hãy mô tả mục tiêu:
+Khi thiết lập lần đầu, nếu chỉ cần tạo hoặc chọn tài khoản thì có thể làm trực tiếp trong UI. Dùng agent CLI nhúng khi bạn muốn được hướng dẫn hoặc cần nhập dữ liệu công ty chứng khoán:
 
 > "Giúp tôi bắt đầu."
 > "Onboard giúp tôi."
@@ -94,7 +124,7 @@ Bạn có thể đính kèm sao kê, bảng tính, PDF, ảnh chụp màn hình 
 
 ### Thiết lập hoặc xem lại phong cách đầu tư
 
-Hãy cho trợ lý biết bạn đầu tư như thế nào để các nghiên cứu sau này dùng đúng giọng điệu và kỷ luật của bạn:
+Các thay đổi cài đặt đơn giản có thể sửa trực tiếp trong trình biên tập cài đặt của UI, có xem trước từng phần. Dùng agent CLI nhúng khi bạn muốn trợ giúp viết chiến lược, kiểm tra tính nhất quán hoặc đổi nhiều cài đặt liên quan:
 
 > "Đi qua phần cài đặt với tôi."
 > "Xem lại chiến lược đầu tư của tôi."
@@ -109,15 +139,10 @@ Nội dung có thể gồm khẩu vị rủi ro, quy mô vị thế, thời gian
 
 "Tài khoản" ở đây chỉ là sổ ghi chép tách riêng. Bạn chia sao cũng được: theo người (bạn, vợ/chồng, quỹ học vấn của con), theo mục đích (hưu trí, mua nhà, quỹ khẩn cấp), theo chiến lược (lõi, vệ tinh, vị thế thử nghiệm), theo phân loại thuế, hoặc nếu quen, theo thị trường (Việt Nam, Mỹ, Nhật Bản). Công cụ không bắt buộc cách chia.
 
-> "Thêm tài khoản hưu trí."
-> "Tạo tài khoản cho vợ/chồng tôi."
-> "Thêm sổ ghi quỹ học vấn cho con."
+Với thao tác tạo, liệt kê và chuyển tài khoản thông thường, nên dùng điều khiển tài khoản trong UI. Chỉ dùng agent CLI nhúng khi thiết lập tài khoản cần giải thích, nhiều bước, hoặc cần tạo báo cáo/hành động từ tài khoản đã chọn:
+
 > "Tạo tài khoản chiến lược vệ tinh (vị thế nhỏ, rủi ro cao)."
 > "Tạo tài khoản mới cho danh mục Nhật Bản của tôi."
-> "Hiển thị tất cả tài khoản của tôi."
-> "Hiện tôi đang dùng tài khoản nào?"
-> "Chuyển sang tài khoản mặc định."
-> "Chuyển sang tài khoản Việt Nam."
 > "Tạo báo cáo cho tài khoản hưu trí."
 > "Gộp tất cả tài khoản để tạo báo cáo tổng hợp."
 

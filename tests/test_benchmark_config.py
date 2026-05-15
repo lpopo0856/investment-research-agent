@@ -13,7 +13,7 @@ def test_default_taiwan_benchmarks_use_local_0050_etf():
     config = load_benchmark_config(None)
 
     assert config["markets"]["tw"] == {"ticker": "0050.TW", "market": "TW"}
-    assert config["markets"]["two"] == {"ticker": "00928.TW", "market": "TW"}
+    assert config["markets"]["two"] == {"ticker": "006201.TWO", "market": "TWO"}
 
 
 def test_settings_override_can_still_replace_taiwan_benchmark(tmp_path):

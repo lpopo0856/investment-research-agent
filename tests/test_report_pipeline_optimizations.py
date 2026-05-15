@@ -7,7 +7,14 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 from check_report_html import check_html_text  # noqa: E402
 from build_portfolio_report_context import build_context  # noqa: E402
-from fetch_prices import _is_valid_latest_price, _try_no_token_twse_stock_day  # noqa: E402
+from fetch_prices import (  # noqa: E402
+    MarketType,
+    PriceResult,
+    _currency_from_history_cache,
+    _is_valid_latest_price,
+    _verify_currency_via_internet,
+    _try_no_token_twse_stock_day,
+)
 from transactions import load_fetch_universe_lots_markdown  # noqa: E402
 from validate_report_context import validate_report_context  # noqa: E402
 
@@ -112,6 +119,40 @@ def test_invalid_latest_prices_are_rejected():
     assert not _is_valid_latest_price(float("nan"))
     assert not _is_valid_latest_price(None)
     assert not _is_valid_latest_price(0)
+
+
+def test_currency_verify_uses_twd_for_taiwan_without_network():
+    class FailingSession:
+        @staticmethod
+        def get(*_args, **_kwargs):
+            raise AssertionError("Taiwan currency should not hit network")
+
+    pr = PriceResult(ticker="2330", market=MarketType.TW, yfinance_symbol="2330.TW")
+
+    _verify_currency_via_internet(pr, FailingSession(), pacer=None)  # type: ignore[arg-type]
+
+    assert pr.currency == "TWD"
+    assert "currency_verify:taiwan_market_twd" in pr.fallback_chain
+
+
+def test_currency_from_history_cache_reads_newest_cached_currency(tmp_path):
+    cache = tmp_path / "market_data_cache.json"
+    cache.write_text(
+        """
+        {
+          "price_history": {
+            "VWRA|LSE": [
+              {"date": "2026-05-01", "close": 100, "currency": null},
+              {"date": "2026-05-02", "close": 101, "currency": "usd"}
+            ]
+          },
+          "fx_history": {}
+        }
+        """,
+        encoding="utf-8",
+    )
+
+    assert _currency_from_history_cache("VWRA", MarketType.LSE, cache) == "USD"
 
 
 def test_report_html_check_catches_external_assets_and_nan():

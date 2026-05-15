@@ -12,8 +12,12 @@ use this", "import my transactions", or hands you a statement file.
 The goal: take a cold-start user from an empty repo to a working
 `accounts/default/SETTINGS.md` + `accounts/default/ledger/` that
 the research / report / transaction workflows in `README.md` can run against.
-Onboarding also owns the basic local environment check, so the public README
-can stay user-facing instead of teaching users Python or pip commands.
+The preferred user-facing front door is the local web UI (`scripts/run_ui_server.py`):
+new users should be able to start there, choose/create an account, inspect
+holdings/reports/settings, and use the embedded Claude/Codex terminal without
+learning repo scripts. Onboarding also owns the basic local environment and UI
+setup check, so the public README can stay user-facing instead of teaching
+users Python or pip commands.
 
 This document does **not** replace `docs/transactions_agent_guidelines.md`.
 Once the ledger exists and the user is recording flows, that file is the
@@ -87,13 +91,45 @@ generic non-personalized education/news/research, repo maintenance that does
 not read or depend on account files, safe account detection/listing, and this
 onboarding/settings interview. All other account-sensitive workflows must wait.
 
+## 2.4 UI entrypoint — make the browser dashboard the default front door
+
+When a user asks how to start, onboard, or use the project, prefer the local UI
+as the entrypoint unless they explicitly request command-line-only usage or the
+runtime cannot launch a browser. In user-facing language, say that you will open
+the investment UI and that it provides account navigation, holdings, reports,
+settings editing, and an embedded Claude/Codex terminal for natural-language
+workflows.
+
+Agent-owned setup steps:
+
+1. Ensure the UI dependency set is available (`requirements-ui.txt`, or
+   `requirements-ui-dev.txt` when running tests). Install it yourself when safe
+   and local permissions allow it; do not ask the user to run pip unless blocked
+   or they explicitly ask for manual CLI instructions.
+2. Start `python scripts/run_ui_server.py` from the repo root only in a visible
+   independent terminal/window. Never run the UI server as a hidden
+   Codex/agent-managed background session; the user must be able to see and
+   close the server terminal. The server binds to `127.0.0.1` and normally opens
+   `http://127.0.0.1:8765/` automatically.
+3. If port `8765` is occupied, retry with `INVESTMENTS_UI_PORT=<free-port>` in
+   the visible terminal and tell the user the exact local URL.
+4. If no visible terminal launch path is available, do not start a hidden
+   background server; report the blocker and provide the local URL/command as a
+   manual fallback. If a browser cannot be opened automatically, provide the
+   local URL only; do not expose unrelated internal command details.
+
+The UI does **not** weaken onboarding safety gates. Settings and ledger writes
+still require the same preview/diff, explicit confirmation, backup, and verify
+rules described below. The embedded terminal is just the recommended surface for
+those natural-language workflows.
+
 ## 2.5 Environment preflight — can the local workflow run?
 
 Before account detection for a new-user onboarding flow, check that the local
-runtime can execute the repo scripts and import the small market-data
-dependency set. These commands are agent-internal contracts; do not show them
-as instructions to the user unless they explicitly ask for CLI help or local
-permissions block execution.
+runtime can execute the repo scripts, import the small market-data dependency
+set, and run the local UI entrypoint when requested. These commands are
+agent-internal contracts; do not show them as instructions to the user unless
+they explicitly ask for CLI help or local permissions block execution.
 
 ```sh
 python3 --version
@@ -114,7 +150,8 @@ is available or installation fails, report the blocker and explain that Python
 bypass OS prompts.
 
 If Python is usable and only `requests` or `yfinance` is missing, install them
-as part of onboarding:
+as part of onboarding. If the user is opening the UI, also ensure the packages
+in `requirements-ui.txt` are installed before launching the server.
 
 ```sh
 python3 -m pip install yfinance requests

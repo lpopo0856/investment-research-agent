@@ -23,7 +23,7 @@ Treat natural language as the only default user interface. Command snippets, fla
 
 ## Environment Preflight
 
-For new-user onboarding, the agent owns the technical setup check. Do not send the user to README for Python or package installation steps.
+For new-user onboarding, the agent owns the technical setup check. Do not send the user to README for Python or package installation steps. The default user-facing entrypoint is the local browser UI; when the user asks to start or onboard, offer to open it and run the setup yourself when safe.
 
 Run a lightweight environment check before account/layout work:
 
@@ -45,6 +45,8 @@ python3 -m pip install yfinance requests
 ```
 
 If dependency installation fails, report the blocker and continue only with workflow parts that do not require the missing dependency. Do not ask the user to run pip commands unless execution is blocked by local permissions or they explicitly ask for manual CLI instructions.
+
+For the UI entrypoint, ensure `requirements-ui.txt` is installed when needed and launch `python scripts/run_ui_server.py` from the repo root only inside a visible independent terminal/window. Never start the UI server in a Codex/agent-managed background session. It binds to `127.0.0.1` and normally opens `http://127.0.0.1:8765/`; if the default port is occupied, retry with `INVESTMENTS_UI_PORT=<free-port>` in the visible terminal and give the user the resulting local URL. The UI is only the preferred surface; all settings and ledger write gates still apply. If no visible terminal launch path exists, report the blocker instead of starting a hidden background server.
 
 ## Layout Preflight Gate
 

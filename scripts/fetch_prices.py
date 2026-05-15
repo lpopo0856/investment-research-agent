@@ -105,6 +105,7 @@ import random
 import re
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
@@ -134,6 +135,8 @@ YF_MIN_GAP_SEC: Tuple[float, float] = (1.5, 2.5)   # random.uniform(*range) betw
 YF_BATCH_SIZE: int = 25                            # max tickers per batch
 YF_BATCH_GAP_SEC: float = 3.0                      # gap between batches
 YF_HTTP_TIMEOUT_SEC: int = 12                      # per-request HTTP timeout
+PUBLIC_FETCH_WORKERS: int = int(os.environ.get("INVESTMENTS_PUBLIC_FETCH_WORKERS", "8"))
+HISTORY_CACHE_PATH: Path = Path("market_data_cache.json")
 # Rate-limit policy (§8.3 / §8.3.1): no retry on yfinance. A 429 / empty
 # response tiers down to the next source in the fallback chain immediately.
 # Retrying yfinance during the limiter window prolongs the throttle and
@@ -1166,12 +1169,157 @@ def _try_yfinance_per_ticker(symbol: str, pacer: "Pacer", session: Optional[Any]
     }
 
 
+def _new_http_session() -> Optional[Any]:
+    """Build a requests session for no-token HTTP sources."""
+    try:
+        import requests  # type: ignore[import-not-found]
+    except ImportError:
+        return None
+    session = requests.Session()
+    session.headers.update({"User-Agent": "portfolio-report-agent/1.0"})
+    return session
+
+
+def _apply_price_payload(pr: PriceResult, label: str, out: Dict[str, Any]) -> PriceResult:
+    pr.latest_price = out.get("latest_price")
+    pr.prior_close = out.get("prior_close")
+    pr.move_pct = out.get("move_pct")
+    pr.currency = out.get("currency") or pr.currency
+    pr.exchange = out.get("exchange") or pr.exchange
+    pr.price_source = out.get("price_source", label)
+    pr.price_as_of = out.get("price_as_of") or _utc_iso()
+    state = _classify_market_state(pr.market)
+    pr.market_state_basis = state.value
+    pr.price_freshness = _freshness_for_state(state, has_intraday=True)
+    pr.fallback_chain.append(label)
+    return pr
+
+
+def _chain_segment(chain: List[Tuple[str, Any]], segment: str) -> List[Tuple[str, Any]]:
+    """Return no-yfinance chain entries before or after the yfinance step."""
+    labels = [label for label, _ in chain]
+    if "yfinance" not in labels:
+        return chain if segment == "prefix" else []
+    yf_idx = labels.index("yfinance")
+    if segment == "prefix":
+        return chain[:yf_idx]
+    if segment == "suffix":
+        return chain[yf_idx + 1 :]
+    raise ValueError(f"unknown chain segment: {segment}")
+
+
+def _run_public_chain_segment(
+    ticker: str,
+    market: MarketType,
+    pr: PriceResult,
+    segment: str,
+) -> PriceResult:
+    """Run one Stooq/public no-token segment with a worker-local session."""
+    session = _new_http_session()
+    if session is None:
+        return pr
+    chain = _build_fallback_chain(market, session, pr.yfinance_symbol, ticker, pacer=Pacer())
+    for label, callable_ in _chain_segment(chain, segment):
+        if label == "yfinance":
+            continue
+        out = callable_()
+        if out and _is_valid_latest_price(out.get("latest_price")):
+            return _apply_price_payload(pr, label, out)
+        pr.fallback_chain.append(f"{label}:miss")
+    return pr
+
+
+def _run_public_segments_concurrently(
+    results: Dict[str, PriceResult],
+    distinct: Iterable[Tuple[str, MarketType]],
+    segment: str,
+) -> None:
+    """Run public/no-token source probes concurrently without touching yfinance."""
+    pending = [
+        (ticker, market)
+        for ticker, market in distinct
+        if results[ticker].price_source == "n/a"
+    ]
+    if not pending:
+        return
+    workers = max(1, min(PUBLIC_FETCH_WORKERS, len(pending)))
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        future_map = {
+            executor.submit(
+                _run_public_chain_segment,
+                ticker,
+                market,
+                results[ticker],
+                segment,
+            ): ticker
+            for ticker, market in pending
+        }
+        for fut in as_completed(future_map):
+            ticker = future_map[fut]
+            try:
+                results[ticker] = fut.result()
+            except Exception as exc:  # noqa: BLE001
+                results[ticker].fallback_chain.append(
+                    f"public_{segment}:exception:{type(exc).__name__}"
+                )
+
+
+def _run_yfinance_step(
+    ticker: str,
+    market: MarketType,
+    pr: PriceResult,
+    session: Any,
+    pacer: Pacer,
+) -> PriceResult:
+    """Run only the yfinance branch for one ticker, preserving pacing."""
+    chain = _build_fallback_chain(market, session, pr.yfinance_symbol, ticker, pacer=pacer)
+    for label, callable_ in chain:
+        if label != "yfinance":
+            continue
+        pr.yfinance_request_started_at = _utc_iso()
+        started = time.monotonic()
+        out = callable_()
+        pr.yfinance_request_latency_ms = int((time.monotonic() - started) * 1000)
+        if out and _is_valid_latest_price(out.get("latest_price")):
+            return _apply_price_payload(pr, label, out)
+        pr.fallback_chain.append(f"{label}:miss")
+        pr.yfinance_failure_reason = "yfinance_per_ticker_empty_or_invalid_latest"
+        return pr
+    return pr
+
+
 # ----------------------------------------------------------------------------- #
 # Currency verification via internet (post-fetch)
 # ----------------------------------------------------------------------------- #
 
 # Process-level cache so the same symbol is only probed once per run.
 _CURRENCY_CACHE: Dict[str, str] = {}
+
+
+def _currency_from_history_cache(
+    ticker: str,
+    market: MarketType,
+    cache_path: Path = HISTORY_CACHE_PATH,
+) -> Optional[str]:
+    """Return the newest cached history currency for ticker/market, if any."""
+    try:
+        data = json.loads(cache_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    rows = (
+        data.get("price_history", {})
+        if isinstance(data, dict)
+        else {}
+    ).get(f"{ticker}|{market.value}", [])
+    if not isinstance(rows, list):
+        return None
+    for row in reversed(rows):
+        if not isinstance(row, dict):
+            continue
+        ccy = row.get("currency")
+        if isinstance(ccy, str) and ccy.strip():
+            return ccy.strip().upper()
+    return None
 
 
 def _yahoo_chart_currency(symbol: str, session: Any) -> Optional[Tuple[str, Optional[str]]]:
@@ -1236,6 +1384,17 @@ def _verify_currency_via_internet(
     if pr.currency:
         return  # already verified by the price source
 
+    if pr.market in (MarketType.TW, MarketType.TWO):
+        pr.currency = "TWD"
+        pr.fallback_chain.append("currency_verify:taiwan_market_twd")
+        return
+
+    cached_ccy = _currency_from_history_cache(pr.ticker, pr.market)
+    if cached_ccy:
+        pr.currency = cached_ccy
+        pr.fallback_chain.append("currency_verify:history_cache")
+        return
+
     sym = pr.yfinance_symbol
 
     # 2. Yahoo v8 chart API (preferred — direct HTTP, no auth, returns currency in meta)
@@ -1286,13 +1445,7 @@ def _verify_currency_via_internet(
             except Exception:                                     # noqa: BLE001
                 pass
 
-    # 4. TW-specific exchange metadata (MIS endpoint always returns TWD)
-    if pr.market in (MarketType.TW, MarketType.TWO):
-        pr.currency = "TWD"
-        pr.fallback_chain.append("currency_verify:twse_mis_metadata")
-        return
-
-    # 5. Fallback to hardcoded market default (last resort, no internet hit)
+    # 4. Fallback to hardcoded market default (last resort, no internet hit)
     default_ccy = MARKET_DEFAULT_CCY.get(pr.market)
     if default_ccy:
         pr.currency = default_ccy
@@ -1330,12 +1483,8 @@ def fetch_all_prices(
 
     results: Dict[str, PriceResult] = {}
     pacer = Pacer()
-    session: Any = None
-    try:
-        import requests  # type: ignore[import-not-found]
-        session = requests.Session()
-        session.headers.update({"User-Agent": "portfolio-report-agent/1.0"})
-    except ImportError:
+    session = _new_http_session()
+    if session is None:
         logging.warning("`requests` not installed; HTTP fallbacks will be skipped.")
 
     # Initialize results
@@ -1359,70 +1508,50 @@ def fetch_all_prices(
         if market == MarketType.CRYPTO:
             results[ticker].fallback_chain.append("primary:crypto_native_sources")
 
-    # ---- Per-ticker fetch: Stooq primary → yfinance secondary → public fallbacks --- #
+    # ---- Public prefix → paced yfinance → public suffix ------------------------- #
     # `skip_yfinance` is repurposed as "no network": skip the entire fetch chain so the
     # parser and JSON shape can be smoke-tested without making any HTTP calls.
-    for (ticker, market) in distinct:
-        pr = results[ticker]
-        if pr.price_source == "cash":
-            continue
+    if session is None or skip_yfinance:
+        for ticker, market in distinct:
+            pr = results[ticker]
+            if pr.price_source != "cash":
+                pr.fallback_chain.append("network_disabled:no_fetch")
+                results[ticker] = pr
+    else:
+        active_distinct = [
+            (ticker, market)
+            for ticker, market in distinct
+            if results[ticker].price_source != "cash"
+        ]
+        _run_public_segments_concurrently(results, active_distinct, "prefix")
+        for ticker, market in active_distinct:
+            pr = results[ticker]
+            if pr.price_source == "n/a":
+                results[ticker] = _run_yfinance_step(ticker, market, pr, session, pacer)
+        _run_public_segments_concurrently(results, active_distinct, "suffix")
 
-        if session is None or skip_yfinance:
-            pr.fallback_chain.append("network_disabled:no_fetch")
-            results[ticker] = pr
-            continue
+        for ticker, market in active_distinct:
+            pr = results[ticker]
+            if not pr.fallback_chain:
+                pr.fallback_chain.append("primary_chain:no_endpoints_for_market")
 
-        tried_any = False
-        for label, callable_ in _build_fallback_chain(
-            market, session, pr.yfinance_symbol, ticker, pacer=pacer
-        ):
-            tried_any = True
-            # §8.8 audit: stamp yfinance request started/latency for the yfinance branch
-            # only. Other sources don't carry these fields per the contract.
-            yf_started_mono: Optional[float] = None
-            if label == "yfinance":
-                pr.yfinance_request_started_at = _utc_iso()
-                yf_started_mono = time.monotonic()
-            out = callable_()
-            if label == "yfinance" and yf_started_mono is not None:
-                pr.yfinance_request_latency_ms = int((time.monotonic() - yf_started_mono) * 1000)
-            if out and _is_valid_latest_price(out.get("latest_price")):
-                pr.latest_price = out.get("latest_price")
-                pr.prior_close = out.get("prior_close")
-                pr.move_pct = out.get("move_pct")
-                pr.currency = out.get("currency") or pr.currency
-                pr.exchange = out.get("exchange") or pr.exchange
-                pr.price_source = out.get("price_source", label)
-                pr.price_as_of = out.get("price_as_of") or _utc_iso()
-                state = _classify_market_state(market)
-                pr.market_state_basis = state.value
-                pr.price_freshness = _freshness_for_state(state, has_intraday=True)
-                pr.fallback_chain.append(label)
-                break
+            # §8.4 yfinance auto-correction — only consulted when Stooq AND yfinance
+            # per-ticker both missed but a yfinance symbol exists. Rate-limit failures
+            # short-circuit per §8.3.1.
+            if pr.price_source == "n/a" and pr.yfinance_symbol and market != MarketType.CRYPTO:
+                pr = _auto_correct(pr, pacer, session)
+
+            if pr.price_source == "n/a":
+                # Final handoff to the agent's web search tier (§8.3.1 tier 3).
+                pr.fallback_chain.append("agent_web_search:TODO_required")
+                if _is_rate_limit_failure_reason(pr.yfinance_failure_reason):
+                    pr.fallback_chain.append("rate_limited:tier3_4_continuation_required")
+                pr.price_freshness = "n/a"
             else:
-                pr.fallback_chain.append(f"{label}:miss")
-                if label == "yfinance":
-                    pr.yfinance_failure_reason = "yfinance_per_ticker_empty_or_invalid_latest"
-        if not tried_any:
-            pr.fallback_chain.append("primary_chain:no_endpoints_for_market")
+                # Internet-based currency verification for the ticker quote currency.
+                _verify_currency_via_internet(pr, session, pacer)
 
-        # §8.4 yfinance auto-correction — only consulted when Stooq AND yfinance
-        # per-ticker both missed but a yfinance symbol exists. Rate-limit failures
-        # short-circuit per §8.3.1.
-        if pr.price_source == "n/a" and pr.yfinance_symbol and market != MarketType.CRYPTO:
-            pr = _auto_correct(pr, pacer, session)
-
-        if pr.price_source == "n/a":
-            # Final handoff to the agent's web search tier (§8.3.1 tier 3).
-            pr.fallback_chain.append("agent_web_search:TODO_required")
-            if _is_rate_limit_failure_reason(pr.yfinance_failure_reason):
-                pr.fallback_chain.append("rate_limited:tier3_4_continuation_required")
-            pr.price_freshness = "n/a"
-        else:
-            # Internet-based currency verification for the ticker quote currency.
-            _verify_currency_via_internet(pr, session, pacer)
-
-        results[ticker] = pr
+            results[ticker] = pr
 
     return results
 

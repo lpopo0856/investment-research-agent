@@ -1,58 +1,537 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-Hant">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Investments</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5/css/xterm.css" />
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <script src="https://unpkg.com/htmx.org@2" defer></script>
   <style>
-    body { font-family: 'Inter', sans-serif; }
-    .font-mono { font-family: 'JetBrains Mono', monospace; }
-    #xterm-container { background: #09090b; }
+    :root {
+      --paper: #080b10;
+      --paper-2: #0d1117;
+      --surface: #111822;
+      --surface-2: #151d28;
+      --surface-3: #1d2734;
+      --ink: #eef4f8;
+      --ink-soft: #c9d3df;
+      --muted: #8f9aaa;
+      --muted-2: #6f7b8c;
+      --line: #263241;
+      --line-strong: #354456;
+      --accent: #4ade80;
+      --accent-strong: #b7f7d8;
+      --accent-soft: #12372c;
+      --accent-warm: #f2b84b;
+      --accent-warm-soft: #332713;
+      --violet: #c4b5fd;
+      --violet-soft: #211936;
+      --danger: #f87171;
+      --danger-soft: #3f1d1d;
+      --terminal-bg: #070a0f;
+      --terminal-chrome: #101721;
+      --focus: 0 0 0 3px rgba(74, 222, 128, .22);
+      --shadow: 0 24px 80px rgba(0, 0, 0, .38), 0 4px 18px rgba(0, 0, 0, .24);
+    }
+
+    * { box-sizing: border-box; }
+    html { background: var(--paper); }
+    body {
+      margin: 0;
+      font-family: "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text", "Segoe UI", "PingFang TC", "Microsoft JhengHei UI", system-ui, sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 14% 0%, rgba(74,222,128,.14), transparent 34rem),
+        radial-gradient(circle at 82% 12%, rgba(196,181,253,.10), transparent 30rem),
+        linear-gradient(180deg, #0c1119 0%, var(--paper) 48%, #06080d 100%);
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+      font-feature-settings: "ss01", "cv11", "tnum" 1, "lnum" 1;
+    }
+    button, input, textarea { font: inherit; }
+    button { transition: background-color .16s ease, color .16s ease, border-color .16s ease, transform .16s ease, box-shadow .16s ease; }
+    button:focus-visible, input:focus-visible, textarea:focus-visible, a:focus-visible {
+      outline: none;
+      box-shadow: var(--focus);
+      border-color: var(--accent) !important;
+    }
+    button:hover { transform: translateY(-1px); }
+    button:disabled { transform: none; opacity: .45; cursor: not-allowed; }
+    .icon-btn {
+      width: 28px;
+      height: 28px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 !important;
+      border-radius: 9px !important;
+      font-size: 14px;
+      line-height: 1;
+    }
+    .language-select {
+      background: var(--surface-2);
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: var(--ink-soft);
+      font-size: 12px;
+      padding: 6px 28px 6px 10px;
+    }
+    .font-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-variant-numeric: tabular-nums lining-nums; }
+
+    .app-shell { background: transparent !important; color: var(--ink) !important; }
+    header {
+      min-height: 68px;
+      padding: 14px 24px !important;
+      border: 0 !important;
+      border-top: 0 !important;
+      border-bottom: 1px solid var(--line-strong) !important;
+      background: rgba(13, 17, 23, .86);
+      backdrop-filter: blur(18px);
+    }
+    #brand {
+      color: var(--ink) !important;
+      font-size: 15px !important;
+      letter-spacing: -.01em;
+      display: inline-flex;
+      align-items: center;
+      gap: 0;
+    }
+    #brand::before { content: none; }
+    #clock {
+      color: var(--muted) !important;
+      border: 1px solid var(--line);
+      background: rgba(17, 24, 34, .88);
+      border-radius: 999px;
+      padding: 6px 10px;
+    }
+
+    .app-main { grid-template-columns: minmax(280px, 330px) minmax(0, 1fr) !important; }
+    .app-sidebar {
+      border-right: 1px solid var(--line-strong) !important;
+      background: rgba(10, 14, 21, .70);
+      padding: 20px !important;
+      gap: 22px !important;
+    }
+    .app-sidebar > div {
+      background: rgba(17, 24, 34, .78);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 14px;
+      box-shadow: 0 1px 0 rgba(255,255,255,.035) inset;
+    }
+    .app-sidebar p,
+    .panel-title,
+    th {
+      color: var(--muted-2) !important;
+      letter-spacing: .16em !important;
+      text-transform: uppercase;
+      font-weight: 700 !important;
+    }
+    .app-content { padding: 22px !important; gap: 18px !important; }
+    .content-scroll { gap: 18px !important; padding-right: 4px !important; overflow: hidden !important; min-height: 0 !important; }
+    .holdings-panel {
+      display: flex !important;
+      flex-direction: column !important;
+      min-height: 240px !important;
+      flex: 1 1 0 !important;
+      flex-shrink: 1 !important;
+      overflow: hidden !important;
+      border-radius: 20px !important;
+    }
+
+    .panel,
+    .modal-card {
+      background: rgba(17, 24, 34, .92) !important;
+      border: 1px solid var(--line-strong) !important;
+      border-radius: 20px !important;
+      box-shadow: 0 1px 0 rgba(255,255,255,.05) inset, 0 18px 55px rgba(0,0,0,.30);
+      color: var(--ink) !important;
+    }
+    .panel > div:first-child,
+    .modal-card > div:first-child {
+      border-bottom: 1px solid var(--line) !important;
+      background: linear-gradient(180deg, rgba(255,255,255,.045), rgba(255,255,255,.015));
+    }
+    .panel .text-sm.font-semibold,
+    .modal-card .font-semibold {
+      color: var(--ink) !important;
+      letter-spacing: -.005em;
+    }
+    .terminal-panel {
+      background: var(--terminal-chrome) !important;
+      border-color: #273241 !important;
+      color: #f5f7fa !important;
+      box-shadow: 0 18px 48px rgba(0, 0, 0, .42);
+    }
+    .terminal-panel > div:first-child {
+      border-bottom-color: #273241 !important;
+      background: linear-gradient(180deg, #17202d, #101721) !important;
+    }
+    .terminal-panel .text-sm.font-semibold { color: #f6f2ea !important; }
+    #xterm-container {
+      background: var(--terminal-bg) !important;
+      border-radius: 0 0 18px 18px;
+      position: relative;
+      overflow: hidden;
+      padding: 0 !important;
+    }
     #xterm-container .xterm { height: 100%; }
-    .skeleton { animation: pulse 1.5s ease-in-out infinite; background: #27272a; border-radius: 4px; }
-    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
-    .badge { display:inline-block; padding:1px 7px; border-radius:9999px; font-size:0.65rem; font-weight:600; text-transform:uppercase; letter-spacing:.04em; }
+    .terminal-empty-state {
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      color: #8f9aaa;
+      text-align: center;
+    }
+    .terminal-empty-state strong {
+      display: block;
+      color: #eef4f8;
+      font-size: 14px;
+      margin-bottom: 6px;
+    }
+    .terminal-empty-state span {
+      display: block;
+      max-width: 360px;
+      font-size: 12px;
+      line-height: 1.55;
+    }
+
+    #accounts-list li,
+    #reports-list li {
+      border: 1px solid transparent;
+      border-radius: 12px !important;
+      color: var(--ink-soft) !important;
+    }
+    #accounts-list li:hover,
+    #reports-list li:hover {
+      background: var(--surface-2) !important;
+      border-color: var(--line);
+    }
+    #accounts-list li.is-active-account {
+      background: linear-gradient(90deg, rgba(74,222,128,.18), rgba(74,222,128,.07)) !important;
+      border-color: rgba(74, 222, 128, .34);
+      color: var(--accent-strong) !important;
+      box-shadow: inset 3px 0 0 var(--accent);
+    }
+    #accounts-list li.total-account-row {
+      border-color: rgba(242,184,75,.28);
+      background: rgba(242,184,75,.06);
+    }
+    #accounts-list li.account-divider {
+      height: 1px;
+      margin: 8px 2px;
+      background: var(--line-strong);
+      border: 0;
+    }
+    #accounts-list button,
+    #reports-list button { color: inherit !important; }
+    .settings-gear {
+      width: 30px;
+      height: 30px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      margin-right: 4px;
+      border: 0 !important;
+      border-radius: 999px !important;
+      background: transparent !important;
+      color: var(--muted-2) !important;
+      opacity: .64;
+      font-size: 15px;
+      line-height: 1;
+      box-shadow: none !important;
+    }
+    .settings-gear:hover {
+      background: rgba(74, 222, 128, .10) !important;
+      color: var(--accent-strong) !important;
+      opacity: 1;
+      transform: none;
+    }
+    .settings-gear:focus-visible {
+      background: rgba(74, 222, 128, .12) !important;
+      color: var(--accent-strong) !important;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 2px 7px;
+      border-radius: 5px;
+      font-size: 0.65rem;
+      font-weight: 750;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      border: 1px solid currentColor;
+      line-height: 1.25;
+    }
+    .badge-daily { background: var(--accent-soft) !important; color: var(--accent-strong) !important; }
+    .badge-portfolio { background: var(--violet-soft) !important; color: var(--violet) !important; }
+
+    .skeleton { animation: pulse 1.5s ease-in-out infinite; background: linear-gradient(90deg, #182231, #253244, #182231); background-size: 200% 100%; border-radius: 6px; }
+    @keyframes pulse { 0%{background-position:0% 0} 100%{background-position:-200% 0} }
+    @media (prefers-reduced-motion: reduce) { .skeleton { animation: none; } button { transition: none; } button:hover { transform: none; } }
+
+    table { border-collapse: separate; border-spacing: 0; }
+    thead { background: var(--surface) !important; }
+    th {
+      border-bottom: 1px solid var(--line-strong) !important;
+      font-size: 10px !important;
+    }
+    td {
+      color: var(--ink-soft) !important;
+      border-bottom-color: var(--line) !important;
+    }
+    tbody tr { border-color: var(--line) !important; }
+    tbody tr:hover { background: var(--surface-2) !important; }
+    #holdings-body {
+      background: linear-gradient(180deg, var(--surface), var(--surface-2));
+      flex: 1 1 0 !important;
+      height: 0;
+      min-height: 0 !important;
+      overflow: auto !important;
+      border-radius: 0 0 18px 18px;
+      scrollbar-gutter: stable;
+    }
+    #holdings-body table { min-width: 760px; }
+    #holdings-body tbody tr:last-child td:first-child { border-bottom-left-radius: 18px; }
+    #holdings-body tbody tr:last-child td:last-child { border-bottom-right-radius: 18px; }
+    #holdings-as-of { color: var(--muted) !important; }
+
+    button[class*="bg-zinc"],
+    button[class*="bg-emerald"],
+    a[class*="bg-zinc"] {
+      background: var(--surface-2) !important;
+      color: var(--ink-soft) !important;
+      border: 1px solid var(--line-strong) !important;
+      border-radius: 10px !important;
+    }
+    button[class*="bg-zinc"]:hover,
+    a[class*="bg-zinc"]:hover {
+      background: var(--surface-3) !important;
+      color: var(--ink) !important;
+    }
+    button[class*="bg-emerald"],
+    button.text-white[class*="emerald"] {
+      background: var(--accent-soft) !important;
+      border-color: rgba(74, 222, 128, .30) !important;
+      color: var(--accent-strong) !important;
+    }
+    button[class*="bg-emerald"]:hover,
+    button.text-white[class*="emerald"]:hover {
+      background: #164a38 !important;
+      border-color: rgba(74, 222, 128, .42) !important;
+      color: #d4ffe7 !important;
+    }
+    button[class*="bg-red"] {
+      background: var(--danger-soft) !important;
+      border-color: rgba(248,113,113,.30) !important;
+      color: var(--danger) !important;
+    }
+    #agent-buttons button {
+      background: #202938 !important;
+      color: #f6f2ea !important;
+      border-color: #354156 !important;
+      border-radius: 999px !important;
+    }
+
+    input, textarea, pre {
+      border-color: var(--line-strong) !important;
+      background: var(--surface-2) !important;
+      color: var(--ink) !important;
+    }
+    textarea, pre, input.font-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace !important; }
+    .modal-backdrop { background: rgba(0, 0, 0, .66) !important; backdrop-filter: blur(10px); }
+    .modal-card { box-shadow: var(--shadow); }
+    #report-modal .modal-card { background: #0f1722 !important; border-color: #2b3442 !important; color: #f5f7fa !important; }
+    #report-modal .modal-card > div:first-child { background: #151b24 !important; border-color: #2b3442 !important; }
+    #report-modal-iframe { background: white !important; }
+
+    #toast-container {
+      position: fixed !important;
+      top: 20px !important;
+      left: 50% !important;
+      right: auto !important;
+      width: min(92vw, 560px) !important;
+      transform: translateX(-50%) !important;
+      align-items: stretch !important;
+      z-index: 80 !important;
+    }
+    .toast {
+      position: relative;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-height: 48px;
+      padding: 11px 16px;
+      overflow: hidden;
+      background:
+        linear-gradient(135deg, rgba(255,255,255,.09), rgba(255,255,255,.035)),
+        rgba(18, 24, 34, .94) !important;
+      color: var(--ink) !important;
+      border: 1px solid rgba(148, 163, 184, .26) !important;
+      border-radius: 18px !important;
+      box-shadow: 0 18px 44px rgba(0, 0, 0, .38), inset 0 1px 0 rgba(255,255,255,.08) !important;
+      backdrop-filter: blur(18px) saturate(1.12);
+      animation: toast-drop .22s cubic-bezier(.2,.8,.2,1);
+    }
+    .toast::after {
+      content: "";
+      position: absolute;
+      inset: 0 auto 0 0;
+      width: 3px;
+      background: linear-gradient(180deg, #34d399, #0f766e);
+    }
+    .toast-icon {
+      display: grid;
+      place-items: center;
+      flex: 0 0 auto;
+      width: 26px;
+      height: 26px;
+      border-radius: 999px;
+      background: rgba(52, 211, 153, .13);
+      color: #86efac;
+      border: 1px solid rgba(52, 211, 153, .28);
+      font-size: 14px;
+      line-height: 1;
+    }
+    .toast-text {
+      flex: 1 1 auto;
+      min-width: 0;
+      color: #f4f7fb;
+      font-size: 13px;
+      line-height: 1.45;
+      letter-spacing: .01em;
+    }
+    .toast-error {
+      border-color: rgba(248, 113, 113, .35) !important;
+      background:
+        linear-gradient(135deg, rgba(248,113,113,.13), rgba(255,255,255,.035)),
+        rgba(27, 20, 23, .95) !important;
+    }
+    .toast-error::after { background: linear-gradient(180deg, #f87171, #991b1b); }
+    .toast-error .toast-icon {
+      background: rgba(248, 113, 113, .13);
+      color: #fecaca;
+      border-color: rgba(248, 113, 113, .30);
+    }
+    .toast.is-leaving {
+      pointer-events: none;
+      animation: toast-fade-out .28s ease forwards;
+    }
+    @keyframes toast-drop {
+      from { opacity: 0; transform: translateY(-10px) scale(.985); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+    @keyframes toast-fade-out {
+      from { opacity: 1; transform: translateY(0) scale(1); }
+      to { opacity: 0; transform: translateY(-8px) scale(.985); }
+    }
+
+    .text-zinc-100, .text-zinc-200, .text-zinc-300, .text-zinc-400 { color: inherit !important; }
+    .text-zinc-500, .text-zinc-600 { color: var(--muted) !important; }
+    .text-emerald-300, .text-emerald-400 { color: var(--accent) !important; }
+    .text-red-300, .text-red-400 { color: var(--danger) !important; }
+    tbody tr[class*="bg-zinc"] { background: var(--surface-2) !important; }
+    .terminal-panel .text-zinc-500,
+    .terminal-panel .text-zinc-400 { color: #aeb8c7 !important; }
+    #report-modal .text-zinc-500,
+    #report-modal .text-zinc-400,
+    #report-modal .text-zinc-200 { color: #d5deea !important; }
+
+    @media (max-width: 900px) {
+      body { overflow: auto !important; min-height: 100vh; }
+      .app-main { display: flex !important; flex-direction: column; overflow: visible !important; }
+      .app-sidebar { border-right: 0 !important; border-bottom: 1px solid var(--line-strong) !important; display: grid !important; grid-template-columns: 1fr 1.35fr; max-height: none; overflow: visible !important; }
+      .app-content { overflow: visible !important; }
+      .content-scroll { overflow: hidden !important; }
+      .terminal-panel { height: clamp(320px, 46vh, 520px) !important; }
+    }
+    @media (max-width: 640px) {
+      header { padding: 12px 16px !important; min-height: 58px; }
+      #clock { display: none; }
+      .app-sidebar { grid-template-columns: 1fr; padding: 14px !important; }
+      .app-content { padding: 14px !important; }
+      .panel, .modal-card { border-radius: 16px !important; }
+      .panel > div:first-child { align-items: flex-start !important; gap: 10px; flex-direction: column; }
+      #holdings-body { max-height: 55vh !important; overflow: auto; }
+      #holdings-body table { min-width: 760px; }
+      .terminal-panel { height: min(420px, 58vh) !important; }
+      #action-form-modal .modal-card,
+      #settings-modal .modal-card,
+      #diff-modal .modal-card { width: calc(100vw - 20px) !important; max-height: calc(100dvh - 24px) !important; }
+      #report-modal { padding: 8px !important; }
+      #report-modal .modal-card { width: 100% !important; height: calc(100dvh - 16px) !important; }
+    }
   </style>
 </head>
-<body class="bg-zinc-950 text-zinc-100 h-screen flex flex-col overflow-hidden">
+<body class="app-shell h-screen flex flex-col overflow-hidden">
 
   <!-- Header -->
   <header class="flex items-center justify-between px-5 py-3 border-b border-zinc-800 shrink-0">
-    <span id="brand" class="font-semibold text-zinc-100 text-sm tracking-wide">Investments</span>
-    <span id="clock" class="font-mono text-xs text-zinc-400"></span>
+    <span id="brand" class="font-semibold text-zinc-100 text-sm tracking-wide">投資管理</span>
+    <div class="flex items-center gap-3">
+      <label for="language-select" class="text-xs text-zinc-500" data-i18n="language">語言</label>
+      <select id="language-select" class="language-select" data-i18n-title="languageTitle" title="切換語言">
+        <option value="zh-Hant">繁中</option>
+        <option value="en">English</option>
+        <option value="zh-Hans">简中</option>
+      </select>
+      <span id="clock" class="font-mono text-xs text-zinc-400"></span>
+    </div>
   </header>
 
   <!-- Main -->
-  <main class="grid grid-cols-[320px_1fr] flex-1 min-h-0">
+  <main class="app-main grid grid-cols-[320px_1fr] flex-1 min-h-0">
 
     <!-- Sidebar -->
-    <aside class="border-r border-zinc-800 p-4 flex flex-col gap-5 overflow-y-auto">
+    <aside class="app-sidebar border-r border-zinc-800 p-4 flex flex-col gap-5 overflow-y-auto">
 
       <!-- Accounts -->
       <div>
-        <p class="text-xs font-semibold text-zinc-500 uppercase tracking-widest mb-2">Accounts</p>
+        <div class="flex items-center justify-between mb-2">
+          <p class="text-xs font-semibold text-zinc-500 uppercase tracking-widest mb-0" data-i18n="accounts">帳戶</p>
+          <div class="flex items-center gap-1">
+            <button onclick="openAccountManager()"
+              class="icon-btn text-xs rounded bg-zinc-800 hover:bg-zinc-700 border border-zinc-700"
+              data-i18n-title="manageAccounts" data-i18n-aria-label="manageAccounts"
+              title="管理帳戶" aria-label="管理帳戶">＋</button>
+            <button onclick="refreshAccounts()"
+              class="icon-btn text-xs rounded bg-zinc-800 hover:bg-zinc-700 border border-zinc-700"
+              data-i18n-title="refreshAccounts" data-i18n-aria-label="refreshAccounts"
+              title="重新整理帳戶" aria-label="重新整理帳戶">↻</button>
+          </div>
+        </div>
         <ul id="accounts-list" class="flex flex-col gap-1"></ul>
       </div>
 
       <!-- Reports -->
       <div class="flex-1 flex flex-col min-h-0">
-        <p class="text-xs font-semibold text-zinc-500 uppercase tracking-widest mb-2">Reports</p>
+        <div class="flex items-center justify-between mb-2">
+          <p class="text-xs font-semibold text-zinc-500 uppercase tracking-widest mb-0" data-i18n="reports">報告</p>
+          <div class="flex items-center gap-1">
+            <button onclick="clearOldReports()"
+              class="text-[11px] px-2 py-1 rounded bg-red-950/70 hover:bg-red-900 border border-red-900 text-red-200"
+              data-i18n="clearOldReports" data-i18n-title="clearOldReportsTitle">清舊</button>
+            <button onclick="refreshReports()"
+              class="icon-btn text-xs rounded bg-zinc-800 hover:bg-zinc-700 border border-zinc-700"
+              data-i18n-title="refreshReports" data-i18n-aria-label="refreshReports"
+              title="重新整理報告" aria-label="重新整理報告">↻</button>
+          </div>
+        </div>
         <ul id="reports-list" class="flex flex-col gap-1 flex-1 overflow-y-auto"></ul>
         <div class="flex items-center justify-between mt-2 pt-2 border-t border-zinc-800">
           <button id="prev-page" onclick="changePage(-1)"
-            class="text-xs px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 disabled:opacity-30 disabled:cursor-not-allowed">
-            &larr; Prev
+            class="text-xs px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 disabled:opacity-30 disabled:cursor-not-allowed"
+            data-i18n="prevPage">
+            ← 上一頁
           </button>
           <span id="page-indicator" class="font-mono text-xs text-zinc-400">1 / 1</span>
           <button id="next-page" onclick="changePage(1)"
-            class="text-xs px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 disabled:opacity-30 disabled:cursor-not-allowed">
-            Next &rarr;
+            class="text-xs px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 disabled:opacity-30 disabled:cursor-not-allowed"
+            data-i18n="nextPage">
+            下一頁 →
           </button>
         </div>
       </div>
@@ -60,43 +539,57 @@
     </aside>
 
     <!-- Main pane -->
-    <section class="p-5 flex flex-col gap-4 overflow-hidden">
+    <section class="app-content p-5 flex flex-col gap-4 overflow-hidden">
 
       <!-- Scrollable top region: holdings only.
            Terminal sits outside this wrapper, pinned at the bottom.
            Settings moved to a modal opened from the sidebar. -->
-      <div class="flex-1 min-h-0 overflow-y-auto flex flex-col gap-4 pr-1">
+      <div class="content-scroll flex-1 min-h-0 overflow-y-auto flex flex-col gap-4 pr-1">
 
       <!-- Holdings Panel -->
-      <div class="bg-zinc-900 rounded-lg border border-zinc-800 overflow-hidden shrink-0">
+      <div class="panel holdings-panel bg-zinc-900 rounded-lg border border-zinc-800 overflow-hidden shrink-0">
         <div class="flex items-center justify-between px-4 py-3 border-b border-zinc-800">
-          <span class="text-sm font-semibold">Holdings</span>
+          <span class="text-sm font-semibold" data-i18n="holdings">持倉</span>
           <div class="flex items-center gap-2 flex-wrap">
             <span id="holdings-as-of" class="text-xs text-zinc-500"></span>
             <button onclick="quickAction('daily')"
-              class="text-xs px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 border border-zinc-700">Daily report</button>
+              class="text-xs px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 border border-zinc-700"
+              data-i18n="dailyReport">日報</button>
             <button onclick="quickAction('portfolio')"
-              class="text-xs px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 border border-zinc-700">Portfolio report</button>
-            <button onclick="quickAction('snapshot')"
-              class="text-xs px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 border border-zinc-700">Snapshot</button>
-            <button onclick="openActionForm('deposit')"
-              class="text-xs px-2 py-1 rounded bg-emerald-900/40 hover:bg-emerald-800/60 border border-emerald-700/60 text-emerald-300">Deposit</button>
-            <button onclick="openActionForm('buy_new')"
-              class="text-xs px-2 py-1 rounded bg-emerald-900/40 hover:bg-emerald-800/60 border border-emerald-700/60 text-emerald-300">Buy new</button>
+              class="text-xs px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 border border-zinc-700"
+              data-i18n="portfolioReport">投資組合報告</button>
+            <button onclick="quickAction('snapshot')" data-hide-for-total="true"
+              class="text-xs px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 border border-zinc-700"
+              data-i18n="snapshot">快照</button>
+            <button onclick="openActionForm('deposit')" data-hide-for-total="true"
+              class="text-xs px-2 py-1 rounded bg-emerald-900/40 hover:bg-emerald-800/60 border border-emerald-700/60 text-emerald-300"
+              data-i18n="deposit">入金</button>
+            <button onclick="openActionForm('buy_new')" data-hide-for-total="true"
+              class="text-xs px-2 py-1 rounded bg-emerald-900/40 hover:bg-emerald-800/60 border border-emerald-700/60 text-emerald-300"
+              data-i18n="buyNew">新增買入</button>
+            <button id="import-transactions-button" onclick="chooseTransactionImportFile()" data-hide-for-total="true"
+              class="text-xs px-2 py-1 rounded bg-sky-900/40 hover:bg-sky-800/60 border border-sky-700/60 text-sky-200"
+              data-i18n="importTransactions" data-i18n-title="importTransactionsTitle">匯入交易</button>
+            <input id="transaction-import-file" type="file" class="hidden"
+              accept=".csv,.tsv,.xlsx,.xls,.json,.pdf,.txt,.ofx,.qfx,.png,.jpg,.jpeg,.webp"
+              onchange="handleTransactionImportFile(this.files && this.files[0])" />
             <button id="holdings-refresh" onclick="loadHoldings()"
-              class="text-xs px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700">Refresh</button>
+              class="icon-btn text-xs rounded bg-zinc-800 hover:bg-zinc-700"
+              data-i18n-title="refreshHoldings" data-i18n-aria-label="refreshHoldings"
+              title="重新整理持倉" aria-label="重新整理持倉">↻</button>
           </div>
         </div>
-        <div id="holdings-body" class="max-h-72 overflow-auto">
+        <div id="holdings-body" class="overflow-auto">
           <table class="w-full text-sm">
             <thead class="sticky top-0 bg-zinc-900">
               <tr class="text-left text-xs text-zinc-500 border-b border-zinc-800">
-                <th class="px-4 py-2 font-medium">Ticker</th>
-                <th class="px-4 py-2 font-medium text-right">Qty</th>
-                <th class="px-4 py-2 font-medium text-right">Avg Cost</th>
-                <th class="px-4 py-2 font-medium text-right">Total Cost</th>
-                <th class="px-4 py-2 font-medium text-right">CCY</th>
-                <th class="px-4 py-2 font-medium text-right">Actions</th>
+                <th id="holdings-account-th" class="px-4 py-2 font-medium hidden" data-i18n="account">帳戶</th>
+                <th class="px-4 py-2 font-medium" data-i18n="ticker">代號</th>
+                <th class="px-4 py-2 font-medium text-right" data-i18n="qty">數量</th>
+                <th class="px-4 py-2 font-medium text-right" data-i18n="avgCost">平均成本</th>
+                <th class="px-4 py-2 font-medium text-right" data-i18n="totalCost">總成本</th>
+                <th class="px-4 py-2 font-medium text-right" data-i18n="ccy">幣別</th>
+                <th id="holdings-actions-th" class="px-4 py-2 font-medium text-right" data-i18n="actions">操作</th>
               </tr>
             </thead>
             <tbody id="holdings-rows"></tbody>
@@ -108,25 +601,32 @@
       <!-- /scrollable top region -->
 
       <!-- Terminal Panel — pinned at bottom, fixed reasonable height -->
-      <div class="bg-zinc-900 rounded-lg border border-zinc-800 flex flex-col overflow-hidden shrink-0"
+      <div class="panel terminal-panel bg-zinc-900 rounded-lg border border-zinc-800 flex flex-col overflow-hidden shrink-0"
            style="height: clamp(360px, 50vh, 600px)">
         <div class="flex items-center justify-between px-4 py-3 border-b border-zinc-800">
-          <span class="text-sm font-semibold">Terminal</span>
+          <span class="text-sm font-semibold" data-i18n="terminal">終端機</span>
           <div id="agent-buttons" class="flex gap-2">
             <!-- buttons rendered by JS from GET /api/agents -->
           </div>
         </div>
-        <div id="xterm-container" class="flex-1 p-2 min-h-0"></div>
+        <div id="xterm-container" class="flex-1 min-h-0">
+          <div id="terminal-empty-state" class="terminal-empty-state">
+            <span>
+              <strong data-i18n="terminalEmptyTitle">選擇 agent 以開始</strong>
+              <span data-i18n="terminalEmptyBody">請在上方選擇 claude、codex 或 codex(omx)，為目前帳戶開啟終端機。</span>
+            </span>
+          </div>
+        </div>
       </div>
 
     </section>
   </main>
 
   <!-- Action Form Modal — small floating form for Deposit / Buy new -->
-  <div id="action-form-modal" class="fixed inset-0 bg-black/70 z-50 hidden flex items-center justify-center">
-    <div class="bg-zinc-900 border border-zinc-700 rounded-xl w-[460px] max-w-[95vw] flex flex-col">
+  <div id="action-form-modal" class="modal-backdrop fixed inset-0 bg-black/70 z-50 hidden flex items-center justify-center">
+    <div class="modal-card bg-zinc-900 border border-zinc-700 rounded-xl w-[460px] max-w-[95vw] flex flex-col">
       <div class="flex items-center justify-between px-5 py-3 border-b border-zinc-800">
-        <span id="action-form-title" class="font-semibold text-sm">Action</span>
+        <span id="action-form-title" class="font-semibold text-sm">操作</span>
         <button onclick="closeActionForm()"
           class="text-zinc-400 hover:text-zinc-200 text-lg leading-none px-2">&times;</button>
       </div>
@@ -136,25 +636,25 @@
       </form>
       <div class="flex gap-2 justify-end px-5 py-3 border-t border-zinc-800">
         <button onclick="closeActionForm()" type="button"
-          class="text-xs px-3 py-1.5 rounded bg-zinc-700 hover:bg-zinc-600">Cancel</button>
+          class="text-xs px-3 py-1.5 rounded bg-zinc-700 hover:bg-zinc-600" data-i18n="cancel">取消</button>
         <button onclick="submitActionForm()" type="button"
-          class="text-xs px-3 py-1.5 rounded bg-emerald-700 hover:bg-emerald-600 text-white">Send to terminal</button>
+          class="text-xs px-3 py-1.5 rounded bg-emerald-700 hover:bg-emerald-600 text-white" data-i18n="sendToTerminal">送到終端機</button>
       </div>
     </div>
   </div>
 
   <!-- Report Viewer Modal — near-fullscreen iframe with a close button -->
-  <div id="report-modal" class="fixed inset-0 bg-black/80 z-50 hidden flex items-center justify-center p-4">
-    <div class="bg-zinc-900 border border-zinc-700 rounded-xl flex flex-col"
+  <div id="report-modal" class="modal-backdrop fixed inset-0 bg-black/80 z-50 hidden flex items-center justify-center p-4">
+    <div class="modal-card bg-zinc-900 border border-zinc-700 rounded-xl flex flex-col"
          style="width: 96vw; height: 94vh;">
       <div class="flex items-center justify-between px-5 py-3 border-b border-zinc-800 shrink-0">
         <div class="flex items-center gap-3 min-w-0">
-          <span class="font-semibold text-sm">Report</span>
+          <span class="font-semibold text-sm" data-i18n="report">報告</span>
           <span id="report-modal-title" class="text-xs text-zinc-500 font-mono truncate"></span>
         </div>
         <div class="flex items-center gap-2 shrink-0">
           <a id="report-modal-open-tab" href="#" target="_blank" rel="noopener"
-             class="text-xs px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200">Open in tab</a>
+             class="text-xs px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200" data-i18n="openInTab">開新分頁</a>
           <button onclick="closeReportModal()"
             class="text-zinc-400 hover:text-zinc-200 text-2xl leading-none px-2">&times;</button>
         </div>
@@ -166,8 +666,8 @@
   </div>
 
   <!-- Settings Modal -->
-  <div id="settings-modal" class="fixed inset-0 bg-black/70 flex items-center justify-center z-40 hidden">
-    <div class="bg-zinc-900 border border-zinc-700 rounded-xl w-[900px] max-w-[95vw] flex flex-col max-h-[85vh]">
+  <div id="settings-modal" class="modal-backdrop fixed inset-0 bg-black/70 flex items-center justify-center z-40 hidden">
+    <div class="modal-card bg-zinc-900 border border-zinc-700 rounded-xl w-[900px] max-w-[95vw] flex flex-col max-h-[85vh]">
       <div class="flex items-center justify-between px-5 py-3 border-b border-zinc-800">
         <div class="flex items-center gap-3">
           <span class="font-semibold text-sm">SETTINGS.md</span>
@@ -178,16 +678,52 @@
           class="text-zinc-400 hover:text-zinc-200 text-lg leading-none px-2">&times;</button>
       </div>
       <div id="settings-sections" class="overflow-auto divide-y divide-zinc-800/60 flex-1">
-        <div class="px-4 py-6 text-xs text-zinc-500 text-center">Select an account to view settings.</div>
+        <div class="px-4 py-6 text-xs text-zinc-500 text-center" data-i18n="selectAccountSettings">選擇帳戶以查看設定。</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Account Manager Modal -->
+  <div id="account-manager-modal" class="modal-backdrop fixed inset-0 bg-black/70 flex items-center justify-center z-40 hidden">
+    <div class="modal-card bg-zinc-900 border border-zinc-700 rounded-xl w-[760px] max-w-[95vw] flex flex-col max-h-[85vh]">
+      <div class="flex items-center justify-between px-5 py-3 border-b border-zinc-800">
+        <div>
+          <span class="font-semibold text-sm" data-i18n="accountManagerTitle">帳戶管理</span>
+          <p class="text-xs text-zinc-500 mt-1 normal-case tracking-normal" data-i18n="accountManagerSubtitle">建立新帳戶、切換預設帳戶、重新命名，或封存不用的帳戶。</p>
+        </div>
+        <button onclick="closeAccountManager()"
+          class="text-zinc-400 hover:text-zinc-200 text-lg leading-none px-2">&times;</button>
+      </div>
+      <div class="flex-1 overflow-auto p-5 space-y-5">
+        <section class="rounded-xl border border-zinc-800 bg-zinc-950/35 p-4">
+          <h3 class="text-sm font-semibold mb-2" data-i18n="newAccountTitle">建立新帳戶</h3>
+          <p class="text-xs text-zinc-500 mb-3" data-i18n="newAccountHelp">適合全新使用者 onboarding：先建立安全的帳戶骨架，再用設定修改補齊策略與語言。</p>
+          <div class="flex flex-col sm:flex-row gap-2">
+            <input id="new-account-name" type="text" placeholder="my_account"
+              class="flex-1 bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-zinc-100 font-mono text-sm focus:outline-none focus:border-emerald-500" />
+            <button onclick="createAccountFromModal()"
+              class="px-4 py-2 rounded bg-emerald-800 hover:bg-emerald-700 text-white text-sm font-semibold"
+              data-i18n="createAccount">建立帳戶</button>
+          </div>
+          <p class="text-[11px] text-zinc-600 mt-2" data-i18n="accountNameRule">帳戶名稱使用小寫英數、底線或連字號，最多 32 字元。</p>
+        </section>
+
+        <section>
+          <div class="flex items-center justify-between mb-2">
+            <h3 class="text-sm font-semibold" data-i18n="existingAccounts">現有帳戶</h3>
+            <span id="account-manager-active" class="text-xs text-zinc-500"></span>
+          </div>
+          <div id="account-manager-list" class="space-y-2"></div>
+        </section>
       </div>
     </div>
   </div>
 
   <!-- Diff Modal -->
-  <div id="diff-modal" class="fixed inset-0 bg-black/70 flex items-center justify-center z-50 hidden">
-    <div class="bg-zinc-900 border border-zinc-700 rounded-xl w-[700px] max-w-[95vw] flex flex-col max-h-[80vh]">
+  <div id="diff-modal" class="modal-backdrop fixed inset-0 bg-black/70 flex items-center justify-center z-50 hidden">
+    <div class="modal-card bg-zinc-900 border border-zinc-700 rounded-xl w-[700px] max-w-[95vw] flex flex-col max-h-[80vh]">
       <div class="flex items-center justify-between px-5 py-3 border-b border-zinc-800">
-        <span class="font-semibold text-sm diff-modal-title">Preview Changes — SETTINGS.md</span>
+        <span class="font-semibold text-sm diff-modal-title">預覽變更 — SETTINGS.md</span>
         <button onclick="closeDiffModal()"
           class="text-zinc-400 hover:text-zinc-200 text-lg leading-none">&times;</button>
       </div>
@@ -196,15 +732,15 @@
       </div>
       <div class="flex gap-2 justify-end px-5 py-3 border-t border-zinc-800">
         <button onclick="closeDiffModal()"
-          class="text-xs px-3 py-1.5 rounded bg-zinc-700 hover:bg-zinc-600">Cancel</button>
+          class="text-xs px-3 py-1.5 rounded bg-zinc-700 hover:bg-zinc-600" data-i18n="cancel">取消</button>
         <button onclick="confirmSettings()"
-          class="text-xs px-3 py-1.5 rounded bg-emerald-700 hover:bg-emerald-600 text-white">Confirm</button>
+          class="text-xs px-3 py-1.5 rounded bg-emerald-700 hover:bg-emerald-600 text-white" data-i18n="confirm">確認</button>
       </div>
     </div>
   </div>
 
   <!-- Toast container -->
-  <div id="toast-container" class="fixed top-4 right-4 flex flex-col gap-2 z-50 pointer-events-none"></div>
+  <div id="toast-container" class="flex flex-col gap-2 pointer-events-none" aria-live="polite" aria-atomic="true"></div>
 
   <!-- xterm.js + addons -->
   <script src="https://cdn.jsdelivr.net/npm/xterm@5/lib/xterm.js"></script>
@@ -221,10 +757,493 @@
     let activeWs = null;
     let activeTerm = null;
     let activeFitAddon = null;
+    let activeResizeObserver = null;
+    let activeFitAndResize = null;
+    let terminalLaunchSerial = 0;
     let activeAgentId = null; // id used in the last successful launchTerminal call
     let pendingDiff = null; // { kind, sectionIndex, new_body, token }
     let settingsDirty = false; // any section saved since modal opened
     let lastHoldingsData = null; // cache for re-render on action toggle
+    let lastReportItems = null; // cache for re-render after language switch
+    let accountsState = []; // [{ name, description, active, synthetic }]
+    let activeAccountName = null;
+
+    const SUPPORTED_LANGS = ['zh-Hant', 'en', 'zh-Hans'];
+    const I18N = {
+      'zh-Hant': {
+        appName: '投資管理',
+        language: '語言',
+        languageTitle: '切換語言',
+        accounts: '帳戶',
+        reports: '報告',
+        refreshAccounts: '重新整理帳戶',
+        manageAccounts: '管理帳戶',
+        accountManagerTitle: '帳戶管理',
+        accountManagerSubtitle: '建立新帳戶、切換預設帳戶、重新命名，或封存不用的帳戶。',
+        newAccountTitle: '建立新帳戶',
+        newAccountHelp: '適合全新使用者 onboarding：先建立安全的帳戶骨架，再用設定修改補齊策略與語言。',
+        createAccount: '建立帳戶',
+        accountNameRule: '帳戶名稱使用小寫英數、底線或連字號，最多 32 字元。',
+        existingAccounts: '現有帳戶',
+        activeAccount: '目前預設：{account}',
+        noAccountsTitle: '尚未建立帳戶',
+        noAccountsBody: '先建立第一個帳戶，接著補齊 SETTINGS.md 後就能匯入交易與產生報告。',
+        setActive: '設為預設',
+        activeBadge: '預設',
+        rename: '重新命名',
+        archive: '封存',
+        archiveAccountConfirm: '確定封存 {account}？這會把帳戶資料移到隱藏封存資料夾，不會永久刪除。',
+        accountCreated: '帳戶已建立：{account}',
+        accountRenamed: '帳戶已改名：{account}',
+        accountArchived: '帳戶已封存：{account}',
+        activeChanged: '預設帳戶已切換：{account}',
+        renamePrompt: '輸入新的帳戶名稱',
+        cannotManageTotal: '總覽是唯讀彙總，不是可編輯帳戶。',
+        refreshReports: '重新整理報告',
+        refreshHoldings: '重新整理持倉',
+        prevPage: '← 上一頁',
+        nextPage: '下一頁 →',
+        holdings: '持倉',
+        dailyReport: '日報',
+        portfolioReport: '投資組合報告',
+        snapshot: '快照',
+        deposit: '入金',
+        buyNew: '新增買入',
+        importTransactions: '匯入交易',
+        importTransactionsTitle: '選擇檔案並把匯入交易提示填入終端機',
+        importFileReady: '已上傳：{filename}',
+        importFileFailed: '檔案上傳失敗',
+        promptImportTransactions: '請將 `{path}` 匯入到 {account} 帳戶作為交易紀錄。請先解析檔案、列出你準備新增或修正的交易/現金流，儲存前等我確認。',
+        account: '帳戶',
+        ticker: '代號',
+        qty: '數量',
+        avgCost: '平均成本',
+        totalCost: '總成本',
+        ccy: '幣別',
+        actions: '操作',
+        terminal: '終端機',
+        terminalEmptyTitle: '選擇 agent 以開始',
+        terminalEmptyBody: '請在上方選擇 claude、codex 或 codex(omx)，為目前帳戶開啟終端機。',
+        action: '操作',
+        cancel: '取消',
+        confirm: '確認',
+        save: '儲存',
+        modify: '修改',
+        sendToTerminal: '送到終端機',
+        report: '報告',
+        openInTab: '開新分頁',
+        selectAccountSettings: '選擇帳戶以查看設定。',
+        totalAccountName: '總覽 · 所有帳戶',
+        totalAccountSubline: '唯讀彙總持倉',
+        modifySettingsTitle: '修改此帳戶設定',
+        settingsSectionCount: '{count} 個區段',
+        settingsSectionCountOne: '1 個區段',
+        loading: '載入中…',
+        error: '錯誤',
+        errorLoadingSettings: '設定載入失敗',
+        preambleReadOnly: '前言（唯讀）',
+        noSections: '這個檔案沒有偵測到 <code>## sections</code>。',
+        noChanges: '這個區段沒有變更。',
+        previewFailed: '預覽失敗',
+        previewChanges: '預覽變更 — SETTINGS.md',
+        noChangesDiff: '（沒有變更）',
+        settingsChanged: 'SETTINGS.md 已在外部變更 — 重新開啟編輯器。',
+        saveFailed: '儲存失敗',
+        savedBackup: '已儲存。備份：{file}',
+        settingsReloading: '設定已儲存 — 正在重新載入終端機',
+        actionDeposit: '入金',
+        actionBuyNew: '新增買入',
+        amount: '金額',
+        date: '日期',
+        currency: '幣別',
+        noteOptional: '備註',
+        tickerField: '代號',
+        quantity: '數量',
+        buyPrice: '買入價格',
+        optional: '選填',
+        fieldRequired: '請填寫「{field}」',
+        promptDeposit: '請將 {amount} {currency} 入金到 {account} 帳戶{dateTail}{tail}。',
+        promptNoteTail: '（備註：{note}）',
+        promptDateTail: '，日期 {date}',
+        promptBuyNew: '請為 {account} 帳戶買入 {qty} 股/單位 {ticker}，價格 {price} {currency}{dateTail}。',
+        promptDaily: '請為 {account} 帳戶產生今天的日報，並告訴我重點。',
+        promptPortfolio: '請為 {account} 帳戶產生最新的投資組合報告。',
+        promptSnapshot: '請快速摘要 {account} 帳戶：目前持倉、現金與最大變動。',
+        retry: '重試',
+        asOf: '截至 {date}',
+        noHoldings: '沒有持倉',
+        sell: '賣出',
+        buy: '買入',
+        withdraw: '提領',
+        price: '價格',
+        ask: '詢問',
+        send: '送出',
+        cancelShort: '取消',
+        prefillSellTitle: '將賣出操作填入終端機',
+        prefillBuyTitle: '將買入操作填入終端機',
+        prefillWithdrawTitle: '將提領操作填入終端機',
+        prefillDepositTitle: '將入金操作填入終端機',
+        askHoldingTitle: '請 agent 分析此持倉',
+        enterQtyPrice: '請輸入數量與價格',
+        enterAmount: '請輸入金額',
+        promptHoldingTrade: '請{verb} {qty} {ticker}，價格 {price}{tail}{dateTail}',
+        promptHoldingCashFlow: '請為 {account} 帳戶記錄一筆 {amount} {currency} 的{verb}{dateTail}。',
+        promptDiscussHolding: '請分析我的 {ticker} 持倉：投資論點、風險，以及下一步該怎麼做。',
+        noReports: '沒有報告',
+        askReportTitle: '詢問 agent 這份報告',
+        dailyKind: '日報',
+        portfolioKind: '投資組合',
+        promptDiscussReport: '請解讀 accounts/{account}/reports/{filename} 的 {kind} 報告：有哪些重點，以及我該怎麼做。',
+        switchAgentConfirm: '要切換 agent 嗎？這會終止目前的終端機 session。',
+        terminalClosed: '終端機已關閉：{reason}',
+        connectionRefused: '連線被拒',
+        launchTerminalFirst: '請先啟動終端機（claude / codex / codex(omx)）',
+        noAgents: 'PATH 中沒有可用 agent',
+        agentListError: 'agent 清單載入失敗',
+        accountsRefreshed: '帳戶已重新整理',
+        reportsRefreshed: '報告已重新整理',
+        clearOldReports: '清舊',
+        clearOldReportsTitle: '清除 30 天前（含）的報表',
+        confirmClearOldReports: '確定清除 {account} 帳戶中 30 天前（含）的報表？這只會刪除報表 HTML，不會修改交易紀錄或設定。',
+        oldReportsCleared: '已清除 {count} 份舊報表',
+      },
+      en: {
+        appName: 'Investments',
+        language: 'Language',
+        languageTitle: 'Switch language',
+        accounts: 'Accounts',
+        reports: 'Reports',
+        refreshAccounts: 'Refresh accounts',
+        manageAccounts: 'Manage accounts',
+        accountManagerTitle: 'Account management',
+        accountManagerSubtitle: 'Create accounts, switch the default, rename accounts, or archive unused accounts.',
+        newAccountTitle: 'Create new account',
+        newAccountHelp: 'For first-time onboarding: create the safe account scaffold first, then finish strategy and language in settings.',
+        createAccount: 'Create account',
+        accountNameRule: 'Use lowercase letters, numbers, underscores, or hyphens; max 32 characters.',
+        existingAccounts: 'Existing accounts',
+        activeAccount: 'Current default: {account}',
+        noAccountsTitle: 'No accounts yet',
+        noAccountsBody: 'Create the first account, finish SETTINGS.md, then import transactions and generate reports.',
+        setActive: 'Set default',
+        activeBadge: 'Default',
+        rename: 'Rename',
+        archive: 'Archive',
+        archiveAccountConfirm: 'Archive {account}? This moves the account data to a hidden archive folder and does not permanently delete it.',
+        accountCreated: 'Account created: {account}',
+        accountRenamed: 'Account renamed: {account}',
+        accountArchived: 'Account archived: {account}',
+        activeChanged: 'Default account changed: {account}',
+        renamePrompt: 'Enter the new account name',
+        cannotManageTotal: 'Total is a read-only aggregate, not an editable account.',
+        refreshReports: 'Refresh reports',
+        refreshHoldings: 'Refresh holdings',
+        prevPage: '← Prev',
+        nextPage: 'Next →',
+        holdings: 'Holdings',
+        dailyReport: 'Daily report',
+        portfolioReport: 'Portfolio report',
+        snapshot: 'Snapshot',
+        deposit: 'Deposit',
+        buyNew: 'Buy new',
+        importTransactions: 'Import trades',
+        importTransactionsTitle: 'Choose a file and prefill a transaction-import prompt into the terminal',
+        importFileReady: 'Uploaded: {filename}',
+        importFileFailed: 'File upload failed',
+        promptImportTransactions: 'Please import `{path}` into the {account} account as transaction records. First parse the file and list the trades/cash flows you plan to add or fix; wait for my confirmation before saving anything.',
+        account: 'Account',
+        ticker: 'Ticker',
+        qty: 'Qty',
+        avgCost: 'Avg Cost',
+        totalCost: 'Total Cost',
+        ccy: 'CCY',
+        actions: 'Actions',
+        terminal: 'Terminal',
+        terminalEmptyTitle: 'Select an agent to start',
+        terminalEmptyBody: 'Choose claude, codex, or codex(omx) above to open the terminal for this account.',
+        action: 'Action',
+        cancel: 'Cancel',
+        confirm: 'Confirm',
+        save: 'Save',
+        modify: 'Modify',
+        sendToTerminal: 'Send to terminal',
+        report: 'Report',
+        openInTab: 'Open in tab',
+        selectAccountSettings: 'Select an account to view settings.',
+        totalAccountName: 'Total · All accounts',
+        totalAccountSubline: 'Read-only consolidated holdings',
+        modifySettingsTitle: 'Modify settings for this account',
+        settingsSectionCount: '{count} sections',
+        settingsSectionCountOne: '1 section',
+        loading: 'Loading…',
+        error: 'Error',
+        errorLoadingSettings: 'Error loading settings',
+        preambleReadOnly: 'Preamble (read-only)',
+        noSections: 'No <code>## sections</code> detected in this file.',
+        noChanges: 'No changes in this section.',
+        previewFailed: 'Preview failed',
+        previewChanges: 'Preview Changes — SETTINGS.md',
+        noChangesDiff: '(no changes)',
+        settingsChanged: 'SETTINGS.md changed externally — re-opening editor.',
+        saveFailed: 'Save failed',
+        savedBackup: 'Saved. Backup: {file}',
+        settingsReloading: 'Settings saved — reloading terminal',
+        actionDeposit: 'Deposit',
+        actionBuyNew: 'Buy new asset',
+        amount: 'Amount',
+        date: 'Date',
+        currency: 'Currency',
+        noteOptional: 'Note',
+        tickerField: 'Ticker',
+        quantity: 'Quantity',
+        buyPrice: 'Buy price',
+        optional: 'optional',
+        fieldRequired: '{field} is required',
+        promptDeposit: 'Please record a deposit of {amount} {currency} into the {account} account{dateTail}{tail}.',
+        promptNoteTail: ' (note: {note})',
+        promptDateTail: ' on {date}',
+        promptBuyNew: 'Please buy {qty} {ticker} at {price} {currency} for the {account} account{dateTail}.',
+        promptDaily: "Generate today's daily report for the {account} account and show me the highlights.",
+        promptPortfolio: 'Generate a fresh portfolio report for the {account} account.',
+        promptSnapshot: 'Show me a quick snapshot of the {account} account — current positions, cash, and biggest movers.',
+        retry: 'Retry',
+        asOf: 'as of {date}',
+        noHoldings: 'No holdings',
+        sell: 'Sell',
+        buy: 'Buy',
+        withdraw: 'Withdraw',
+        price: 'Price',
+        ask: 'Ask',
+        send: 'Send',
+        cancelShort: 'Cancel',
+        prefillSellTitle: 'Prefill a sell into the terminal',
+        prefillBuyTitle: 'Prefill a buy into the terminal',
+        prefillWithdrawTitle: 'Prefill a withdrawal into the terminal',
+        prefillDepositTitle: 'Prefill a deposit into the terminal',
+        askHoldingTitle: 'Ask the agent to analyze this position',
+        enterQtyPrice: 'Enter both qty and price',
+        enterAmount: 'Enter an amount',
+        promptHoldingTrade: 'Please {verb} {qty} {ticker} at {price}{tail}{dateTail}',
+        promptHoldingCashFlow: 'Please record a {verb} of {amount} {currency} for the {account} account{dateTail}.',
+        promptDiscussHolding: 'Walk me through my {ticker} position — thesis, risk, what I should do next.',
+        noReports: 'No reports',
+        askReportTitle: 'Ask the agent about this report',
+        dailyKind: 'daily',
+        portfolioKind: 'portfolio',
+        promptDiscussReport: 'Walk me through the {kind} report at accounts/{account}/reports/{filename} — what stands out and what should I do.',
+        switchAgentConfirm: 'Switch agent? This will terminate the current session.',
+        terminalClosed: 'Terminal closed: {reason}',
+        connectionRefused: 'connection refused',
+        launchTerminalFirst: 'Launch a terminal first (claude / codex / codex(omx))',
+        noAgents: 'no agents on PATH',
+        agentListError: 'agent list error',
+        accountsRefreshed: 'Accounts refreshed',
+        reportsRefreshed: 'Reports refreshed',
+        clearOldReports: 'Clear old',
+        clearOldReportsTitle: 'Clear reports dated 30+ days ago',
+        confirmClearOldReports: 'Clear reports dated 30+ days ago for the {account} account? This only deletes report HTML files and will not modify transactions or settings.',
+        oldReportsCleared: 'Cleared {count} old reports',
+      },
+      'zh-Hans': {
+        appName: '投资管理',
+        language: '语言',
+        languageTitle: '切换语言',
+        accounts: '账户',
+        reports: '报告',
+        refreshAccounts: '刷新账户',
+        manageAccounts: '管理账户',
+        accountManagerTitle: '账户管理',
+        accountManagerSubtitle: '创建新账户、切换默认账户、重新命名，或封存不用的账户。',
+        newAccountTitle: '创建新账户',
+        newAccountHelp: '适合全新用户 onboarding：先创建安全的账户骨架，再用设置修改补齐策略与语言。',
+        createAccount: '创建账户',
+        accountNameRule: '账户名称使用小写英数、下划线或连字符，最多 32 字符。',
+        existingAccounts: '现有账户',
+        activeAccount: '当前默认：{account}',
+        noAccountsTitle: '尚未创建账户',
+        noAccountsBody: '先创建第一个账户，接着补齐 SETTINGS.md 后就能导入交易与生成报告。',
+        setActive: '设为默认',
+        activeBadge: '默认',
+        rename: '重新命名',
+        archive: '封存',
+        archiveAccountConfirm: '确定封存 {account}？这会把账户数据移到隐藏封存文件夹，不会永久删除。',
+        accountCreated: '账户已创建：{account}',
+        accountRenamed: '账户已改名：{account}',
+        accountArchived: '账户已封存：{account}',
+        activeChanged: '默认账户已切换：{account}',
+        renamePrompt: '输入新的账户名称',
+        cannotManageTotal: '总览是只读汇总，不是可编辑账户。',
+        refreshReports: '刷新报告',
+        refreshHoldings: '刷新持仓',
+        prevPage: '← 上一页',
+        nextPage: '下一页 →',
+        holdings: '持仓',
+        dailyReport: '日报',
+        portfolioReport: '投资组合报告',
+        snapshot: '快照',
+        deposit: '入金',
+        buyNew: '新增买入',
+        importTransactions: '导入交易',
+        importTransactionsTitle: '选择文件并把导入交易提示填入终端',
+        importFileReady: '已上传：{filename}',
+        importFileFailed: '文件上传失败',
+        promptImportTransactions: '请将 `{path}` 导入到 {account} 账户作为交易记录。请先解析文件、列出你准备新增或修正的交易/现金流，保存前等我确认。',
+        account: '账户',
+        ticker: '代码',
+        qty: '数量',
+        avgCost: '平均成本',
+        totalCost: '总成本',
+        ccy: '币别',
+        actions: '操作',
+        terminal: '终端',
+        terminalEmptyTitle: '选择 agent 以开始',
+        terminalEmptyBody: '请在上方选择 claude、codex 或 codex(omx)，为当前账户打开终端。',
+        action: '操作',
+        cancel: '取消',
+        confirm: '确认',
+        save: '保存',
+        modify: '修改',
+        sendToTerminal: '发送到终端',
+        report: '报告',
+        openInTab: '新标签页打开',
+        selectAccountSettings: '选择账户以查看设置。',
+        totalAccountName: '总览 · 所有账户',
+        totalAccountSubline: '只读汇总持仓',
+        modifySettingsTitle: '修改此账户设置',
+        settingsSectionCount: '{count} 个区段',
+        settingsSectionCountOne: '1 个区段',
+        loading: '加载中…',
+        error: '错误',
+        errorLoadingSettings: '设置加载失败',
+        preambleReadOnly: '前言（只读）',
+        noSections: '这个文件没有检测到 <code>## sections</code>。',
+        noChanges: '这个区段没有变更。',
+        previewFailed: '预览失败',
+        previewChanges: '预览变更 — SETTINGS.md',
+        noChangesDiff: '（没有变更）',
+        settingsChanged: 'SETTINGS.md 已在外部变更 — 重新打开编辑器。',
+        saveFailed: '保存失败',
+        savedBackup: '已保存。备份：{file}',
+        settingsReloading: '设置已保存 — 正在重新加载终端',
+        actionDeposit: '入金',
+        actionBuyNew: '新增买入',
+        amount: '金额',
+        date: '日期',
+        currency: '币别',
+        noteOptional: '备注',
+        tickerField: '代码',
+        quantity: '数量',
+        buyPrice: '买入价格',
+        optional: '选填',
+        fieldRequired: '请填写“{field}”',
+        promptDeposit: '请将 {amount} {currency} 入金到账户 {account}{dateTail}{tail}。',
+        promptNoteTail: '（备注：{note}）',
+        promptDateTail: '，日期 {date}',
+        promptBuyNew: '请为 {account} 账户买入 {qty} 股/单位 {ticker}，价格 {price} {currency}{dateTail}。',
+        promptDaily: '请为 {account} 账户生成今天的日报，并告诉我重点。',
+        promptPortfolio: '请为 {account} 账户生成最新的投资组合报告。',
+        promptSnapshot: '请快速摘要 {account} 账户：当前持仓、现金与最大变动。',
+        retry: '重试',
+        asOf: '截至 {date}',
+        noHoldings: '没有持仓',
+        sell: '卖出',
+        buy: '买入',
+        withdraw: '提领',
+        price: '价格',
+        ask: '询问',
+        send: '发送',
+        cancelShort: '取消',
+        prefillSellTitle: '将卖出操作填入终端',
+        prefillBuyTitle: '将买入操作填入终端',
+        prefillWithdrawTitle: '将提领操作填入终端',
+        prefillDepositTitle: '将入金操作填入终端',
+        askHoldingTitle: '请 agent 分析此持仓',
+        enterQtyPrice: '请输入数量与价格',
+        enterAmount: '请输入金额',
+        promptHoldingTrade: '请{verb} {qty} {ticker}，价格 {price}{tail}{dateTail}',
+        promptHoldingCashFlow: '请为 {account} 账户记录一笔 {amount} {currency} 的{verb}{dateTail}。',
+        promptDiscussHolding: '请分析我的 {ticker} 持仓：投资论点、风险，以及下一步该怎么做。',
+        noReports: '没有报告',
+        askReportTitle: '询问 agent 这份报告',
+        dailyKind: '日报',
+        portfolioKind: '投资组合',
+        promptDiscussReport: '请解读 accounts/{account}/reports/{filename} 的 {kind} 报告：有哪些重点，以及我该怎么做。',
+        switchAgentConfirm: '要切换 agent 吗？这会终止当前的终端 session。',
+        terminalClosed: '终端已关闭：{reason}',
+        connectionRefused: '连接被拒',
+        launchTerminalFirst: '请先启动终端（claude / codex / codex(omx)）',
+        noAgents: 'PATH 中没有可用 agent',
+        agentListError: 'agent 列表加载失败',
+        accountsRefreshed: '账户已刷新',
+        reportsRefreshed: '报告已刷新',
+        clearOldReports: '清旧',
+        clearOldReportsTitle: '清除 30 天前（含）的报告',
+        confirmClearOldReports: '确定清除 {account} 账户中 30 天前（含）的报告？这只会删除报告 HTML，不会修改交易记录或设置。',
+        oldReportsCleared: '已清除 {count} 份旧报告',
+      },
+    };
+    let currentLang = SUPPORTED_LANGS.includes(localStorage.getItem('investments.ui.lang') || '')
+      ? localStorage.getItem('investments.ui.lang')
+      : 'zh-Hant';
+
+    function t(key, vars = {}) {
+      const dict = I18N[currentLang] || I18N['zh-Hant'];
+      const fallback = I18N['zh-Hant'][key] || I18N.en[key] || key;
+      return String(dict[key] || fallback).replace(/\{(\w+)\}/g, (_, k) => vars[k] ?? '');
+    }
+
+    function reportKindLabel(kind) {
+      if (kind === 'daily') return t('dailyKind');
+      if (kind === 'portfolio') return t('portfolioKind');
+      return kind || '';
+    }
+
+    function updateBrand() {
+      document.getElementById('brand').textContent = selectedAccount
+        ? `${t('appName')} · ${accountDisplayName(selectedAccount)}`
+        : t('appName');
+    }
+
+    function applyI18n() {
+      document.documentElement.lang = currentLang;
+      document.querySelectorAll('[data-i18n]').forEach(el => {
+        el.textContent = t(el.dataset.i18n);
+      });
+      document.querySelectorAll('[data-i18n-title]').forEach(el => {
+        el.title = t(el.dataset.i18nTitle);
+      });
+      document.querySelectorAll('[data-i18n-aria-label]').forEach(el => {
+        el.setAttribute('aria-label', t(el.dataset.i18nAriaLabel));
+      });
+      const select = document.getElementById('language-select');
+      if (select) select.value = currentLang;
+      updateBrand();
+      refreshAccountListLabels();
+      if (!activeTerm) renderTerminalEmptyState();
+      if (lastHoldingsData) renderHoldingsRows(lastHoldingsData);
+      if (lastReportItems) renderReports(lastReportItems);
+      if (sectionsState.length > 0 || preambleText) renderSections();
+      if (!document.getElementById('account-manager-modal')?.classList.contains('hidden')) {
+        renderAccountManager();
+      }
+    }
+
+    function setLanguage(lang) {
+      if (!SUPPORTED_LANGS.includes(lang)) return;
+      currentLang = lang;
+      localStorage.setItem('investments.ui.lang', lang);
+      applyI18n();
+    }
+
+    function todayISO() {
+      const now = new Date();
+      const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
+      return local.toISOString().slice(0, 10);
+    }
+
+    function dateTail(date) {
+      return t('promptDateTail', { date });
+    }
 
     // -------------------------------------------------------------------------
     // Clock
@@ -234,6 +1253,18 @@
     }
     setInterval(updateClock, 1000);
     updateClock();
+
+    function isTotalAccount(name = selectedAccount) {
+      return name === '_total';
+    }
+
+    function accountDisplayName(name) {
+      return isTotalAccount(name) ? t('totalAccountName') : name;
+    }
+
+    function accountSubline(name) {
+      return isTotalAccount(name) ? t('totalAccountSubline') : '';
+    }
 
     // -------------------------------------------------------------------------
     // URL helpers
@@ -257,15 +1288,29 @@
     // -------------------------------------------------------------------------
     function showToast(msg, isError = false) {
       const el = document.createElement('div');
-      el.className = `pointer-events-auto px-4 py-2 rounded-lg text-sm shadow-lg border max-w-sm ${
-        isError
-          ? 'bg-red-900 border-red-700 text-red-100'
-          : 'bg-zinc-800 border-zinc-700 text-zinc-100'
-      }`;
-      el.textContent = msg;
+      el.className = `toast pointer-events-auto ${isError ? 'toast-error' : 'toast-success'}`;
+      el.setAttribute('role', isError ? 'alert' : 'status');
+
+      const icon = document.createElement('span');
+      icon.className = 'toast-icon';
+      icon.setAttribute('aria-hidden', 'true');
+      icon.textContent = isError ? '!' : '✓';
+
+      const text = document.createElement('span');
+      text.className = 'toast-text';
+      text.textContent = msg;
+
+      el.append(icon, text);
       const container = document.getElementById('toast-container');
       container.appendChild(el);
-      setTimeout(() => el.remove(), 5000);
+      setTimeout(() => {
+        el.classList.add('is-leaving');
+        setTimeout(() => el.remove(), 300);
+      }, 2600);
+    }
+
+    function escJs(s) {
+      return String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
     }
 
     // -------------------------------------------------------------------------
@@ -276,59 +1321,277 @@
       const data = await res.json();
 
       const urlAcc = getUrlAccount();
-      const def = urlAcc && data.accounts.includes(urlAcc) ? urlAcc : data.default;
+      accountsState = Array.isArray(data.items)
+        ? data.items
+        : (data.accounts || []).map(name => ({ name, description: '', active: name === data.active, synthetic: isTotalAccount(name) }));
+      activeAccountName = data.active || null;
+      const def = urlAcc && data.accounts.includes(urlAcc)
+        ? urlAcc
+        : (data.default || data.active || null);
       reportsPage = getUrlPage();
 
       const list = document.getElementById('accounts-list');
       list.innerHTML = '';
-      for (const acc of data.accounts) {
+      const accounts = data.accounts || [];
+      if (!accounts.length) {
+        list.innerHTML = `
+          <li class="rounded border border-dashed border-zinc-700 p-3 text-xs text-zinc-500">
+            <span class="block font-semibold text-zinc-300 mb-1">${escHtml(t('noAccountsTitle'))}</span>
+            <span>${escHtml(t('noAccountsBody'))}</span>
+          </li>`;
+        selectedAccount = null;
+        renderNoAccountHoldings();
+        renderReports([]);
+        renderAccountManager();
+        return;
+      }
+      const orderedAccounts = accounts.includes('_total')
+        ? ['_total', ...accounts.filter(acc => acc !== '_total')]
+        : accounts;
+      orderedAccounts.forEach((acc, idx) => {
+        if (idx === 1 && orderedAccounts[0] === '_total') {
+          const divider = document.createElement('li');
+          divider.className = 'account-divider';
+          divider.setAttribute('aria-hidden', 'true');
+          list.appendChild(divider);
+        }
+
         const li = document.createElement('li');
         li.dataset.acc = acc;
         li.className = `flex items-center rounded transition-colors ${
           acc === def
-            ? 'bg-emerald-900/50 text-emerald-300 font-medium'
-            : 'text-zinc-300 hover:bg-zinc-800'
-        }`;
+            ? 'is-active-account font-medium'
+            : ''
+        } ${isTotalAccount(acc) ? 'total-account-row' : ''}`;
 
         const btn = document.createElement('button');
-        btn.textContent = acc;
         btn.className = 'flex-1 text-left px-3 py-1.5 text-sm bg-transparent';
+        if (isTotalAccount(acc)) {
+          btn.innerHTML = `
+            <span class="block font-semibold">${escHtml(accountDisplayName(acc))}</span>
+            <span class="block text-[10px] text-zinc-500 font-normal tracking-normal">${escHtml(accountSubline(acc))}</span>`;
+        } else {
+          btn.textContent = accountDisplayName(acc);
+        }
         btn.onclick = () => selectAccount(acc);
 
-        const gear = document.createElement('button');
-        gear.innerHTML = '⚙'; // gear icon
-        gear.title = 'Settings for this account';
-        gear.className =
-          'px-2 py-1.5 text-sm text-zinc-400 hover:text-emerald-300 hidden';
-        gear.dataset.role = 'settings-gear';
-        gear.onclick = (e) => {
-          e.stopPropagation();
-          openSettingsModal(acc);
-        };
-
-        li.appendChild(btn);
-        li.appendChild(gear);
+        if (!isTotalAccount(acc)) {
+          const gear = document.createElement('button');
+          gear.innerHTML = '✎';
+          gear.title = t('modifySettingsTitle');
+          gear.className = 'settings-gear hidden';
+          gear.dataset.role = 'settings-gear';
+          gear.onclick = (e) => {
+            e.stopPropagation();
+            openSettingsModal(acc);
+          };
+          li.appendChild(btn);
+          li.appendChild(gear);
+        } else {
+          li.appendChild(btn);
+        }
         list.appendChild(li);
-      }
+      });
 
+      renderAccountManager();
+      if (!def) {
+        selectedAccount = null;
+        renderNoAccountHoldings();
+        renderReports([]);
+        openAccountManager();
+        return;
+      }
       await selectAccount(def, /* skipPush */ false);
     }
 
+    function getAccountMeta(name) {
+      return accountsState.find(item => item.name === name) || { name, description: '', active: false, synthetic: isTotalAccount(name) };
+    }
+
+    function renderAccountManager() {
+      const activeLabel = document.getElementById('account-manager-active');
+      if (activeLabel) {
+        activeLabel.textContent = activeAccountName
+          ? t('activeAccount', { account: activeAccountName })
+          : t('noAccountsTitle');
+      }
+      const root = document.getElementById('account-manager-list');
+      if (!root) return;
+      const realItems = accountsState.filter(item => !item.synthetic);
+      if (!realItems.length) {
+        root.innerHTML = `
+          <div class="rounded-xl border border-dashed border-zinc-700 p-4 text-sm">
+            <div class="font-semibold text-zinc-200 mb-1">${escHtml(t('noAccountsTitle'))}</div>
+            <div class="text-xs text-zinc-500 leading-5">${escHtml(t('noAccountsBody'))}</div>
+          </div>`;
+        return;
+      }
+      root.innerHTML = realItems.map(item => {
+        const isActive = item.name === activeAccountName;
+        const description = item.description
+          ? `<div class="text-[11px] text-zinc-500 mt-1">${escHtml(item.description)}</div>`
+          : '';
+        return `
+          <div class="rounded-xl border border-zinc-800 bg-zinc-950/25 p-3 flex flex-col sm:flex-row sm:items-center gap-3">
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2">
+                <span class="font-mono text-sm text-zinc-100">${escHtml(item.name)}</span>
+                ${isActive ? `<span class="text-[10px] px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-800">${escHtml(t('activeBadge'))}</span>` : ''}
+              </div>
+              ${description}
+            </div>
+            <div class="flex items-center gap-2 shrink-0">
+              <button onclick="setActiveAccountFromModal('${escJs(item.name)}')" ${isActive ? 'disabled' : ''}
+                class="text-xs px-2.5 py-1.5 rounded bg-zinc-800 hover:bg-zinc-700 border border-zinc-700">${escHtml(t('setActive'))}</button>
+              <button onclick="renameAccountFromModal('${escJs(item.name)}')"
+                class="text-xs px-2.5 py-1.5 rounded bg-zinc-800 hover:bg-zinc-700 border border-zinc-700">${escHtml(t('rename'))}</button>
+              <button onclick="archiveAccountFromModal('${escJs(item.name)}')" ${isActive ? 'disabled' : ''}
+                class="text-xs px-2.5 py-1.5 rounded bg-red-950/80 hover:bg-red-900 border border-red-900 text-red-200">${escHtml(t('archive'))}</button>
+            </div>
+          </div>`;
+      }).join('');
+    }
+
+    window.openAccountManager = function() {
+      renderAccountManager();
+      document.getElementById('account-manager-modal').classList.remove('hidden');
+      requestAnimationFrame(() => document.getElementById('new-account-name')?.focus());
+    };
+
+    window.closeAccountManager = function() {
+      document.getElementById('account-manager-modal').classList.add('hidden');
+    };
+
+    async function accountRequest(url, options = {}) {
+      const res = await fetch(url, {
+        ...options,
+        headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || `HTTP ${res.status}`);
+      }
+      return data;
+    }
+
+    window.createAccountFromModal = async function() {
+      const input = document.getElementById('new-account-name');
+      const name = (input?.value || '').trim();
+      try {
+        const result = await accountRequest('/api/accounts', {
+          method: 'POST',
+          body: JSON.stringify({ name, set_active: true }),
+        });
+        if (input) input.value = '';
+        showToast(t('accountCreated', { account: result.account || name }));
+        await loadAccounts();
+        await selectAccount(result.account || name);
+      } catch (err) {
+        showToast(String(err.message || err), true);
+      }
+    };
+
+    window.setActiveAccountFromModal = async function(name) {
+      try {
+        const result = await accountRequest(`/api/accounts/${encodeURIComponent(name)}/use`, { method: 'POST' });
+        showToast(t('activeChanged', { account: result.account || name }));
+        await loadAccounts();
+        await selectAccount(result.account || name);
+      } catch (err) {
+        showToast(String(err.message || err), true);
+      }
+    };
+
+    window.renameAccountFromModal = async function(name) {
+      const next = window.prompt(t('renamePrompt'), name);
+      if (!next || next === name) return;
+      try {
+        const result = await accountRequest(`/api/accounts/${encodeURIComponent(name)}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ name: next.trim() }),
+        });
+        showToast(t('accountRenamed', { account: result.account || next }));
+        await loadAccounts();
+        await selectAccount(result.account || next);
+      } catch (err) {
+        showToast(String(err.message || err), true);
+      }
+    };
+
+    window.archiveAccountFromModal = async function(name) {
+      if (!window.confirm(t('archiveAccountConfirm', { account: name }))) return;
+      try {
+        const result = await accountRequest(`/api/accounts/${encodeURIComponent(name)}`, { method: 'DELETE' });
+        showToast(t('accountArchived', { account: result.account || name }));
+        await loadAccounts();
+      } catch (err) {
+        showToast(String(err.message || err), true);
+      }
+    };
+
     function highlightAccount(name) {
-      document.querySelectorAll('#accounts-list li').forEach(li => {
-        const isActive = li.dataset.acc === name;
+      document.querySelectorAll('#accounts-list li[data-acc]').forEach(li => {
+        const accountName = li.dataset.acc;
+        const isActive = accountName === name;
         li.className = `flex items-center rounded transition-colors ${
           isActive
-            ? 'bg-emerald-900/50 text-emerald-300 font-medium'
-            : 'text-zinc-300 hover:bg-zinc-800'
-        }`;
+            ? 'is-active-account font-medium'
+            : ''
+        } ${isTotalAccount(accountName) ? 'total-account-row' : ''}`;
         const gear = li.querySelector('[data-role="settings-gear"]');
         if (gear) gear.classList.toggle('hidden', !isActive);
       });
     }
 
+    function refreshAccountListLabels() {
+      document.querySelectorAll('#accounts-list li[data-acc]').forEach(li => {
+        const accountName = li.dataset.acc;
+        const btn = li.querySelector('button:first-child');
+        if (!btn) return;
+        if (isTotalAccount(accountName)) {
+          btn.innerHTML = `
+            <span class="block font-semibold">${escHtml(accountDisplayName(accountName))}</span>
+            <span class="block text-[10px] text-zinc-500 font-normal tracking-normal">${escHtml(accountSubline(accountName))}</span>`;
+        } else {
+          btn.textContent = accountDisplayName(accountName);
+        }
+        const gear = li.querySelector('[data-role="settings-gear"]');
+        if (gear) gear.title = t('modifySettingsTitle');
+      });
+    }
+
+    function syncReadOnlyAccountUi() {
+      const readOnly = isTotalAccount();
+      document.querySelectorAll('[data-hide-for-total]').forEach(el => {
+        el.classList.toggle('hidden', readOnly);
+      });
+    }
+
+    function syncHoldingsTableMode(readOnly = isTotalAccount()) {
+      document.getElementById('holdings-account-th')?.classList.toggle('hidden', !readOnly);
+      document.getElementById('holdings-actions-th')?.classList.toggle('hidden', readOnly);
+    }
+
+    function renderNoAccountHoldings() {
+      syncHoldingsTableMode(false);
+      const tbody = document.getElementById('holdings-rows');
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="6" class="px-4 py-8 text-center">
+            <p class="text-zinc-300 text-sm font-semibold mb-1">${escHtml(t('noAccountsTitle'))}</p>
+            <p class="text-zinc-500 text-xs">${escHtml(t('noAccountsBody'))}</p>
+          </td>
+        </tr>`;
+      document.getElementById('holdings-as-of').textContent = '';
+    }
+
     async function selectAccount(name, skipPush = false) {
-      if (name === selectedAccount) return;
+      if (name === selectedAccount) {
+        highlightAccount(name);
+        syncReadOnlyAccountUi();
+        syncHoldingsTableMode(isTotalAccount());
+        return;
+      }
 
       // Tear down any live terminal — it is bound to the previous account.
       // Without this, the PTY child keeps running with INVESTMENTS_ACTIVE_ACCOUNT
@@ -341,8 +1604,11 @@
         try { activeTerm.dispose(); } catch (_) {}
         activeTerm = null;
         activeFitAddon = null;
-        const container = document.getElementById('xterm-container');
-        if (container) container.innerHTML = '';
+        if (activeResizeObserver) {
+          try { activeResizeObserver.disconnect(); } catch (_) {}
+          activeResizeObserver = null;
+        }
+        renderTerminalEmptyState();
       }
 
       // Reset paging — keeping page N from a previous account can land
@@ -351,7 +1617,8 @@
 
       selectedAccount = name;
       if (!skipPush) pushUrlState(name, reportsPage);
-      document.getElementById('brand').textContent = `Investments · ${name}`;
+      updateBrand();
+      syncReadOnlyAccountUi();
       highlightAccount(name);
       await Promise.all([loadHoldings(), loadReports()]);
     }
@@ -373,6 +1640,7 @@
 
     async function loadHoldings() {
       if (!selectedAccount) return;
+      syncHoldingsTableMode(isTotalAccount());
       renderHoldingsSkeleton();
       holdingActions.clear(); // collapse any open action forms across reloads
       try {
@@ -396,26 +1664,35 @@
     // rendered as <input> elements. ``build`` returns the terminal prompt.
     const ACTION_FORMS = {
       deposit: {
-        title: 'Deposit',
+        titleKey: 'actionDeposit',
         fields: [
-          { id: 'amount', label: 'Amount', type: 'number', placeholder: '10000', required: true },
-          { id: 'currency', label: 'Currency', type: 'text', placeholder: 'USD', required: true },
-          { id: 'note', label: 'Note (optional)', type: 'text', placeholder: 'monthly contribution' },
+          { id: 'amount', labelKey: 'amount', type: 'number', placeholder: '10000', required: true },
+          { id: 'currency', labelKey: 'currency', type: 'text', placeholder: 'USD', required: true },
+          { id: 'date', labelKey: 'date', type: 'date', placeholder: '', required: true, defaultToday: true },
+          { id: 'note', labelKey: 'noteOptional', type: 'text', placeholder: 'monthly contribution' },
         ],
         build: (v, acct) => {
-          const tail = v.note ? ` (note: ${v.note})` : '';
-          return `Please record a deposit of ${v.amount} ${v.currency} into the ${acct} account${tail}.`;
+          const tail = v.note ? t('promptNoteTail', { note: v.note }) : '';
+          return t('promptDeposit', { amount: v.amount, currency: v.currency, account: acct, dateTail: dateTail(v.date), tail });
         },
       },
       buy_new: {
-        title: 'Buy new asset',
+        titleKey: 'actionBuyNew',
         fields: [
-          { id: 'ticker', label: 'Ticker', type: 'text', placeholder: 'NVDA', required: true },
-          { id: 'qty', label: 'Quantity', type: 'number', placeholder: '10', required: true },
-          { id: 'price', label: 'Buy price', type: 'number', placeholder: '180.50', required: true },
-          { id: 'currency', label: 'Currency', type: 'text', placeholder: 'USD', required: true },
+          { id: 'ticker', labelKey: 'tickerField', type: 'text', placeholder: 'NVDA', required: true },
+          { id: 'qty', labelKey: 'quantity', type: 'number', placeholder: '10', required: true },
+          { id: 'price', labelKey: 'buyPrice', type: 'number', placeholder: '180.50', required: true },
+          { id: 'currency', labelKey: 'currency', type: 'text', placeholder: 'USD', required: true },
+          { id: 'date', labelKey: 'date', type: 'date', placeholder: '', required: true, defaultToday: true },
         ],
-        build: (v, acct) => `Please buy ${v.qty} ${v.ticker.toUpperCase()} at ${v.price} ${v.currency} for the ${acct} account.`,
+        build: (v, acct) => t('promptBuyNew', {
+          qty: v.qty,
+          ticker: v.ticker.toUpperCase(),
+          price: v.price,
+          currency: v.currency,
+          account: acct,
+          dateTail: dateTail(v.date),
+        }),
       },
     };
 
@@ -425,13 +1702,14 @@
       const cfg = ACTION_FORMS[kind];
       if (!cfg) return;
       currentActionKind = kind;
-      document.getElementById('action-form-title').textContent = cfg.title;
+      document.getElementById('action-form-title').textContent = t(cfg.titleKey);
       const body = document.getElementById('action-form-body');
       body.innerHTML = cfg.fields.map(f => `
         <label class="flex flex-col gap-1 text-xs">
-          <span class="text-zinc-400">${escHtml(f.label)}${f.required ? '' : ' <span class="text-zinc-600">(optional)</span>'}</span>
+          <span class="text-zinc-400">${escHtml(t(f.labelKey))}${f.required ? '' : ` <span class="text-zinc-600">(${escHtml(t('optional'))})</span>`}</span>
           <input id="action-field-${f.id}" type="${f.type}" ${f.required ? 'required' : ''}
-            step="any" min="0" placeholder="${escHtml(f.placeholder)}"
+            ${f.type === 'number' ? 'step="any" min="0"' : ''} placeholder="${escHtml(f.placeholder)}"
+            ${f.defaultToday ? `value="${todayISO()}"` : ''}
             class="bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-zinc-100 font-mono focus:outline-none focus:border-emerald-500" />
         </label>`).join('');
       document.getElementById('action-form-modal').classList.remove('hidden');
@@ -454,7 +1732,7 @@
         const el = document.getElementById(`action-field-${f.id}`);
         values[f.id] = (el?.value || '').trim();
         if (f.required && !values[f.id]) {
-          showToast(`${f.label} is required`, true);
+          showToast(t('fieldRequired', { field: t(f.labelKey) }), true);
           el?.focus();
           return;
         }
@@ -468,37 +1746,81 @@
     window.quickAction = function(kind) {
       const acct = selectedAccount || 'default';
       const prompts = {
-        daily: `Generate today's daily report for the ${acct} account and show me the highlights.`,
-        portfolio: `Generate a fresh portfolio report for the ${acct} account.`,
-        snapshot: `Show me a quick snapshot of the ${acct} account — current positions, cash, and biggest movers.`,
+        daily: t('promptDaily', { account: acct }),
+        portfolio: t('promptPortfolio', { account: acct }),
+        snapshot: t('promptSnapshot', { account: acct }),
       };
       const text = prompts[kind];
       if (!text) return;
       typeToTerminal(text);
     };
 
+    window.chooseTransactionImportFile = function() {
+      if (isTotalAccount()) return;
+      if (!activeWs || activeWs.readyState !== WebSocket.OPEN) {
+        showToast(t('launchTerminalFirst'), true);
+        return;
+      }
+      document.getElementById('transaction-import-file')?.click();
+    };
+
+    window.handleTransactionImportFile = async function(file) {
+      const input = document.getElementById('transaction-import-file');
+      if (input) input.value = '';
+      if (!file || !selectedAccount || isTotalAccount()) return;
+
+      const btn = document.getElementById('import-transactions-button');
+      if (btn) btn.disabled = true;
+      try {
+        const qs = new URLSearchParams({ filename: file.name || 'upload' });
+        const res = await fetch(`/api/accounts/${encodeURIComponent(selectedAccount)}/imports/upload?${qs.toString()}`, {
+          method: 'POST',
+          headers: { 'Content-Type': file.type || 'application/octet-stream' },
+          body: file,
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          showToast(data.error || t('importFileFailed'), true);
+          return;
+        }
+        const prompt = t('promptImportTransactions', {
+          account: selectedAccount || 'default',
+          path: data.path,
+          filename: data.filename || file.name || 'upload',
+        });
+        if (typeToTerminal(prompt)) showToast(t('importFileReady', { filename: data.filename || file.name }));
+      } catch (err) {
+        showToast(String(err), true);
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    };
+
     function renderHoldingsError(msg) {
+      syncHoldingsTableMode(isTotalAccount());
       const tbody = document.getElementById('holdings-rows');
       tbody.innerHTML = `
         <tr>
           <td colspan="6" class="px-4 py-6 text-center">
             <p class="text-red-400 text-sm mb-3">${escHtml(msg)}</p>
             <button onclick="window.loadHoldings()"
-              class="text-xs px-3 py-1.5 rounded bg-zinc-700 hover:bg-zinc-600">Retry</button>
+              class="text-xs px-3 py-1.5 rounded bg-zinc-700 hover:bg-zinc-600">${escHtml(t('retry'))}</button>
           </td>
         </tr>`;
       document.getElementById('holdings-as-of').textContent = '';
     }
 
     // Track which tickers have their action form expanded, and which mode
-    // (sell/buy) they're in.
-    const holdingActions = new Map(); // ticker -> { mode: 'sell'|'buy' }
+    // (sell/buy for positions; withdraw/deposit for cash) they're in.
+    const holdingActions = new Map(); // ticker -> { mode: 'sell'|'buy'|'withdraw'|'deposit' }
 
     function renderHoldingsRows(data) {
-      document.getElementById('holdings-as-of').textContent = data.as_of ? `as of ${data.as_of}` : '';
+      const readOnly = Boolean(data.read_only || isTotalAccount());
+      syncHoldingsTableMode(readOnly);
+      document.getElementById('holdings-as-of').textContent = data.as_of ? t('asOf', { date: data.as_of }) : '';
       const tbody = document.getElementById('holdings-rows');
       if (!data.rows || data.rows.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="6" class="px-4 py-6 text-center text-zinc-500 text-sm">No holdings</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="6" class="px-4 py-6 text-center text-zinc-500 text-sm">${escHtml(t('noHoldings'))}</td></tr>`;
         return;
       }
       const fmtOrDash = (fn, v) => (v === null || v === undefined || Number.isNaN(v)) ? '—' : fn.format(v);
@@ -506,51 +1828,87 @@
         const ticker = r.ticker || '';
         const safeTicker = ticker.replace(/'/g, "\\'");
         const ccy = r.trade_currency || '';
+        const isCash = ticker && ccy && ticker.toUpperCase() === ccy.toUpperCase()
+          && (r.avg_cost === null || r.avg_cost === undefined);
         const action = holdingActions.get(ticker);
-        const expanded = !!action;
+        const expanded = !readOnly && !!action;
+        const isOutflow = action?.mode === 'sell' || action?.mode === 'withdraw';
+        const actionLabel = action?.mode === 'withdraw'
+          ? t('withdraw')
+          : action?.mode === 'deposit'
+            ? t('deposit')
+            : action?.mode === 'sell'
+              ? t('sell')
+              : t('buy');
+        const accountCell = readOnly
+          ? `<td class="px-4 py-2.5 font-mono text-xs text-zinc-400">${escHtml(accountDisplayName(r.account || ''))}</td>`
+          : '';
+        const priceControls = isCash ? '' : `
+                <label class="text-zinc-500">${escHtml(actionLabel)} ${escHtml(t('price'))}</label>
+                <input id="action-price-${escHtml(ticker)}" type="number" step="any" min="0"
+                  class="bg-zinc-800 border border-zinc-700 rounded px-2 py-1 w-24 text-zinc-100 font-mono focus:outline-none focus:border-emerald-500"
+                  placeholder="${fmtOrDash(fmtNum2, r.avg_cost)}"/>`;
+        const dateControl = `
+                <label class="text-zinc-500">${escHtml(t('date'))}</label>
+                <input id="action-date-${escHtml(ticker)}" type="date" value="${todayISO()}" required
+                  class="bg-zinc-800 border border-zinc-700 rounded px-2 py-1 w-36 text-zinc-100 font-mono focus:outline-none focus:border-emerald-500"/>`;
         const actionRow = expanded ? `
           <tr class="bg-zinc-950/60 border-b border-zinc-800/60">
             <td colspan="6" class="px-4 py-3">
               <form onsubmit="event.preventDefault(); submitHoldingAction('${safeTicker}', '${ccy}')"
                     class="flex items-center gap-2 text-xs">
-                <span class="font-mono font-medium uppercase ${action.mode === 'sell' ? 'text-red-400' : 'text-emerald-400'}">${action.mode}</span>
+                <span class="font-mono font-medium uppercase ${isOutflow ? 'text-red-400' : 'text-emerald-400'}">${escHtml(actionLabel)}</span>
                 <span class="font-mono text-zinc-300">${escHtml(ticker)}</span>
-                <label class="text-zinc-500">Qty</label>
+                <label class="text-zinc-500">${escHtml(isCash ? t('amount') : t('qty'))}</label>
                 <input id="action-qty-${escHtml(ticker)}" type="number" step="any" min="0"
                   class="bg-zinc-800 border border-zinc-700 rounded px-2 py-1 w-24 text-zinc-100 font-mono focus:outline-none focus:border-emerald-500"
                   placeholder="${fmtOrDash(fmtQty, r.qty)}"/>
-                <label class="text-zinc-500">${action.mode === 'sell' ? 'Sell' : 'Buy'} Price</label>
-                <input id="action-price-${escHtml(ticker)}" type="number" step="any" min="0"
-                  class="bg-zinc-800 border border-zinc-700 rounded px-2 py-1 w-24 text-zinc-100 font-mono focus:outline-none focus:border-emerald-500"
-                  placeholder="${fmtOrDash(fmtNum2, r.avg_cost)}"/>
+                ${priceControls}
+                ${dateControl}
                 <span class="text-zinc-500 font-mono">${escHtml(ccy)}</span>
                 <button type="submit"
-                  class="ml-auto text-xs px-3 py-1 rounded ${action.mode === 'sell' ? 'bg-red-700 hover:bg-red-600' : 'bg-emerald-700 hover:bg-emerald-600'} text-white">Send to terminal</button>
+                  class="ml-auto text-xs px-3 py-1 rounded ${isOutflow ? 'bg-red-700 hover:bg-red-600' : 'bg-emerald-700 hover:bg-emerald-600'} text-white">${escHtml(t('sendToTerminal'))}</button>
                 <button type="button" onclick="toggleHoldingAction('${safeTicker}', null)"
-                  class="text-xs px-2 py-1 rounded bg-zinc-700 hover:bg-zinc-600">Cancel</button>
+                  class="text-xs px-2 py-1 rounded bg-zinc-700 hover:bg-zinc-600">${escHtml(t('cancelShort'))}</button>
               </form>
             </td>
           </tr>` : '';
+        const actionsCell = readOnly ? '' : (isCash ? `
+            <td class="px-4 py-2.5 text-right">
+              <span class="inline-flex gap-1">
+                <button onclick="toggleHoldingAction('${safeTicker}', 'withdraw')"
+                  class="text-[11px] px-2 py-0.5 rounded bg-red-900/40 hover:bg-red-800/60 text-red-300 font-medium"
+                  title="${escHtml(t('prefillWithdrawTitle'))}">${escHtml(t('withdraw'))}</button>
+                <button onclick="toggleHoldingAction('${safeTicker}', 'deposit')"
+                  class="text-[11px] px-2 py-0.5 rounded bg-emerald-900/40 hover:bg-emerald-800/60 text-emerald-300 font-medium"
+                  title="${escHtml(t('prefillDepositTitle'))}">${escHtml(t('deposit'))}</button>
+                <button onclick="discussHolding('${safeTicker}')"
+                  class="text-[11px] px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300"
+                  title="${escHtml(t('askHoldingTitle'))}">${escHtml(t('ask'))}</button>
+              </span>
+            </td>` : `
+            <td class="px-4 py-2.5 text-right">
+              <span class="inline-flex gap-1">
+                <button onclick="toggleHoldingAction('${safeTicker}', 'sell')"
+                  class="text-[11px] px-2 py-0.5 rounded bg-red-900/40 hover:bg-red-800/60 text-red-300 font-medium"
+                  title="${escHtml(t('prefillSellTitle'))}">${escHtml(t('sell'))}</button>
+                <button onclick="toggleHoldingAction('${safeTicker}', 'buy')"
+                  class="text-[11px] px-2 py-0.5 rounded bg-emerald-900/40 hover:bg-emerald-800/60 text-emerald-300 font-medium"
+                  title="${escHtml(t('prefillBuyTitle'))}">${escHtml(t('buy'))}</button>
+                <button onclick="discussHolding('${safeTicker}')"
+                  class="text-[11px] px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300"
+                  title="${escHtml(t('askHoldingTitle'))}">${escHtml(t('ask'))}</button>
+              </span>
+            </td>`);
         return `
           <tr class="border-b border-zinc-800/60 hover:bg-zinc-800/30 transition-colors">
+            ${accountCell}
             <td class="px-4 py-2.5 font-mono font-medium text-zinc-100">${escHtml(ticker)}</td>
             <td class="px-4 py-2.5 font-mono text-right text-zinc-300">${fmtOrDash(fmtQty, r.qty)}</td>
             <td class="px-4 py-2.5 font-mono text-right text-zinc-300">${fmtOrDash(fmtNum2, r.avg_cost)}</td>
             <td class="px-4 py-2.5 font-mono text-right text-zinc-200">${fmtOrDash(fmtNum2, r.total_cost)}</td>
             <td class="px-4 py-2.5 font-mono text-right text-xs text-zinc-500">${escHtml(ccy)}</td>
-            <td class="px-4 py-2.5 text-right">
-              <span class="inline-flex gap-1">
-                <button onclick="toggleHoldingAction('${safeTicker}', 'sell')"
-                  class="text-[11px] px-2 py-0.5 rounded bg-red-900/40 hover:bg-red-800/60 text-red-300 font-medium"
-                  title="Prefill a sell into the terminal">Sell</button>
-                <button onclick="toggleHoldingAction('${safeTicker}', 'buy')"
-                  class="text-[11px] px-2 py-0.5 rounded bg-emerald-900/40 hover:bg-emerald-800/60 text-emerald-300 font-medium"
-                  title="Prefill a buy into the terminal">Buy</button>
-                <button onclick="discussHolding('${safeTicker}')"
-                  class="text-[11px] px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300"
-                  title="Ask the agent to analyze this position">Ask</button>
-              </span>
-            </td>
+            ${actionsCell}
           </tr>${actionRow}`;
       }).join('');
     }
@@ -580,11 +1938,28 @@
       const action = holdingActions.get(ticker);
       if (!action) return;
       const qty = document.getElementById(`action-qty-${ticker}`).value.trim();
-      const price = document.getElementById(`action-price-${ticker}`).value.trim();
-      if (!qty || !price) { showToast('Enter both qty and price', true); return; }
-      const verb = action.mode === 'sell' ? 'sell' : 'buy';
+      const price = document.getElementById(`action-price-${ticker}`)?.value.trim();
+      const date = document.getElementById(`action-date-${ticker}`)?.value.trim();
+      if (!date) { showToast(t('fieldRequired', { field: t('date') }), true); return; }
+      if (action.mode === 'withdraw' || action.mode === 'deposit') {
+        if (!qty) { showToast(t('enterAmount'), true); return; }
+        const prompt = t('promptHoldingCashFlow', {
+          verb: action.mode === 'withdraw' ? t('withdraw') : t('deposit'),
+          amount: qty,
+          currency: ccy || ticker,
+          account: selectedAccount || 'default',
+          dateTail: dateTail(date),
+        });
+        if (typeToTerminal(prompt)) {
+          holdingActions.delete(ticker);
+          if (lastHoldingsData) renderHoldingsRows(lastHoldingsData);
+        }
+        return;
+      }
+      if (!qty || !price) { showToast(t('enterQtyPrice'), true); return; }
+      const verb = action.mode === 'sell' ? t('sell') : t('buy');
       const tail = ccy ? ` (${ccy})` : '';
-      const prompt = `Please ${verb} ${qty} ${ticker} at ${price}${tail}`;
+      const prompt = t('promptHoldingTrade', { verb, qty, ticker, price, tail, dateTail: dateTail(date) });
       if (typeToTerminal(prompt)) {
         holdingActions.delete(ticker);
         if (lastHoldingsData) renderHoldingsRows(lastHoldingsData);
@@ -592,7 +1967,7 @@
     };
 
     window.discussHolding = function(ticker) {
-      typeToTerminal(`Walk me through my ${ticker} position — thesis, risk, what I should do next.`);
+      typeToTerminal(t('promptDiscussHolding', { ticker }));
     };
 
     // -------------------------------------------------------------------------
@@ -604,11 +1979,12 @@
       const data = await res.json();
       if (!res.ok) {
         document.getElementById('reports-list').innerHTML =
-          `<li class="text-xs text-red-400 px-2">${escHtml(data.error || 'Error')}</li>`;
+          `<li class="text-xs text-red-400 px-2">${escHtml(data.error || t('error'))}</li>`;
         return;
       }
       reportsTotalPages = data.total_pages || 1;
-      renderReports(data.items);
+      lastReportItems = data.items || [];
+      renderReports(lastReportItems);
       document.getElementById('page-indicator').textContent = `${reportsPage} / ${reportsTotalPages}`;
       document.getElementById('prev-page').disabled = reportsPage <= 1;
       document.getElementById('next-page').disabled = reportsPage >= reportsTotalPages;
@@ -617,34 +1993,40 @@
     function renderReports(items) {
       const list = document.getElementById('reports-list');
       if (!items || items.length === 0) {
-        list.innerHTML = `<li class="text-xs text-zinc-500 px-2 py-1">No reports</li>`;
+        list.innerHTML = `<li class="text-xs text-zinc-500 px-2 py-1">${escHtml(t('noReports'))}</li>`;
         return;
       }
       list.innerHTML = items.map(r => {
         const badgeClass = r.kind === 'daily'
-          ? 'bg-emerald-900/60 text-emerald-300'
-          : 'bg-violet-900/60 text-violet-300';
+          ? 'badge-daily'
+          : 'badge-portfolio';
         const dateStr = r.date || '';
         const timeStr = r.time ? r.time.slice(0,2)+':'+r.time.slice(2) : '';
         const safeName = r.filename.replace(/'/g, "\\'");
-        const label = `${escHtml(dateStr)} ${escHtml(timeStr)} · ${escHtml(r.kind)}`;
+        const label = `${escHtml(dateStr)} ${escHtml(timeStr)} · ${escHtml(reportKindLabel(r.kind))}`;
+        const askButton = isTotalAccount() ? '' : `
+            <button onclick="discussReport('${safeName}', '${escHtml(r.kind)}')"
+              class="px-2 py-1 text-[11px] text-zinc-500 hover:text-emerald-300 opacity-0 group-hover:opacity-100 transition-opacity"
+              title="${escHtml(t('askReportTitle'))}">💬</button>`;
         return `
           <li class="flex items-center group rounded hover:bg-zinc-800 transition-colors">
             <button onclick="openReportModal('${safeName}', '${label}')"
                class="flex-1 flex items-center gap-2 px-2 py-1.5 cursor-pointer text-left">
               <span class="font-mono text-xs text-zinc-400 group-hover:text-zinc-200">${escHtml(dateStr)} ${escHtml(timeStr)}</span>
-              <span class="badge ${badgeClass}">${escHtml(r.kind)}</span>
+              <span class="badge ${badgeClass}">${escHtml(reportKindLabel(r.kind))}</span>
             </button>
-            <button onclick="discussReport('${safeName}', '${escHtml(r.kind)}')"
-              class="px-2 py-1 text-[11px] text-zinc-500 hover:text-emerald-300 opacity-0 group-hover:opacity-100 transition-opacity"
-              title="Ask the agent about this report">💬</button>
+            ${askButton}
           </li>`;
       }).join('');
     }
 
     window.discussReport = function(filename, kind) {
       const acct = selectedAccount || 'default';
-      typeToTerminal(`Walk me through the ${kind} report at accounts/${acct}/reports/${filename} — what stands out and what should I do.`);
+      typeToTerminal(t('promptDiscussReport', {
+        kind: reportKindLabel(kind),
+        account: acct,
+        filename,
+      }));
     };
 
     // expose for inline onclick
@@ -654,6 +2036,25 @@
       reportsPage = newPage;
       pushUrlState(selectedAccount, reportsPage);
       loadReports();
+    };
+
+    window.clearOldReports = async function() {
+      if (!selectedAccount) return;
+      if (!window.confirm(t('confirmClearOldReports', { account: accountDisplayName(selectedAccount) }))) return;
+      try {
+        const res = await fetch(`/api/accounts/${encodeURIComponent(selectedAccount)}/reports/old?days=30`, { method: 'DELETE' });
+        const data = await res.json();
+        if (!res.ok) {
+          showToast(data.error || t('error'), true);
+          return;
+        }
+        reportsPage = 1;
+        pushUrlState(selectedAccount, reportsPage);
+        await loadReports();
+        showToast(t('oldReportsCleared', { count: data.deleted_count || 0 }));
+      } catch (err) {
+        showToast(String(err), true);
+      }
     };
 
     // -------------------------------------------------------------------------
@@ -666,12 +2067,12 @@
     async function loadSettings() {
       if (!selectedAccount) return;
       const container = document.getElementById('settings-sections');
-      container.innerHTML = `<div class="px-4 py-6 text-xs text-zinc-500 text-center">Loading…</div>`;
+      container.innerHTML = `<div class="px-4 py-6 text-xs text-zinc-500 text-center">${escHtml(t('loading'))}</div>`;
       try {
         const res = await fetch(`/api/accounts/${encodeURIComponent(selectedAccount)}/settings/sections`);
         const data = await res.json();
         if (!res.ok) {
-          container.innerHTML = `<div class="px-4 py-4 text-xs text-red-400">${escHtml(data.error || 'Error loading settings')}</div>`;
+          container.innerHTML = `<div class="px-4 py-4 text-xs text-red-400">${escHtml(data.error || t('errorLoadingSettings'))}</div>`;
           return;
         }
         preambleText = data.preamble || '';
@@ -686,18 +2087,18 @@
       const container = document.getElementById('settings-sections');
       const count = sectionsState.length;
       document.getElementById('settings-section-count').textContent =
-        count === 0 ? '' : `${count} section${count === 1 ? '' : 's'}`;
+        count === 0 ? '' : t(count === 1 ? 'settingsSectionCountOne' : 'settingsSectionCount', { count });
 
       const parts = [];
       if (preambleText && preambleText.trim().length > 0) {
         parts.push(`
           <div class="px-4 py-2 bg-zinc-950/40">
-            <p class="text-[10px] uppercase tracking-widest text-zinc-600 mb-1">Preamble (read-only)</p>
+            <p class="text-[10px] uppercase tracking-widest text-zinc-600 mb-1">${escHtml(t('preambleReadOnly'))}</p>
             <pre class="font-mono text-[11px] text-zinc-500 whitespace-pre-wrap leading-5">${escHtml(preambleText)}</pre>
           </div>`);
       }
       if (count === 0) {
-        parts.push(`<div class="px-4 py-6 text-xs text-zinc-500 text-center">No <code>## sections</code> detected in this file.</div>`);
+        parts.push(`<div class="px-4 py-6 text-xs text-zinc-500 text-center">${t('noSections')}</div>`);
       } else {
         sectionsState.forEach((s, idx) => parts.push(renderSectionCard(idx, s)));
       }
@@ -713,9 +2114,9 @@
               <span class="text-xs font-semibold text-zinc-200">${escHtml(s.name)}</span>
               <div class="flex gap-2">
                 <button onclick="cancelSectionEdit(${idx})"
-                  class="text-xs px-2 py-0.5 rounded bg-zinc-700 hover:bg-zinc-600">Cancel</button>
+                  class="text-xs px-2 py-0.5 rounded bg-zinc-700 hover:bg-zinc-600">${escHtml(t('cancel'))}</button>
                 <button onclick="saveSection(${idx})"
-                  class="text-xs px-2 py-0.5 rounded bg-emerald-700 hover:bg-emerald-600 text-white">Save</button>
+                  class="text-xs px-2 py-0.5 rounded bg-emerald-700 hover:bg-emerald-600 text-white">${escHtml(t('save'))}</button>
               </div>
             </div>
             <textarea id="section-textarea-${idx}"
@@ -729,7 +2130,7 @@
           <div class="flex items-center justify-between mb-2">
             <span class="text-xs font-semibold text-zinc-200">${escHtml(s.name)}</span>
             <button onclick="editSection(${idx})"
-              class="text-xs px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700">Edit</button>
+              class="px-2 py-1 text-[11px] rounded bg-zinc-800 hover:bg-zinc-700">${escHtml(t('modify'))}</button>
           </div>
           <pre class="font-mono text-xs text-zinc-400 whitespace-pre-wrap leading-5 max-h-40 overflow-auto">${escHtml(s.body)}</pre>
         </div>`;
@@ -770,7 +2171,7 @@
       if (!s) return;
       const newBody = s.draft !== null ? s.draft : s.body;
       if (newBody === s.body) {
-        showToast('No changes in this section.');
+        showToast(t('noChanges'));
         return;
       }
       try {
@@ -780,13 +2181,13 @@
         );
         const data = await res.json();
         if (!res.ok) {
-          showToast(data.error || 'Preview failed', true);
+          showToast(data.error || t('previewFailed'), true);
           return;
         }
         pendingDiff = { kind: 'section', sectionIndex: idx, sectionName: s.name, new_body: newBody, token: data.token };
-        document.getElementById('diff-pre').textContent = data.unified_diff || '(no changes)';
+        document.getElementById('diff-pre').textContent = data.unified_diff || t('noChangesDiff');
         document.querySelector('#diff-modal .diff-modal-title').textContent =
-          `Preview Changes — SETTINGS.md  ·  ${s.name}`;
+          `${t('previewChanges')}  ·  ${s.name}`;
         document.getElementById('diff-modal').classList.remove('hidden');
       } catch (err) {
         showToast(String(err), true);
@@ -852,10 +2253,11 @@
         // a confirm dialog otherwise).
         try { activeWs.close(); } catch (_) {}
         if (activeTerm) { try { activeTerm.dispose(); } catch (_) {} }
-        activeWs = null; activeTerm = null; activeFitAddon = null;
+        if (activeResizeObserver) { try { activeResizeObserver.disconnect(); } catch (_) {} }
+        activeWs = null; activeTerm = null; activeFitAddon = null; activeResizeObserver = null; activeFitAndResize = null;
         const container = document.getElementById('xterm-container');
         if (container) container.innerHTML = '';
-        showToast('Settings saved — reloading terminal');
+        showToast(t('settingsReloading'));
         launchTerminal(agentId);
       }
       settingsDirty = false;
@@ -874,16 +2276,16 @@
         );
         const data = await res.json();
         if (res.status === 409) {
-          showToast('SETTINGS.md changed externally — re-opening editor.', true);
+          showToast(t('settingsChanged'), true);
           closeDiffModal();
           await loadSettings();
           return;
         }
         if (!res.ok) {
-          showToast(data.error || 'Save failed', true);
+          showToast(data.error || t('saveFailed'), true);
           return;
         }
-        showToast(`Saved. Backup: ${data.backup_path.split('/').pop()}`);
+        showToast(t('savedBackup', { file: data.backup_path.split('/').pop() }));
         settingsDirty = true;
         closeDiffModal();
         await loadSettings();
@@ -895,31 +2297,52 @@
     // -------------------------------------------------------------------------
     // Terminal
     // -------------------------------------------------------------------------
+    function resetTerminalRuntime() {
+      if (activeWs) { try { activeWs.close(); } catch (_) {} }
+      if (activeResizeObserver) { try { activeResizeObserver.disconnect(); } catch (_) {} }
+      if (activeTerm) { try { activeTerm.dispose(); } catch (_) {} }
+      activeWs = null;
+      activeTerm = null;
+      activeFitAddon = null;
+      activeResizeObserver = null;
+      activeFitAndResize = null;
+    }
+
     window.launchTerminal = function(agent) {
-      if (activeWs && activeWs.readyState !== WebSocket.CLOSED) {
-        if (!confirm(`Switch agent? This will terminate the current session.`)) return;
-        activeWs.close();
-        if (activeTerm) { activeTerm.dispose(); activeTerm = null; }
-        activeWs = null;
-        activeFitAddon = null;
-      }
+      const hasLiveTerminalSession = activeWs && activeWs.readyState !== WebSocket.CLOSED;
+      const hasStaleTerminalRuntime = activeTerm || activeResizeObserver || activeFitAddon || activeFitAndResize;
+      if (hasLiveTerminalSession && !confirm(t('switchAgentConfirm'))) return;
+      if (hasLiveTerminalSession || hasStaleTerminalRuntime) resetTerminalRuntime();
 
       const container = document.getElementById('xterm-container');
-      container.innerHTML = '';
+      container.replaceChildren();
+      // Force a fresh layout boundary before opening the next xterm instance.
+      // Switching Codex → Claude used to keep stale xterm measurement state in
+      // the same frame; Claude Code's full-screen TUI then rendered with the
+      // previous geometry. Reading offsetHeight flushes the cleared container.
+      void container.offsetHeight;
+      const launchSerial = ++terminalLaunchSerial;
+
+      // Open xterm on the next paint, not in the same tick as the container
+      // reset. If we measure immediately, xterm can cache a pre-paint box;
+      // then everything looks wrong until a manual browser resize forces the
+      // same fit path later.
+      requestAnimationFrame(() => {
+        if (launchSerial !== terminalLaunchSerial) return;
 
       const term = new Terminal({
-        fontFamily: '"JetBrains Mono", monospace',
+        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace',
         fontSize: 13,
-        theme: { background: '#09090b', foreground: '#fafafa', cursor: '#a1a1aa' },
-        convertEol: true,
+        theme: { background: '#0c1016', foreground: '#f6f2ea', cursor: '#d8c7a3' },
+        // Full-screen TUIs such as Claude Code own cursor movement and line
+        // endings. xterm's convertEol helper is useful for plain logs, but it
+        // can shift alternate-screen layouts by injecting carriage returns.
+        convertEol: false,
         scrollback: 5000,
       });
 
       const fitAddon = new FitAddon.FitAddon();
-
-      const wsUrl = `ws://${location.host}/ws/terminal?agent=${encodeURIComponent(agent)}&account=${encodeURIComponent(selectedAccount)}`;
-      const ws = new WebSocket(wsUrl);
-      ws.binaryType = 'arraybuffer';
+      let ws = null;
 
       // Send the current xterm dims to the PTY. Idempotent and called any
       // time the dimensions may have changed (initial fit, ws.onopen, window
@@ -927,7 +2350,7 @@
       // renders at the fitted size — that mismatch breaks line wrap and
       // makes xterm's autoscroll math drift off the visible bottom.
       function sendResize() {
-        if (ws.readyState !== WebSocket.OPEN) return;
+        if (!ws || ws.readyState !== WebSocket.OPEN) return;
         const cols = term.cols, rows = term.rows;
         const payload = new TextEncoder().encode(JSON.stringify({ cols, rows }));
         const frame = new Uint8Array(payload.length + 1);
@@ -944,10 +2367,29 @@
       term.loadAddon(fitAddon);
       term.open(container);
       fitAddon.fit();
+      const initialCols = term.cols || 120;
+      const initialRows = term.rows || 32;
+
+      function fitAndResize() {
+        if (!activeTerm || activeTerm !== term) return;
+        fitAddon.fit();
+        try { term.refresh(0, Math.max(0, term.rows - 1)); } catch (_) {}
+        // Give the browser one frame to apply xterm's recalculated geometry,
+        // then notify the PTY. Claude Code is especially sensitive to a stale
+        // PTY size because its TUI draws relative to the reported rows/cols.
+        sendResize();
+        requestAnimationFrame(() => {
+          sendResize();
+          try { term.refresh(0, Math.max(0, term.rows - 1)); } catch (_) {}
+        });
+      }
 
       // AttachAddon pumps both directions: term.onData → ws.send (stdin)
       // and ws.onmessage → term.write (stdout). Do NOT also wire term.onData
       // manually — that double-sends every keystroke.
+      const wsUrl = `ws://${location.host}/ws/terminal?agent=${encodeURIComponent(agent)}&account=${encodeURIComponent(selectedAccount)}&cols=${initialCols}&rows=${initialRows}`;
+      ws = new WebSocket(wsUrl);
+      ws.binaryType = 'arraybuffer';
       const attach = new AttachAddon.AttachAddon(ws);
       term.loadAddon(attach);
 
@@ -956,20 +2398,41 @@
       // in sync, even if the earlier onResize-driven send happened before
       // the WS was ready.
       ws.onopen = () => {
-        fitAddon.fit();
-        sendResize();
+        requestAnimationFrame(() => {
+          fitAndResize();
+          setTimeout(fitAndResize, 80);
+          setTimeout(fitAndResize, 220);
+          setTimeout(fitAndResize, 600);
+        });
       };
 
       ws.onclose = (ev) => {
         if (ev.code === 4404 || ev.code === 4400) {
-          showToast(`Terminal closed: ${ev.reason || 'connection refused'}`, true);
+          showToast(t('terminalClosed', { reason: ev.reason || t('connectionRefused') }), true);
         }
       };
 
       activeTerm = term;
       activeWs = ws;
       activeFitAddon = fitAddon;
+      activeFitAndResize = fitAndResize;
       activeAgentId = agent;
+
+      activeResizeObserver = new ResizeObserver(() => {
+        requestAnimationFrame(fitAndResize);
+      });
+      activeResizeObserver.observe(container);
+      const terminalPanel = container.closest('.terminal-panel');
+      if (terminalPanel) activeResizeObserver.observe(terminalPanel);
+
+      // Do not wait for a user-initiated window resize to settle xterm. Force
+      // the same fit/refresh path after the new terminal has actually been
+      // attached to the DOM and marked active.
+      requestAnimationFrame(() => {
+        fitAndResize();
+        setTimeout(fitAndResize, 0);
+      });
+      });
     };
 
     // -------------------------------------------------------------------------
@@ -977,9 +2440,14 @@
     // -------------------------------------------------------------------------
     function typeToTerminal(text, opts = {}) {
       if (!activeWs || activeWs.readyState !== WebSocket.OPEN) {
-        showToast('Launch a terminal first (claude / codex / codex(omx))', true);
+        showToast(t('launchTerminalFirst'), true);
         return false;
       }
+      // Button-generated prompts should replace any draft already sitting in
+      // the terminal input. Ctrl+A + Ctrl+K is broadly supported by shells and
+      // TUI prompt editors, and avoids sending Ctrl+C (which would interrupt
+      // running work).
+      if (opts.clear !== false) activeWs.send('\x01\x0b');
       activeWs.send(text);
       if (opts.submit) activeWs.send('\r');
       // Visually focus the xterm so the user can immediately review/edit.
@@ -989,8 +2457,20 @@
     window.typeToTerminal = typeToTerminal;
 
     window.addEventListener('resize', () => {
-      if (activeFitAddon) activeFitAddon.fit();
+      if (activeFitAndResize) requestAnimationFrame(activeFitAndResize);
     });
+
+    function renderTerminalEmptyState() {
+      const container = document.getElementById('xterm-container');
+      if (!container) return;
+      container.innerHTML = `
+        <div id="terminal-empty-state" class="terminal-empty-state">
+          <span>
+            <strong>${escHtml(t('terminalEmptyTitle'))}</strong>
+            <span>${escHtml(t('terminalEmptyBody'))}</span>
+          </span>
+        </div>`;
+    }
 
     async function loadAgents() {
       const container = document.getElementById('agent-buttons');
@@ -999,7 +2479,7 @@
         const data = await res.json();
         const agents = (data.agents || []);
         if (agents.length === 0) {
-          container.innerHTML = `<span class="text-xs text-zinc-500">no agents on PATH</span>`;
+          container.innerHTML = `<span class="text-xs text-zinc-500">${escHtml(t('noAgents'))}</span>`;
           return;
         }
         container.innerHTML = agents.map(a => `
@@ -1007,7 +2487,7 @@
             class="text-xs px-3 py-1.5 rounded bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 font-mono"
           >${escHtml(a.label)}</button>`).join('');
       } catch (err) {
-        container.innerHTML = `<span class="text-xs text-red-400">agent list error</span>`;
+        container.innerHTML = `<span class="text-xs text-red-400">${escHtml(t('agentListError'))}</span>`;
       }
     }
 
@@ -1015,7 +2495,19 @@
     // Init
     // -------------------------------------------------------------------------
     window.loadHoldings = loadHoldings;
+    window.refreshAccounts = async function() {
+      await loadAccounts();
+      showToast(t('accountsRefreshed'));
+    };
+    window.refreshReports = async function() {
+      await loadReports();
+      showToast(t('reportsRefreshed'));
+    };
 
+    document.getElementById('language-select')?.addEventListener('change', (e) => {
+      setLanguage(e.target.value);
+    });
+    applyI18n();
     await Promise.all([loadAccounts(), loadAgents()]);
   </script>
 

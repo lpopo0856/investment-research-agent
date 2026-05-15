@@ -104,3 +104,37 @@ def test_resolve_report_path_valid_existing():
     path = resolve_report_path("default", "2026-04-28_2046_portfolio_report.html")
     assert path.exists()
     assert path.name == "2026-04-28_2046_portfolio_report.html"
+
+
+def test_clear_old_reports_deletes_only_matching_old_files(tmp_path, monkeypatch):
+    import ui.accounts as ui_accounts
+    import ui.reports as ui_reports
+    from datetime import date
+
+    account_dir = tmp_path / "accounts" / "fixture"
+    reports_dir = account_dir / "reports"
+    reports_dir.mkdir(parents=True)
+    old = reports_dir / "2026-04-01_0900_daily_report.html"
+    cutoff = reports_dir / "2026-04-15_0900_portfolio_report.html"
+    new = reports_dir / "2026-04-16_0900_portfolio_report.html"
+    ignored = reports_dir / "_sample_redesign.html"
+    for path in (old, cutoff, new, ignored):
+        path.write_text(path.name, encoding="utf-8")
+
+    monkeypatch.setattr(ui_accounts, "ACCOUNTS_ROOT", (tmp_path / "accounts").resolve())
+    result = ui_reports.clear_old_reports("fixture", days=30, today=date(2026, 5, 15))
+
+    assert result["deleted_count"] == 2
+    assert result["cutoff_date"] == "2026-04-15"
+    assert set(result["deleted"]) == {old.name, cutoff.name}
+    assert not old.exists()
+    assert not cutoff.exists()
+    assert new.exists()
+    assert ignored.exists()
+
+
+def test_clear_old_reports_rejects_invalid_days():
+    from ui.reports import clear_old_reports
+
+    with pytest.raises(ValueError):
+        clear_old_reports("default", days=0)
